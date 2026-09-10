@@ -1,7 +1,7 @@
 """
 [Module 2 / T4] 과거 시간별 날씨 수집 — Open-Meteo Archive API (무료, 키 불필요).
 
-사용: python scripts/fetch_weather_history.py [시작일 YYYY-MM-DD] [종료일] [지역명]
+사용: python scripts/fetch_weather_history.py [시작일 YYYY-MM-DD] [종료일]   (지역은 config.json의 region)
   생략 시: config.json의 region 중심 좌표, sim_date 기준 앞뒤 7일.
 출력: data/external/weather_<지역>_<시작>_<종료>.csv  (time, temperature, precipitation, wind_speed)
 
@@ -29,9 +29,18 @@ def fetch(lat, lon, start, end):
 
 if __name__ == "__main__":
     base = datetime.strptime(CFG.get("sim_date", "2026-09-07"), "%Y-%m-%d")
-    start = sys.argv[1] if len(sys.argv) > 1 else (base - timedelta(days=7)).strftime("%Y-%m-%d")
-    end = sys.argv[2] if len(sys.argv) > 2 else (base + timedelta(days=7)).strftime("%Y-%m-%d")
-    region = sys.argv[3] if len(sys.argv) > 3 else CFG.get("region", "region")
+
+    def _is_date(x):
+        try: datetime.strptime(x, "%Y-%m-%d"); return True
+        except ValueError: return False
+    # 날짜 형식(YYYY-MM-DD)인 인자만 사용 — zsh에서 '# 주석'이 인자로 넘어오는 사고 방지
+    args = [a for a in sys.argv[1:] if _is_date(a)]
+    bad = [a for a in sys.argv[1:] if not _is_date(a) and not a.startswith("#")]
+    if len(sys.argv) > 1 and (bad or len(args) != len(sys.argv) - 1):
+        print(f"[안내] 날짜(YYYY-MM-DD)가 아닌 인자는 무시: {[a for a in sys.argv[1:] if a not in args]}")
+    start = args[0] if len(args) > 0 else (base - timedelta(days=7)).strftime("%Y-%m-%d")
+    end = args[1] if len(args) > 1 else (base + timedelta(days=7)).strftime("%Y-%m-%d")
+    region = CFG.get("region", "region")
     lat = (CFG["lat_min"] + CFG["lat_max"]) / 2; lon = (CFG["lng_min"] + CFG["lng_max"]) / 2
     # Archive API는 보통 어제까지 제공 → 미래 날짜는 잘라냄
     today = datetime.now().strftime("%Y-%m-%d")
