@@ -67,12 +67,18 @@ def run_pipeline():
         feature_df['pred_xgboost'] = np.maximum(0, xgb_preds).astype(int)
 
         # CNN-LSTM 추론
-        dl_data = torch.load(dl_path)
+        dl_data = torch.load(dl_path, weights_only=False)
         dl_model = CNNLSTMModel(input_dim=dl_data['input_dim'])
         dl_model.load_state_dict(dl_data['state_dict'])
         dl_model.eval()
 
-        X_seq = torch.tensor(X_mat, dtype=torch.float32).unsqueeze(1)
+        scaler = dl_data.get('scaler', None)
+        if scaler is not None:
+            X_mat_scaled = scaler.transform(X_mat)
+        else:
+            X_mat_scaled = X_mat
+
+        X_seq = torch.tensor(X_mat_scaled, dtype=torch.float32).unsqueeze(1)
         with torch.no_grad():
             dl_preds = dl_model(X_seq).numpy().flatten()
         feature_df['pred_cnn_lstm'] = np.maximum(0, dl_preds).astype(int)

@@ -32,11 +32,12 @@ def prepare_real_sequence_dataset(max_lag=None):
     """Module 2 파이프라인을 거쳐 시계열 시퀀스(N, Seq_Len, Features) 데이터셋 생성"""
     max_lag = max_lag if max_lag is not None else CFG["max_lag"]
 
-    dates = pd.date_range("2026-08-28 18:00:00", periods=1000, freq="1min")
+    n_points = int(CFG.get("demo_data_minutes", 1000))
+    dates = pd.date_range("2026-08-28 18:00:00", periods=n_points, freq="1min")
     df = pd.DataFrame({
         'pickup_datetime': dates,
-        'latitude': np.random.uniform(37.495, 37.505, 1000),
-        'longitude': np.random.uniform(127.020, 127.035, 1000)
+        'latitude': np.random.uniform(37.495, 37.505, n_points),
+        'longitude': np.random.uniform(127.020, 127.035, n_points)
     })
     df = merge_external_data(df)
 

@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
     "mock_available_taxis_min": 1, "mock_available_taxis_max": 20,
     "mock_taxi_count": 20, "mock_passenger_count": 20,
     # Synthetic training/demo data (kept explicit so it is no longer hidden)
-    "demo_data_rows": 1000, "demo_data_minutes": 500,
+    "demo_data_rows": 1000, "demo_data_minutes": 3000,
     "demo_data_start": "2026-08-28 18:00:00",
     "xgb_random_state": 42, "train_random_state": 42,
 }
