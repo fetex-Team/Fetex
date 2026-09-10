@@ -25,3 +25,10 @@ networkx
 matplotlib
 seaborn
 tqdm
+
+# Module 2 (전처리/EDA)
+holidays
+statsmodels
+jupyter
+nbconvert
+ipykernel

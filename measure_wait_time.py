@@ -34,6 +34,7 @@ from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
+from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 2] 호출 로그 기록
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
@@ -104,6 +105,18 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         seed=meta.get("passenger_seed"),
     )
 
+    # [Module 2] 호출 로그 기록기 — 승객 1명 = 호출 1건, 종료 시 data/sim_logs/demand_log_*.csv 저장
+    try:
+        from config_loader import CFG as _CFG
+    except Exception:
+        _CFG = {}
+    recorder = DemandLogRecorder(
+        sim_start_hour=sim_start_hour,
+        zones=meta.get("zones", {}),
+        cfg=_CFG,
+        spawn_manager=spawn_manager,
+    )
+
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
     if sim_end_seconds is None:
         print("[경고] sim_end_hour를 어디서도 찾지 못해 안전상 24시간 분량으로 자동 종료합니다.")
@@ -123,6 +136,14 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             if hungarian_dispatcher:
                 hungarian_dispatcher.maintain(now)  # 헝가리안 실시간 배차 (taxi_dispatch_algorithm="hungarian"일 때만)
             spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids)  # 학교/회사/음식점 실시간 생성·소멸
+            recorder.step(now, timeout_removed_pids=pax_manager.removed_pids)  # [Module 2] 호출 로그 기록
+
+            # 진행 표시: 시뮬레이션 10분마다 한 줄 (suppress_sumo_warnings=true면 이것만 보임)
+            if int(now) % 600 == 0 and now > 0:
+                _hh = int(sim_start_hour + now / 3600); _mm = int((now % 3600) // 60)
+                print(f"[진행] 시뮬 {_hh:02d}:{_mm:02d} ({now/sim_end_seconds*100:.0f}%) | "
+                      f"호출 누적 {len(recorder.records)}건 | 탑승 {len(pickup_time)}명 | "
+                      f"타임아웃 {len(pax_manager.removed_pids)}명 | 택시 {len(traci.vehicle.getIDList())}대", flush=True)
 
             # 이번 스텝에 새로 등장한 person 기록
             for pid in traci.person.getIDList():
@@ -151,6 +172,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             step += 1
     finally:
         traci.close()
+        if recorder.records:
+            recorder.save(f"demand_log_{time.strftime('%Y%m%d_%H%M%S')}_{meta.get('taxi_strategy', 'run')}"
+                          f"_{meta.get('taxi_dispatch_algorithm', 'greedy')}.csv")
 
     waits = []
     for pid, dtime in depart_time.items():

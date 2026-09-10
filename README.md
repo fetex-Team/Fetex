@@ -12,3 +12,19 @@
 1. **모델 학습 및 저장 (Train/Test 분리 및 하이퍼파라미터 튜닝)**
    ```bash
    python train.py
+
+## Module 2 — 시공간 데이터 처리 (전처리/EDA) 실행 순서
+
+```bash
+source ../20250907ver/venv/bin/activate          # 또는 venv/
+pip install -r requirements.txt                   # holidays, statsmodels, jupyter 포함
+python measure_wait_time.py                       # ① 시뮬 → data/sim_logs/demand_log_*.csv (호출 로그)
+python scripts/fetch_weather_history.py           # ② 시간별 날씨 → data/external/weather_*.csv (선택, 없으면 fallback)
+python tests/test_module2.py                      # ③ 최소 완료 조건 테스트 (42개)
+python -m module2_preprocessing.pipeline --logs "data/sim_logs/*.csv" --out data/processed/features.csv   # ④ 피처 테이블
+bash 실행_EDA.command                              # ⑤ H3/POI 그림 + notebooks/01_EDA_and_Spatial.ipynb 실행
+python train.py                                   # ⑥ Module 3 학습 (④를 내부에서 호출)
+```
+
+- 파이프라인: 로그 → H3(res 9)/Geohash → (셀×5분) 집계·0채움 → 날씨 asof 병합·결측 플래그 → lag/rolling/지난주/시간·공휴일 피처 → 타겟 y_h1..y_h6
+- 설계 근거·최소 완료 조건: `docs/MODULE2_MANUAL.md` / 변경 이력: `CHANGES_전처리.md` / 데이터 설명: `data/README.md`

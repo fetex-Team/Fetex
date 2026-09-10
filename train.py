@@ -1,6 +1,11 @@
 import os
 import sys
 
+# [macOS 세그폴트 방지] torch와 xgboost가 각각 다른 OpenMP(libomp)를 들고 와서 GridSearch 중
+# "Segmentation fault: 11"로 죽는 문제. torch/xgboost import 전에 반드시 설정해야 함.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+
 # 1. 파이썬 모듈 탐색 경로(sys.path)에 최상위 프로젝트 폴더(ai_mobility_project) 등록
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR))  # train.py는 프로젝트 루트에 위치
@@ -15,56 +20,56 @@ import numpy as np
 import pandas as pd
 import joblib
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 
 from config_loader import CFG
 
 # 하위 모듈 불러오기
 from module3_prediction.models import CNNLSTMModel, build_xgboost_model
 from evaluate import calculate_metrics
-from module2_preprocessing.spatial_indexing import SpatialIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
-from module2_preprocessing.external_data_merge import merge_external_data
+from module2_preprocessing.pipeline import build_feature_table
+from module2_preprocessing.time_series_prep import time_based_split
+from module2_preprocessing.sim_log_recorder import latest_log_path
+
+# 학습 타겟: Module 2 피처 테이블의 y_h1(t+1, 5분 뒤) ~ y_h6(t+6, 30분 뒤).
+# 아래 단일 출력 모델은 TARGET 한 개만 사용. 다중 시점(6개) 동시 예측은 y_h1..y_h6 전체를
+# y로 넘기고 CNNLSTMModel(output_dim=6) / MultiOutputRegressor(XGB)로 바꾸면 됨 (Module 3 담당).
+TARGET = "y_h1"
 
 
-def prepare_real_sequence_dataset(max_lag=None):
-    """Module 2 파이프라인을 거쳐 시계열 시퀀스(N, Seq_Len, Features) 데이터셋 생성"""
-    max_lag = max_lag if max_lag is not None else CFG["max_lag"]
-
-    dates = pd.date_range("2026-08-28 18:00:00", periods=1000, freq="1min")
-    df = pd.DataFrame({
-        'pickup_datetime': dates,
-        'latitude': np.random.uniform(37.495, 37.505, 1000),
-        'longitude': np.random.uniform(127.020, 127.035, 1000)
-    })
-    df = merge_external_data(df)
-
-    indexer = SpatialIndexer()  # config.json의 h3_resolution 사용
-    df = indexer.process_dataframe(df, lat_col='latitude', lng_col='longitude')
-
-    prep = TimeSeriesPreprocessor(max_lag=max_lag)  # config.json의 freq 사용
-    agg_df = prep.aggregate_demands(df, timestamp_col='pickup_datetime', spatial_col='h3_index')
-    feature_df = prep.create_features(agg_df, spatial_col='h3_index')
-
-    feature_cols = [c for c in feature_df.columns if c not in ['time_bucket', 'h3_index', 'demand']]
-
-    # 2D Tabular Feature Matrix (XGBoost용)
-    X_mat = feature_df[feature_cols].fillna(0).values
-    y_vec = feature_df['demand'].fillna(0).values
-
-    return X_mat, y_vec, feature_cols, max_lag
+def prepare_real_sequence_dataset(max_lag=None, log_path=None):
+    """
+    Module 2 파이프라인(module2_preprocessing.pipeline)으로 학습용 피처 테이블 생성.
+    - data/sim_logs/demand_log_*.csv 전체를 이어 붙여 사용 (log_path를 주면 그 파일만)
+    - 로그가 하나도 없으면 에러 (가짜 랜덤 데이터 폴백은 제거 — 평가 시 혼동 방지)
+    반환: feature_df, feature_cols, target_cols
+    """
+    logs = [log_path] if log_path else [os.path.join(PROJECT_ROOT, "data", "sim_logs", "demand_log_*.csv")]
+    if not log_path and latest_log_path() is None:
+        raise FileNotFoundError("data/sim_logs에 호출 로그가 없습니다. 먼저 `python measure_wait_time.py`로 시뮬레이션을 돌려 로그를 만드세요.")
+    feature_df = build_feature_table(logs, max_lag=max_lag)
+    return feature_df, feature_df.attrs["feature_cols"], feature_df.attrs["target_cols"]
 
 
 if __name__ == "__main__":
     os.makedirs('saved_models', exist_ok=True)
 
-    # 1. 데이터셋 준비 및 Train/Test 분리 (비율은 config.json에서 조절)
-    X_mat, y_vec, feature_cols, seq_len = prepare_real_sequence_dataset()
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_mat, y_vec, test_size=CFG["test_size"], random_state=42, shuffle=False
-    )
+    # 1. 데이터셋 준비 및 Train/Test 분리 — 시간 기준 (비율은 config.json test_size)
+    #    사용법: python train.py [로그CSV경로]  (생략 시 data/sim_logs의 모든 로그)
+    log_arg = sys.argv[1] if len(sys.argv) > 1 else None
+    feature_df, feature_cols, target_cols = prepare_real_sequence_dataset(log_path=log_arg)
+    train_df, _val_df, test_df, cuts = time_based_split(feature_df, CFG["test_size"])
+    train_df = train_df.sort_values(['time_bucket', 'h3_index'])  # TimeSeriesSplit이 시간 순서로 fold를 자르도록
+    test_df = test_df.sort_values(['time_bucket', 'h3_index'])
 
-    print(f"[데이터 분리 완료] Train: {len(X_train)}개, Test: {len(X_test)}개 | Features: {len(feature_cols)}개 | test_size={CFG['test_size']}")
+    X_train = train_df[feature_cols].fillna(0).values
+    y_train = train_df[TARGET].values
+    X_test = test_df[feature_cols].fillna(0).values
+    y_test = test_df[TARGET].values
+    seq_len = CFG["max_lag"]
+
+    print(f"[데이터 분리 완료] Train: {len(X_train)}개 (< {cuts['test_cut']}), Test: {len(X_test)}개 "
+          f"| 셀 {feature_df['h3_index'].nunique()}개 | Features: {len(feature_cols)}개 | 타겟 {TARGET} (전체 {target_cols}) | test_size={CFG['test_size']}")
 
     # ------------------------------------------------------------
     # 2. XGBoost 학습, 하이퍼파라미터 튜닝(GridSearch), 평가 및 저장
@@ -84,7 +89,7 @@ if __name__ == "__main__":
     print(f"탐색 범위: {param_grid}")
 
     base_xgb = build_xgboost_model()
-    grid_search = GridSearchCV(base_xgb, param_grid, cv=3, scoring='neg_root_mean_squared_error')
+    grid_search = GridSearchCV(base_xgb, param_grid, cv=TimeSeriesSplit(n_splits=3), scoring='neg_root_mean_squared_error')
     grid_search.fit(X_train, y_train)
 
     best_xgb = grid_search.best_estimator_

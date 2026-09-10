@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 생성물
+_result_*.json
+data/eda/*.html
+.DS_Store

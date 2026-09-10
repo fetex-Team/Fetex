@@ -51,7 +51,8 @@ def build_xgboost_model(n_estimators: int = None, max_depth: int = None, learnin
         n_estimators=n_estimators if n_estimators is not None else CFG["xgb_n_estimators"],
         max_depth=max_depth if max_depth is not None else CFG["xgb_max_depth"],
         learning_rate=learning_rate if learning_rate is not None else CFG["xgb_learning_rate"],
-        random_state=CFG.get("xgb_random_state", 42)
+        random_state=CFG.get("xgb_random_state", 42),
+        n_jobs=1,  # macOS에서 torch와 OpenMP 충돌(세그폴트) 방지
     )
 
 

@@ -12,6 +12,7 @@ from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
+from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 2] 호출 로그 기록
 
 def run_sumo_gui():
     if 'SUMO_HOME' in os.environ:
@@ -75,6 +76,18 @@ def run_sumo_gui():
         seed=meta.get("passenger_seed"),
     )
 
+    # [Module 2] 호출 로그 기록기 (GUI 창을 중간에 닫아도 그때까지 쌓인 로그는 저장)
+    try:
+        from config_loader import CFG as _CFG
+    except Exception:
+        _CFG = {}
+    recorder = DemandLogRecorder(
+        sim_start_hour=sim_start_hour,
+        zones=meta.get("zones", {}),
+        cfg=_CFG,
+        spawn_manager=spawn_manager,
+    )
+
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
 
     # sim_end_seconds도 못 구했으면(둘 다 없음) 무한정 도는 걸 막기 위한 최후 안전장치로
@@ -98,6 +111,7 @@ def run_sumo_gui():
             if hungarian_dispatcher:
                 hungarian_dispatcher.maintain(now_seconds)
             spawn_manager.maintain(now_seconds, timeout_removed_pids=pax_manager.removed_pids)
+            recorder.step(now_seconds, timeout_removed_pids=pax_manager.removed_pids)  # [Module 2] 호출 로그 기록
            
             if step % 100 == 0:
                 sc = spawn_manager.spawn_counts
@@ -142,6 +156,10 @@ def run_sumo_gui():
 
     except Exception as e:
         print(f"시뮬레이션 실행 중 오류 발생: {e}")
+
+    finally:
+        if recorder.records:
+            recorder.save()
 
 
 if __name__ == "__main__":
