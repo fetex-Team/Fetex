@@ -20,6 +20,8 @@ class SpatialIndexer:
 
     def latlng_to_h3(self, lat: float, lng: float) -> str:
         """단일 GPS 좌표를 H3 인덱스로 변환"""
+        if not (-90 <= lat <= 90 and -180 <= lng <= 180):
+            raise ValueError("GPS 위도·경도 범위를 확인하세요.")
         return h3.latlng_to_cell(lat, lng, self.h3_resolution)
 
     def latlng_to_geohash(self, lat: float, lng: float) -> str:

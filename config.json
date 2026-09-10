@@ -1,8 +1,8 @@
 {
   "region": "강남역",
-  "freq": "10min",
-  "passenger_seed": null,
-  "taxi_strategy": "prepositioned",
+  "freq": "5min",
+  "passenger_seed": 42,
+  "taxi_strategy": "forecast",
   "use_real_map": true,
   "dispatch_use_euclidean": true,
   "suppress_sumo_warnings": true,
@@ -87,5 +87,7 @@
   "demo_data_rows": 1000,
   "demo_data_minutes": 500,
   "xgb_random_state": 42,
-  "train_random_state": 42
+  "train_random_state": 42,
+  "passenger_mode": "replay",
+  "sim_date": "2026-08-31"
 }

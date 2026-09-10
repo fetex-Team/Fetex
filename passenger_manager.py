@@ -47,6 +47,6 @@ class PassengerTimeoutManager:
                 try:
                     traci.person.remove(pid)
                 except traci.exceptions.TraCIException:
-                    pass
+                    continue
                 self.removed_pids.add(pid)
                 self.removed_at[pid] = now_seconds

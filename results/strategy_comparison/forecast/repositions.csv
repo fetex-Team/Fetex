@@ -1,0 +1,4 @@
+time_sec,taxi_id,from_cell,to_cell,to_edge,travel_time_sec
+1.0,taxi_0,8830e1ca29fffff,8830e1ca23fffff,C0D0,60.79007643582062
+300.0,taxi_3,8830e1ca21fffff,8830e1ca23fffff,C0D0,38.29169107567285
+600.0,taxi_4,8830e1ca07fffff,8830e1ca23fffff,C0D0,95.15800214198757
