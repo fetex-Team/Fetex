@@ -9,6 +9,12 @@ CONFIG_PATH=os.path.join(ROOT,"config.json")
 FREQ_OPTIONS=["1min","5min","10min","15min","30min"]
 STRATEGIES=["patrol","prepositioned"]
 
+# A/B 비교하기 다이얼로그에서 팩터로 고를 수 있는 항목들 (key -> (라벨, 선택 가능한 값 목록))
+FACTOR_OPTIONS={
+"taxi_strategy":("택시 전략",STRATEGIES),
+"taxi_dispatch_algorithm":("배차 알고리즘",["greedy","routeExtension","traci","hungarian"]),
+}
+
 # key, label, min, max, decimals, integer
 NUMERIC_GROUPS={
 "Module 1 — 맵/시뮬레이션":[
@@ -42,7 +48,7 @@ class ConfigGUI:
   pf=ttk.LabelFrame(self.root,text="프리셋",padding=8); pf.pack(fill="x",padx=12,pady=4)
   self.preset_combo=ttk.Combobox(pf,state="readonly"); self.preset_combo.pack(side="left",fill="x",expand=True,padx=5); ttk.Button(pf,text="불러오기",command=self.load_preset).pack(side="left"); ttk.Button(pf,text="저장",command=self.save_preset).pack(side="left"); ttk.Button(pf,text="삭제",command=self.delete_preset).pack(side="left"); self.refresh_presets()
   bf=ttk.Frame(self.root); bf.pack(fill="x",padx=12,pady=8)
-  ttk.Button(bf,text="현재 설정 저장",command=self.save_config_only).pack(side="left",fill="x",expand=True,padx=3); ttk.Button(bf,text="▶ 플레이",command=self.run_main).pack(side="left",fill="x",expand=True,padx=3); ttk.Button(bf,text="학습만 실행",command=self.run_training).pack(side="left",fill="x",expand=True,padx=3); ttk.Button(bf,text="🧪 동일 설정 A/B 비교",command=self.run_headless_compare).pack(side="left",fill="x",expand=True,padx=3); ttk.Button(bf,text="🧪 배차 알고리즘 A/B 비교",command=self.open_dispatch_compare_dialog).pack(side="left",fill="x",expand=True,padx=3)
+  ttk.Button(bf,text="적용하기",command=self.save_config_only).pack(side="left",fill="x",expand=True,padx=3); ttk.Button(bf,text="▶ 플레이",command=self.run_main).pack(side="left",fill="x",expand=True,padx=3); ttk.Button(bf,text="학습만 실행",command=self.run_training).pack(side="left",fill="x",expand=True,padx=3); ttk.Button(bf,text="🧪 A/B 비교하기",command=self.open_ab_compare_dialog).pack(side="left",fill="x",expand=True,padx=3)
   self.status=ttk.Label(self.root,text="현재 config.json을 불러오는 중..."); self.status.pack(anchor="w",padx=12,pady=(0,8))
  def _numeric_tab(self,nb,tab,items):
   frame=ttk.Frame(nb,padding=12); nb.add(frame,text=tab.split("—")[0].strip() if "—" in tab else tab)
@@ -81,7 +87,7 @@ class ConfigGUI:
   c=self.current()
   with open(CONFIG_PATH,"w",encoding="utf-8") as f:
    json.dump(c,f,ensure_ascii=False,indent=2)
-  self.status.config(text="config.json 저장 완료")
+  self.status.config(text="설정을 적용했습니다. (config.json 저장 완료)")
  def refresh_presets(self):
   files=[f[:-5] for f in os.listdir(PRESET_DIR) if f.endswith(".json")]; self.preset_combo["values"]=files;
   if files:self.preset_combo.current(0)
@@ -114,37 +120,55 @@ class ConfigGUI:
   self.save_config_only();
   if self._run(os.path.join("module1_simulation","build_env.py"),blocking=True):self._run("main.py")
  def run_training(self):self.save_config_only();self._run("train.py")
- def run_headless_compare(self):self.save_config_only();self._run("measure_wait_time.py",["compare"])
- def open_dispatch_compare_dialog(self):
-    win = tk.Toplevel(self.root)
-    win.title("배차 알고리즘 A/B 비교")
-    win.geometry("320x160")
-    win.resizable(False, False)
+ def open_ab_compare_dialog(self):
+  win=tk.Toplevel(self.root)
+  win.title("A/B 비교하기")
+  win.geometry("380x460")
+  win.resizable(False,False)
 
-    algo_options = ["greedy", "routeExtension", "traci", "hungarian"]
+  ttk.Label(win,text="비교할 값을 체크하세요. 각 항목당 2개 이상 체크해야 합니다.\n"
+                      "체크된 값들의 카테시안 조합만큼 새 창이 병렬로 뜹니다.",
+            padding=10,wraplength=340,justify="left").pack()
 
-    ttk.Label(win, text="비교할 배차 알고리즘을 선택하세요", padding=10).pack()
+  # key -> {value: BooleanVar}
+  value_vars={}
 
-    row_a = ttk.Frame(win); row_a.pack(fill="x", padx=15, pady=5)
-    ttk.Label(row_a, text="A:", width=4).pack(side="left")
-    var_a = tk.StringVar(value="greedy")
-    ttk.Combobox(row_a, textvariable=var_a, values=algo_options, state="readonly").pack(side="left", fill="x", expand=True)
+  for key,(label,values) in FACTOR_OPTIONS.items():
+   box=ttk.LabelFrame(win,text=label,padding=8)
+   box.pack(fill="x",padx=15,pady=6)
+   value_vars[key]={}
+   for v in values:
+    var=tk.BooleanVar(value=False)
+    value_vars[key][v]=var
+    ttk.Checkbutton(box,text=v,variable=var).pack(anchor="w")
 
-    row_b = ttk.Frame(win); row_b.pack(fill="x", padx=15, pady=5)
-    ttk.Label(row_b, text="B:", width=4).pack(side="left")
-    var_b = tk.StringVar(value="hungarian")
-    ttk.Combobox(row_b, textvariable=var_b, values=algo_options, state="readonly").pack(side="left", fill="x", expand=True)
+  def run_compare():
+   selected={}
+   for key,(label,values) in FACTOR_OPTIONS.items():
+    chosen=[v for v,var in value_vars[key].items() if var.get()]
+    if 0<len(chosen)<2:
+     messagebox.showwarning("경고",f"'{label}'는 2개 이상 체크해야 비교가 됩니다. (또는 아예 체크 해제)")
+     return
+    if chosen:
+     selected[key]=chosen
 
-    def run_compare():
-        a, b = var_a.get(), var_b.get()
-        if a == b:
-            messagebox.showwarning("경고", "A와 B가 같으면 비교 의미가 없습니다.")
-            return
-        win.destroy()
-        self.save_config_only()
-        self._run("parallel_dispatch_orchestrator.py", [a, b])
+   if not selected:
+    messagebox.showwarning("경고","비교할 항목을 하나 이상 체크하세요.")
+    return
 
-        
-    ttk.Button(win, text="실행 (새 창에서 결과 확인)", command=run_compare).pack(pady=15, fill="x", padx=15)
+   import itertools
+   keys=list(selected.keys())
+   combos=[dict(zip(keys,combo)) for combo in itertools.product(*[selected[k] for k in keys])]
+
+   if len(combos)>8:
+    if not messagebox.askyesno("확인",f"조합이 {len(combos)}개라 창이 {len(combos)}개 동시에 뜹니다. 계속할까요?"):
+     return
+
+   win.destroy()
+   self.save_config_only()
+   self._run("multi_factor_compare.py",[json.dumps(combos,ensure_ascii=False)])
+
+  ttk.Button(win,text="실행 (조합별로 새 창에서 병렬 측정)",command=run_compare).pack(pady=15,fill="x",padx=15)
+
 if __name__=="__main__":
  root=tk.Tk();ConfigGUI(root);root.mainloop()
