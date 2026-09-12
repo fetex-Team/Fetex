@@ -1,68 +1,31 @@
-import sys
-import os
-import pandas as pd
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+"""지역별 수요/빈 택시 수로 제한된 범위의 인센티브 배수를 계산한다."""
+import math
 from config_loader import CFG
 
 
 class SurgePricingEngine:
-    """
-    수급 불균형 지표 정의 및 동적 인센티브(Surge Pricing) 산출 클래스
-    """
-    def __init__(self, base_fare: int = None, min_multiplier: float = None, max_multiplier: float = None):
-        # base_fare 기본값: config.json (기본 4800원, 서울 택시 기본요금 기준)
-        # max_multiplier 기본값: config.json (기본 3.0배)
-        self.base_fare = base_fare if base_fare is not None else CFG["base_fare"]
-        self.min_multiplier = min_multiplier if min_multiplier is not None else CFG.get("min_multiplier", 1.0)
-        self.max_multiplier = max_multiplier if max_multiplier is not None else CFG["max_multiplier"]
-        self.surge_coefficient = CFG["surge_coefficient"]
+    def __init__(self, base_fare=None, min_multiplier=None, max_multiplier=None):
+        self.base_fare = CFG['base_fare'] if base_fare is None else base_fare
+        self.min_multiplier = CFG['min_multiplier'] if min_multiplier is None else min_multiplier
+        self.max_multiplier = CFG['max_multiplier'] if max_multiplier is None else max_multiplier
+        self.surge_coefficient = CFG['surge_coefficient']
+        if not all(math.isfinite(v) for v in (self.base_fare, self.min_multiplier, self.max_multiplier, self.surge_coefficient)) or self.base_fare < 0 or not 0 < self.min_multiplier <= self.max_multiplier or self.surge_coefficient < 0:
+            raise ValueError('요금·배수·계수 범위를 확인하세요.')
 
-    def calculate_imbalance(self, demand: float, supply: float) -> float:
-        """수요 대비 공급 비율 (수급 불균형 지표) 산출"""
-        if supply == 0:
-            return float('inf') if demand > 0 else 1.0
-        return demand / supply
+    def calculate_imbalance(self, demand, supply):
+        if not all(math.isfinite(v) and v >= 0 for v in (demand, supply)):
+            raise ValueError('수요와 공급은 유한한 0 이상의 값이어야 합니다.')
+        # 공급 0도 JSON/CSV에 기록 가능한 유한한 지표로 표현한다.
+        return demand / max(supply, 1)
 
-    def get_multiplier(self, imbalance_ratio: float) -> float:
-        """불균형 지표에 따른 할증 배수 계산"""
-        # 공급이 충분하거나 수요가 적을 때 (비율 <= 1.0)
-        if imbalance_ratio <= 1.0:
-            return self.min_multiplier
+    def get_multiplier(self, imbalance_ratio):
+        if not math.isfinite(imbalance_ratio) or imbalance_ratio < 0:
+            raise ValueError('불균형 지표가 유효하지 않습니다.')
+        return min(self.max_multiplier, max(self.min_multiplier, 1 + max(0, imbalance_ratio - 1) * self.surge_coefficient))
 
-        # 수요가 더 많을 경우 초과분에 비례하여 배수 증가
-        # 증가계수(surge_coefficient)는 config.json에서 조절 (기본 0.4)
-        multiplier = 1.0 + (imbalance_ratio - 1.0) * self.surge_coefficient
-        return min(max(multiplier, self.min_multiplier), self.max_multiplier)
-
-    def apply_surge_pricing(self, df: pd.DataFrame) -> pd.DataFrame:
-        print(f"동적 인센티브(Surge Pricing) 산출 중... (기본요금={self.base_fare}원, "
-              f"최대배수={self.max_multiplier}, 증가계수={self.surge_coefficient})")
-
-        # 불균형 지표(imbalance_ratio) 및 할증 배수(surge_multiplier) 컬럼 생성
-        df['imbalance_ratio'] = df.apply(
-            lambda row: self.calculate_imbalance(row['predicted_demand'], row['available_taxis']), axis=1
-        )
-        df['surge_multiplier'] = df['imbalance_ratio'].apply(self.get_multiplier)
-
-        # 최종 요금 산출
-        df['final_fare'] = (self.base_fare * df['surge_multiplier']).astype(int)
-
-        print("산출 완료!")
-        return df
-
-
-if __name__ == "__main__":
-    # Module 3에서 넘어온 예측 수요와 현재 가용 택시를 가정한 샘플 데이터
-    sample_data = pd.DataFrame({
-        'h3_index': ['8830e1ca2bfffff'] * 3,
-        'time_bucket': ['18:00', '18:05', '18:10'],
-        'predicted_demand': [10, 50, 5],   # 18:05에 수요 폭증 가정
-        'available_taxis': [12, 10, 20]    # 18:05에 택시 부족
-    })
-
-    engine = SurgePricingEngine()  # config.json 값 사용
-    result_df = engine.apply_surge_pricing(sample_data)
-
-    print("\n--- 동적 요금제 적용 결과 ---")
-    print(result_df[['time_bucket', 'predicted_demand', 'available_taxis', 'imbalance_ratio', 'surge_multiplier', 'final_fare']])
+    def apply_surge_pricing(self, df):
+        frame = df.copy()
+        frame['imbalance_ratio'] = [self.calculate_imbalance(d, s) for d, s in zip(frame.predicted_demand, frame.available_taxis)]
+        frame['surge_multiplier'] = frame.imbalance_ratio.map(self.get_multiplier)
+        frame['final_fare'] = (self.base_fare * frame.surge_multiplier).round().astype(int)
+        return frame

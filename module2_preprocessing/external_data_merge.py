@@ -1,31 +1,27 @@
-import sys
-import os
+"""시간·지역 키로 외부 관측을 결합한다. 미래 값으로 결측치를 채우지 않는다."""
 import pandas as pd
-import numpy as np
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config_loader import CFG
+EXTERNAL_COLUMNS = ['temperature', 'precipitation', 'traffic_index', 'event_flag', 'is_holiday']
 
 
-def merge_external_data(df):
-    """
-    H3/Geohash 시계열 격자 데이터에 외부 환경 데이터(날씨, 휴일 등)를 결합
-    온도 범위는 config.json에서 선택된 지역(region)에 따라 자동 결정됨
-    """
-    df = df.copy()
-
-    # 시간 컬럼 확인
-    time_col = 'pickup_datetime' if 'pickup_datetime' in df.columns else 'datetime'
-
-    # 1. 날씨 mock/실제 데이터 결합 (기온, 강수량)
-    # 실제 API 연동이 없는 경우에도 파이프라인이 정상 작동하도록 시계열 기반 피처 생성
-    np.random.seed(42)
-    df['temperature'] = np.random.uniform(CFG['temp_min'], CFG['temp_max'], size=len(df))
-    df['precipitation'] = np.random.choice([0.0, 0.0, 0.0, 1.2, 5.5], size=len(df))  # mm
-
-    # 2. 주말/공휴일 여부 피처
-    if time_col in df.columns:
-        df[time_col] = pd.to_datetime(df[time_col])
-        df['is_weekend'] = df[time_col].dt.dayofweek.isin([5, 6]).astype(int)
-
-    return df
+def merge_external_data(df, external=None):
+    if external is None:
+        raise ValueError('시간·H3별 외부 데이터가 필요합니다. 합성 자료도 명시적으로 전달하세요.')
+    frame, external = df.copy(), external.copy()
+    keys = ['time_bucket', 'h3_index']
+    for table in (frame, external):
+        table['time_bucket'] = pd.to_datetime(table['time_bucket'])
+    if external.duplicated(keys).any():
+        raise ValueError('외부 데이터의 시간·지역 키가 중복되었습니다.')
+    if not set(EXTERNAL_COLUMNS).issubset(external):
+        raise ValueError(f'외부 데이터에 필요한 열: {EXTERNAL_COLUMNS}')
+    frame = frame.merge(external[keys + EXTERNAL_COLUMNS], on=keys, how='left', validate='one_to_one')
+    frame = frame.sort_values(['h3_index', 'time_bucket'])
+    for col in EXTERNAL_COLUMNS:
+        frame[col] = pd.to_numeric(frame[col], errors='raise')
+        if frame[col].isin([float('inf'), float('-inf')]).any():
+            raise ValueError(f'{col}에 유한하지 않은 관측이 있습니다.')
+        frame[col + '_missing'] = frame[col].isna().astype(int)
+        # 선행 관측만 전달하며 최초 미관측은 명시적인 0+missing 표시를 사용한다.
+        frame[col] = frame.groupby('h3_index')[col].ffill().fillna(0)
+    return frame.sort_values(keys).reset_index(drop=True)

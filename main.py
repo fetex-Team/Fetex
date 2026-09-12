@@ -1,16 +1,14 @@
-import sys, os
-PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
+"""저장된 환경과 모델로 실제 배차 시뮬레이션을 실행한다."""
+import argparse
+from pathlib import Path
+from measure_wait_time import run_and_measure, print_result, ROOT
 
-from config_loader import CFG
-from module1_simulation.run_simulation import run_sumo_gui
 
-def run_pipeline():
-    print("=== [12] AI Mobility — SUMO 시뮬레이션 실행 ===\n")
-    print(f"[안내] 선택된 지역: {CFG.get('region', '강남역')}")
-    print("▶ [Module 1] SUMO 디지털 트윈 시뮬레이션 가동")
-    run_sumo_gui()
-
-if __name__ == "__main__":
-    run_pipeline()
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--headless', action='store_true')
+    parser.add_argument('--strategy', choices=['patrol', 'prepositioned', 'forecast'])
+    args = parser.parse_args()
+    result = run_and_measure(sumo_binary='sumo' if args.headless else 'sumo-gui', strategy=args.strategy,
+                             output_dir=ROOT / 'results/simulation')
+    print_result('simulation', result)

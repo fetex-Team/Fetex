@@ -1,190 +1,137 @@
-import os
-import sys
-
-# 1. 파이썬 모듈 탐색 경로(sys.path)에 최상위 프로젝트 폴더(ai_mobility_project) 등록
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_ROOT = os.path.abspath(os.path.join(CURRENT_DIR))  # train.py는 프로젝트 루트에 위치
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
-
-# 2. sys.path 등록 후 모듈들을 임포트
-import torch
-import torch.nn as nn
-import torch.optim as optim
+"""6구간 XGBoost 예측, 시간 경계 검증, 선택적 실제 CNN-LSTM 시퀀스 학습."""
+import argparse
+import json
+from pathlib import Path
+import joblib
 import numpy as np
 import pandas as pd
-import joblib
-from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split, GridSearchCV
-
-from config_loader import CFG
-
-# 하위 모듈 불러오기
-from module3_prediction.models import CNNLSTMModel, build_xgboost_model
-from evaluate import calculate_metrics
-from module2_preprocessing.spatial_indexing import SpatialIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
+from sklearn.model_selection import ParameterGrid
+from xgboost import XGBRegressor
+from config_loader import CFG, ROOT
+from data.generate import generate_data, save_data
+from evaluate import calculate_metrics, save_evaluation
+from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, make_supervised, chronological_split
 from module2_preprocessing.external_data_merge import merge_external_data
 
-# measure_wait_time.py의 run_and_measure()가 시뮬레이션을 돌릴 때마다 append하는
-# 실제 수요 로그. (단독 실행 / parallel_dispatch_worker.py / multi_factor_compare.py의
-# 병렬 워커 전부 여기에 로그를 남김 — run_simulation.py의 GUI 실행만 미포함)
-DEMAND_LOG_PATH = os.path.join(PROJECT_ROOT, "data", "raw", "simulation_demand_log.csv")
-
-# 로그가 이 건수보다 적으면 lag/rolling 피처 생성 시 dropna로 대부분 날아갈 수 있어 경고만 출력
-MIN_RECOMMENDED_ROWS = 200
+MODEL_PATH = Path(ROOT) / 'saved_models/demand_v2.joblib'
 
 
-def prepare_real_sequence_dataset(max_lag=None):
-    """Module 2 파이프라인을 거쳐 시계열 시퀀스(N, Seq_Len, Features) 데이터셋 생성"""
-    max_lag = max_lag if max_lag is not None else CFG["max_lag"]
-
-    if os.path.exists(DEMAND_LOG_PATH):
-        df = pd.read_csv(DEMAND_LOG_PATH, parse_dates=["pickup_datetime"])
-        print(f"[안내] 실제 시뮬레이션 수요 로그 {len(df)}건을 학습 데이터로 사용합니다 "
-              f"({DEMAND_LOG_PATH}).")
-        if len(df) < MIN_RECOMMENDED_ROWS:
-            print(f"[경고] 로그가 {len(df)}건뿐입니다 (권장 {MIN_RECOMMENDED_ROWS}건 이상). "
-                  f"lag/rolling 피처(max_lag={max_lag}) 생성 시 dropna로 대부분 날아갈 수 있으니, "
-                  f"measure_wait_time.py나 A/B·멀티팩터 비교를 몇 차례 더 돌려서 로그를 쌓는 것을 권장합니다.")
-    else:
-        print(f"[경고] {DEMAND_LOG_PATH}가 없어 가상 데이터로 대체합니다. "
-              f"먼저 measure_wait_time.py / A·B 비교 / 멀티팩터 비교를 한 번 이상 돌려 "
-              f"학습용 수요 로그를 쌓아주세요.")
-        dates = pd.date_range("2026-08-28 18:00:00", periods=1000, freq="1min")
-        df = pd.DataFrame({
-            'pickup_datetime': dates,
-            'latitude': np.random.uniform(37.495, 37.505, 1000),
-            'longitude': np.random.uniform(127.020, 127.035, 1000)
-        })
-
-    df = merge_external_data(df)
-
-    indexer = SpatialIndexer()  # config.json의 h3_resolution 사용
-    df = indexer.process_dataframe(df, lat_col='latitude', lng_col='longitude')
-
-    prep = TimeSeriesPreprocessor(max_lag=max_lag)  # config.json의 freq 사용
-    agg_df = prep.aggregate_demands(df, timestamp_col='pickup_datetime', spatial_col='h3_index')
-    feature_df = prep.create_features(agg_df, spatial_col='h3_index')
-
-    if len(feature_df) == 0:
-        raise ValueError(
-            "피처 생성 후 남은 행이 0개입니다. 수요 로그가 너무 적거나(짧은 시뮬레이션 1~2회) "
-            "h3_index/시간 버킷이 너무 분산되어 lag/rolling 윈도우를 채우지 못했습니다. "
-            "시뮬레이션을 더 돌려 data/raw/simulation_demand_log.csv를 늘린 뒤 다시 시도하세요."
-        )
-
-    feature_cols = [c for c in feature_df.columns if c not in ['time_bucket', 'h3_index', 'demand']]
-
-    # 2D Tabular Feature Matrix (XGBoost용)
-    X_mat = feature_df[feature_cols].fillna(0).values
-    y_vec = feature_df['demand'].fillna(0).values
-
-    return X_mat, y_vec, feature_cols, max_lag
+def prepare_dataset(meta, days=None):
+    end = pd.Timestamp(meta['config']['sim_date'])
+    days = days or CFG['training_days']
+    start = end - pd.Timedelta(days=days)
+    calls, external = generate_data(meta, start, days, seed=CFG['train_random_state'])
+    save_data(calls, external, Path(ROOT) / 'data/generated')
+    prep = TimeSeriesPreprocessor()
+    panel = prep.aggregate_demands(calls, cells=set(meta['edge_cells'].values()), start=start, end=end)
+    return prep.create_features(merge_external_data(panel, external)), calls
 
 
-if __name__ == "__main__":
-    os.makedirs('saved_models', exist_ok=True)
+def sequence_arrays(frame, features, targets, length):
+    """지역별 연속된 과거 length개 행을 입력으로 사용한다."""
+    xs, ys, rows = [], [], []
+    if length < 2:
+        raise ValueError('시퀀스 길이는 2 이상이어야 합니다.')
+    for _, group in frame.groupby('h3_index', sort=True):
+        group = group.sort_values('time_bucket')
+        if len(group) < length:
+            continue
+        values = group[features].to_numpy(dtype=np.float32)
+        windows = np.lib.stride_tricks.sliding_window_view(values, length, axis=0).transpose(0, 2, 1)
+        stamps = group.time_bucket.to_numpy()
+        valid = stamps[length - 1:] - stamps[:len(group) - length + 1] == np.timedelta64(5 * (length - 1), 'm')
+        xs.append(windows[valid]); ys.append(group[targets].to_numpy(dtype=np.float32)[length - 1:][valid])
+        rows.append(group.iloc[length - 1:].loc[valid])
+    if not xs or not any(len(x) for x in xs):
+        raise ValueError('CNN-LSTM 입력 시퀀스가 부족합니다.')
+    return np.concatenate(xs), np.concatenate(ys), pd.concat(rows, ignore_index=True)
 
-    # 1. 데이터셋 준비 및 Train/Test 분리 (비율은 config.json에서 조절)
-    X_mat, y_vec, feature_cols, seq_len = prepare_real_sequence_dataset()
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_mat, y_vec, test_size=CFG["test_size"], random_state=42, shuffle=False
-    )
 
-    print(f"[데이터 분리 완료] Train: {len(X_train)}개, Test: {len(X_test)}개 | Features: {len(feature_cols)}개 | test_size={CFG['test_size']}")
 
-    # ------------------------------------------------------------
-    # 2. XGBoost 학습, 하이퍼파라미터 튜닝(GridSearch), 평가 및 저장
-    # ------------------------------------------------------------
-    print("\n--- [XGBoost] Hyperparameter Tuning (GridSearch) 시작 ---")
+def train_cnn(parts, features, targets, output_dir):
+    import torch
+    from torch import nn
+    from torch.utils.data import DataLoader, TensorDataset
+    from module3_prediction.models import CNNLSTMModel
+    # XGBoost/PyTorch의 서로 다른 OpenMP 런타임이 충돌한 macOS 환경에서 단일 CPU 스레드를 사용한다.
+    torch.manual_seed(CFG['train_random_state']); torch.set_num_threads(1)
+    arrays = [sequence_arrays(p, features, targets, CFG['sequence_length']) for p in parts]
+    mean = arrays[0][0].mean(axis=(0, 1)); scale = arrays[0][0].std(axis=(0, 1)); scale[scale < 1e-6] = 1
+    xs = [torch.from_numpy((a[0] - mean) / scale) for a in arrays]
+    model = CNNLSTMModel(len(features), output_dim=6)
+    optimizer = torch.optim.Adam(model.parameters(), lr=CFG['cnn_lr'])
+    loader = DataLoader(TensorDataset(xs[0], torch.from_numpy(arrays[0][1])), batch_size=CFG['cnn_batch_size'], shuffle=True)
+    loss_fn = nn.MSELoss(); best = float('inf'); best_state = None
+    for epoch in range(CFG['cnn_epochs']):
+        model.train()
+        for x, y in loader:
+            optimizer.zero_grad(); loss_fn(model(x), y).backward(); optimizer.step()
+        model.eval()
+        with torch.no_grad(): loss = loss_fn(model(xs[1]), torch.from_numpy(arrays[1][1])).item()
+        if loss < best:
+            best = loss; best_state = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        print(f'CNN epoch {epoch + 1}: validation MSE={loss:.4f}')
+    model.load_state_dict(best_state)
+    with torch.no_grad(): predictions = model(xs[2]).numpy().clip(0)
+    torch.save({'state_dict': best_state, 'input_dim': len(features), 'output_dim': 6,
+                'feature_cols': features, 'sequence_length': CFG['sequence_length'],
+                'mean': mean.tolist(), 'scale': scale.tolist(),
+                'hidden_dim': CFG['cnn_hidden_dim'], 'num_layers': CFG['cnn_num_layers'],
+                'kernel_size': CFG['cnn_kernel_size']}, MODEL_PATH.with_name('cnn_lstm_v2.pt'))
+    save_evaluation(arrays[2][2], targets, {'cnn_lstm': predictions}, output_dir / 'cnn')
 
-    # config.json 값(xgb_n_estimators 등)을 중심으로 좌우 넓게 탐색
-    base_n = CFG["xgb_n_estimators"]
-    base_depth = CFG["xgb_max_depth"]
-    base_lr = CFG["xgb_learning_rate"]
 
-    param_grid = {
-        'n_estimators': sorted(set([max(10, base_n - 50), base_n, base_n + 100])),
-        'max_depth': sorted(set([max(1, base_depth - 2), base_depth, base_depth + 2])),
-        'learning_rate': sorted(set([round(max(0.01, base_lr * 0.3), 3), base_lr]))
-    }
-    print(f"탐색 범위: {param_grid}")
+def train(meta_path=None, days=None, cnn=False):
+    path = Path(meta_path or Path(ROOT) / 'module1_simulation/sumo_config/runtime_meta.json')
+    meta = json.loads(path.read_text())
+    if 'config' in meta:
+        CFG.clear(); CFG.update(meta['config'])
+    if 'edge_cells' not in meta:
+        raise ValueError('python module1_simulation/build_env.py로 환경을 먼저 다시 생성하세요.')
+    panel, calls = prepare_dataset(meta, days)
+    frame, features, targets = make_supervised(panel)
+    parts = chronological_split(frame, CFG['validation_size'], CFG['test_size'])
+    training, validation, test = parts
+    params = {'max_depth': sorted({max(1, CFG['xgb_max_depth'] - 2), CFG['xgb_max_depth']}),
+              'n_estimators': sorted({max(10, CFG['xgb_n_estimators'] // 2), CFG['xgb_n_estimators']})}
+    best_score = float('inf'); best_model = None; trials = []
+    for candidate in ParameterGrid(params):
+        model = XGBRegressor(**candidate, learning_rate=CFG['xgb_learning_rate'], random_state=CFG['xgb_random_state'], n_jobs=2)
+        model.fit(training[features], training[targets])
+        score = calculate_metrics(validation[targets].to_numpy(), model.predict(validation[features]).clip(0))['RMSE']
+        trials.append({**candidate, 'validation_RMSE': score})
+        if score < best_score: best_model, best_score = model, score
+    MODEL_PATH.parent.mkdir(exist_ok=True)
+    # 원점 t는 완료된 5분 구간이며 모델 파일에 피처·격자·학습 범위를 함께 저장한다.
+    artifact = {'version': 2, 'model': best_model, 'feature_cols': features, 'horizon': 6,
+                'freq': '5min', 'cells': sorted(frame.h3_index.unique()), 'max_lag': CFG['max_lag'],
+                'rolling_short': CFG['rolling_short'], 'rolling_long': CFG['rolling_long'],
+                'trained_until': str(training.time_bucket.max() + pd.Timedelta(minutes=30)),
+                'data_until': str(panel.time_bucket.max() + pd.Timedelta(minutes=5)),
+                'source': 'synthetic', 'seed': CFG['train_random_state']}
+    joblib.dump(artifact, MODEL_PATH)
+    directory = Path(ROOT) / 'results/prediction'
+    scores = save_evaluation(test, targets, {'xgboost': best_model.predict(test[features]).clip(0),
+        'persistence': np.repeat(test[['observed_demand']].to_numpy(), 6, axis=1)}, directory)
+    metadata = {'source': 'synthetic', 'config': meta['config'], 'calls': len(calls), 'cells': len(artifact['cells']), 'trials': trials,
+                'splits': {name: {'rows': len(part), 'start': str(part.time_bucket.min()), 'end': str(part.time_bucket.max())}
+                           for name, part in zip(('train', 'validation', 'test'), parts)}}
+    (directory / 'experiment.json').write_text(json.dumps(metadata, ensure_ascii=False, indent=2))
+    # EDA는 실제로 생성한 호출의 시간/지역 분포를 저장한다.
+    panel.groupby(['hour', 'h3_index']).demand.mean().unstack().to_csv(directory / 'eda_hour_cell.csv')
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    heat = panel.groupby(['hour', 'h3_index']).demand.mean().unstack()
+    fig, ax = plt.subplots(figsize=(8, 5)); im = ax.imshow(heat, aspect='auto'); fig.colorbar(im, label='Mean calls / 5 min')
+    ax.set(xlabel='H3 cell index', ylabel='Hour', title='Synthetic demand by hour and cell'); fig.tight_layout()
+    fig.savefig(directory / 'eda.png'); plt.close(fig)
+    if cnn: train_cnn(parts, features, targets, directory)
+    print(json.dumps(scores, ensure_ascii=False, indent=2)); print(f'모델 저장: {MODEL_PATH}')
+    return artifact
 
-    # 데이터가 적을 때 GridSearchCV의 cv=3 fold가 표본 부족으로 실패하지 않도록 안전장치
-    n_splits = min(3, len(X_train)) if len(X_train) > 1 else 1
-    if n_splits < 3:
-        print(f"[경고] 학습 표본이 적어({len(X_train)}개) cross-validation fold를 {n_splits}로 줄입니다.")
 
-    base_xgb = build_xgboost_model()
-    if n_splits >= 2:
-        grid_search = GridSearchCV(base_xgb, param_grid, cv=n_splits, scoring='neg_root_mean_squared_error')
-        grid_search.fit(X_train, y_train)
-        best_xgb = grid_search.best_estimator_
-        print(f"최적 파라미터: {grid_search.best_params_}")
-    else:
-        print("[경고] 표본이 너무 적어 GridSearchCV를 생략하고 기본 파라미터로 학습합니다.")
-        best_xgb = base_xgb
-        best_xgb.fit(X_train, y_train)
-
-    # 성능 평가 (calculate_metrics 활용)
-    xgb_preds = best_xgb.predict(X_test)
-    xgb_metrics = calculate_metrics(y_test, xgb_preds)
-    print(f"[XGBoost Test 평가 지표] RMSE: {xgb_metrics['RMSE']:.4f} | MAE: {xgb_metrics['MAE']:.4f} | MAPE: {xgb_metrics['MAPE (%)']:.4f}%")
-
-    joblib.dump({'model': best_xgb, 'feature_cols': feature_cols}, 'saved_models/xgboost_demand.pkl')
-
-    # ------------------------------------------------------------
-    # 3. CNN-LSTM 학습, 평가 및 저장 (전체 피처 활용 시퀀스 구조)
-    # ------------------------------------------------------------
-    print("\n--- [CNN-LSTM] 전체 피처 활용 시퀀스 구조 학습 시작 ---")
-
-    num_features = X_train.shape[1]  # 피처 전체 사용
-
-    X_train_seq = torch.tensor(X_train, dtype=torch.float32).unsqueeze(1)
-    y_train_seq = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
-
-    X_test_seq = torch.tensor(X_test, dtype=torch.float32).unsqueeze(1)
-    y_test_seq = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
-
-    train_loader = DataLoader(
-        TensorDataset(X_train_seq, y_train_seq),
-        batch_size=CFG["cnn_batch_size"],
-        shuffle=True
-    )
-
-    # hidden_dim, num_layers, kernel_size는 CNNLSTMModel 내부에서 config.json 값을 자동으로 사용
-    dl_model = CNNLSTMModel(input_dim=num_features)
-    criterion = nn.MSELoss()
-    optimizer = optim.Adam(dl_model.parameters(), lr=CFG["cnn_lr"])
-
-    print(f"CNN-LSTM 설정: hidden_dim={CFG['cnn_hidden_dim']}, num_layers={CFG['cnn_num_layers']}, "
-          f"kernel_size={CFG['cnn_kernel_size']}, epochs={CFG['cnn_epochs']}, "
-          f"batch_size={CFG['cnn_batch_size']}, lr={CFG['cnn_lr']}")
-
-    dl_model.train()
-    for epoch in range(CFG["cnn_epochs"]):
-        epoch_loss = 0.0
-        for x_b, y_b in train_loader:
-            optimizer.zero_grad()
-            loss = criterion(dl_model(x_b), y_b)
-            loss.backward()
-            optimizer.step()
-            epoch_loss += loss.item()
-        if (epoch + 1) % max(1, CFG["cnn_epochs"] // 10) == 0 or epoch == 0:
-            print(f"  epoch {epoch + 1}/{CFG['cnn_epochs']} - loss: {epoch_loss / len(train_loader):.4f}")
-
-    # CNN-LSTM 평가
-    dl_model.eval()
-    with torch.no_grad():
-        dl_preds = dl_model(X_test_seq).numpy().flatten()
-    dl_metrics = calculate_metrics(y_test, dl_preds)
-    print(f"[CNN-LSTM Test 평가 지표] RMSE: {dl_metrics['RMSE']:.4f} | MAE: {dl_metrics['MAE']:.4f} | MAPE: {dl_metrics['MAPE (%)']:.4f}%")
-
-    torch.save({
-        'state_dict': dl_model.state_dict(),
-        'input_dim': num_features,
-        'feature_cols': feature_cols
-    }, 'saved_models/cnn_lstm_demand.pt')
-
-    print("\n[완료] 학습, 튜닝, 평가 및 모델 저장 완료!")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(); parser.add_argument('--meta'); parser.add_argument('--days', type=int)
+    parser.add_argument('--cnn', action='store_true', help='XGBoost와 함께 CNN-LSTM도 학습')
+    args = parser.parse_args(); train(args.meta, args.days, args.cnn)

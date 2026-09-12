@@ -52,12 +52,12 @@ class DynamicDispatcher:
             matches.append({
                 'taxi_id': taxis[t_idx][0],
                 'passenger_id': passengers[p_idx][0],
-                'wait_distance': round(dist, 2)
+                'wait_distance': float(dist)
             })
             total_wait_distance += dist
 
         print(f"매칭 완료! 총 대기 거리(비용): {round(total_wait_distance, 2)}")
-        return pd.DataFrame(matches)
+        return pd.DataFrame(matches, columns=['taxi_id', 'passenger_id', 'wait_distance'])
 
 
 def make_mock_taxis_and_passengers():
@@ -72,7 +72,7 @@ def make_mock_taxis_and_passengers():
     lo = int(CFG.get("mock_available_taxis_min", 1))
     hi = int(CFG.get("mock_available_taxis_max", 20))
     # 가용 택시 수는 min~max 범위 안에서 taxi_count를 넘지 않게 조정
-    available = max(1, min(taxi_count, random.randint(lo, max(lo, hi))))
+    available = max(0, min(taxi_count, random.randint(lo, max(lo, hi))))
 
     taxis = [(f"T_{i:03d}", random.uniform(0, 10), random.uniform(0, 10)) for i in range(available)]
     passengers = [(f"P_{i:03d}", random.uniform(0, 10), random.uniform(0, 10)) for i in range(pax_count)]

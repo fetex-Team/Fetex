@@ -1,27 +1,15 @@
-# Spatial & Data Processing
-pandas
-numpy
-geopandas
-h3
-pygeohash
-shapely
-
-# Deep Learning & ML (Module 3)
-torch
-torchvision
-torchaudio
-xgboost
-lightgbm
-scikit-learn
-prophet
-
-# Mobility Simulation (Module 1)
-eclipse-sumo
-sumolib
-traci
-networkx
-
-# Visualization & Utils
-matplotlib
-seaborn
-tqdm
+# Python 3.12에서 검증한 핵심 실행 의존성
+numpy>=1.26
+pandas>=2.2
+scipy>=1.12
+scikit-learn>=1.4
+xgboost>=2.0
+joblib>=1.3
+h3>=4.0
+pygeohash>=2.1
+matplotlib>=3.8
+networkx>=3.2
+pyproj>=3.6
+eclipse-sumo>=1.27.1
+sumolib>=1.27.1
+traci>=1.27.1

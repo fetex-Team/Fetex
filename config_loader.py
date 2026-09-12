@@ -3,7 +3,7 @@ import json
 import os
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(ROOT, "config.json")
+CONFIG_PATH = os.environ.get("MOBILITY_CONFIG", os.path.join(ROOT, "config.json"))
 
 DEFAULT_CONFIG = {
     # Module 1 - simulation / map
@@ -13,7 +13,11 @@ DEFAULT_CONFIG = {
     "region": "강남역", "use_real_map": True,
     "sim_start_hour": 8, "sim_end_hour": 10,
     "passenger_wait_timeout": 500,
-    "passenger_seed": None,
+    "passenger_seed": 42,
+    "passenger_mode": "replay", "sim_date": "2026-08-31",
+    "training_days": 42, "synthetic_rate": 0.4,
+    "validation_size": 0.2, "forecast_horizon": 6,
+    "sequence_length": 12, "reposition_fraction": 0.5,
     "taxi_strategy": "patrol",
     "depart_jitter_sec": 300.0,
     "sumo_time_to_teleport": 300,
@@ -84,18 +88,17 @@ REGION_PRESETS = {
 
 def load_config(config_path=None):
     path = config_path or CONFIG_PATH
-    user_cfg = {}
-    if os.path.exists(path):
-        try:
-            with open(path, "r", encoding="utf-8") as f: user_cfg = json.load(f)
-            print("[안내] config.json에서 설정값을 불러왔습니다.")
-        except (json.JSONDecodeError, OSError) as e:
-            print(f"[경고] config.json을 읽지 못해 기본값을 사용합니다: {e}")
-    else:
-        print("[안내] config.json이 없어 기본값을 사용합니다.")
+    # 잘못된 설정을 다른 지역/기본값으로 조용히 대체하면 실험을 재현할 수 없다.
+    with open(path, "r", encoding="utf-8") as f:
+        user_cfg = json.load(f)
+    if not isinstance(user_cfg, dict):
+        raise ValueError("설정 파일은 JSON 객체여야 합니다.")
     merged = {**DEFAULT_CONFIG, **user_cfg}
-    _apply_region_coords(merged, merged.get("region", "홍대입구"))
-    _apply_live_weather(merged, merged.get("region", "홍대입구"))
+    # 설정 import는 네트워크를 호출하지 않는다. 지도 조회는 환경 생성 때만 수행한다.
+    preset = REGION_PRESETS.get(merged["region"], {})
+    for key, value in preset.items():
+        merged.setdefault(key, value)
+    validate_config(merged)
     return merged
 
 def _apply_region_coords(merged, region):
@@ -123,17 +126,24 @@ def _apply_region_coords(merged, region):
         print(f"[안내] '{region}' 프리셋 없음 — 홍대입구로 대체합니다.")
         merged.update(REGION_PRESETS["홍대입구"]); merged["region"] = "홍대입구"
 
-def _apply_live_weather(merged, region):
-    try:
-        from weather_lookup import get_current_weather
-        lat = (merged["lat_min"] + merged["lat_max"]) / 2
-        lng = (merged["lng_min"] + merged["lng_max"]) / 2
-        weather = get_current_weather(lat, lng)
-        if weather:
-            temp = weather["temperature"]
-            merged["temp_min"] = round(temp - 2.0, 1); merged["temp_max"] = round(temp + 2.0, 1)
-            merged["current_temperature"] = round(temp, 1); merged["current_precipitation"] = round(weather["precipitation"], 2)
-    except Exception:
-        pass
+def validate_config(cfg):
+    import math
+    if cfg['freq'] != '5min' or cfg['forecast_horizon'] != 6:
+        raise ValueError('예측 설정은 freq=5min, forecast_horizon=6이어야 합니다.')
+    for key in ('num_taxis', 'num_normal_cars', 'num_auto_cars', 'num_obstacles', 'num_passengers'):
+        if not isinstance(cfg[key], int) or cfg[key] < 0:
+            raise ValueError(f'{key}는 0 이상의 정수여야 합니다.')
+    for key in ('grid_x', 'grid_y', 'grid_length', 'max_lag', 'rolling_short', 'rolling_long', 'training_days', 'passenger_wait_timeout', 'synthetic_rate'):
+        if not math.isfinite(cfg[key]) or cfg[key] <= 0:
+            raise ValueError(f'{key}는 양수여야 합니다.')
+    if not 0 <= cfg['sim_start_hour'] < cfg['sim_end_hour'] <= 24:
+        raise ValueError('시뮬레이션 시간은 0 <= start < end <= 24여야 합니다.')
+    if not 0 <= cfg['reposition_fraction'] <= 1:
+        raise ValueError('reposition_fraction은 0~1이어야 합니다.')
+    if cfg['passenger_seed'] is not None and (not isinstance(cfg['passenger_seed'], int) or cfg['passenger_seed'] < 0):
+        raise ValueError('passenger_seed는 0 이상의 정수 또는 null이어야 합니다.')
+    if cfg['passenger_mode'] not in ('replay', 'legacy'):
+        raise ValueError('passenger_mode는 replay 또는 legacy여야 합니다.')
+
 
 CFG = load_config()
