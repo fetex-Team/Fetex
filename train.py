@@ -21,6 +21,7 @@ import pandas as pd
 import joblib
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+from sklearn.preprocessing import StandardScaler
 
 from config_loader import CFG
 
@@ -109,10 +110,16 @@ if __name__ == "__main__":
 
     num_features = X_train.shape[1]  # 피처 전체 사용
 
-    X_train_seq = torch.tensor(X_train, dtype=torch.float32).unsqueeze(1)
+    # [jwy 이식] CNN 입력 표준화 — 피처 단위가 제각각이라(수요 수, 기온, sin/cos)
+    # 스케일 없이 넣으면 학습이 진동함. 학습 데이터로만 fit하고 scaler를 모델과 함께 저장.
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    X_train_seq = torch.tensor(X_train_scaled, dtype=torch.float32).unsqueeze(1)
     y_train_seq = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
 
-    X_test_seq = torch.tensor(X_test, dtype=torch.float32).unsqueeze(1)
+    X_test_seq = torch.tensor(X_test_scaled, dtype=torch.float32).unsqueeze(1)
     y_test_seq = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
 
     train_loader = DataLoader(
@@ -152,7 +159,8 @@ if __name__ == "__main__":
     torch.save({
         'state_dict': dl_model.state_dict(),
         'input_dim': num_features,
-        'feature_cols': feature_cols
+        'feature_cols': feature_cols,
+        'scaler': scaler  # [jwy 이식] 평가·추론 시 같은 스케일 적용
     }, 'saved_models/cnn_lstm_demand.pt')
 
     print("\n[완료] 학습, 튜닝, 평가 및 모델 저장 완료!")
