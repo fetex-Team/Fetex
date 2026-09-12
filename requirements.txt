@@ -5,6 +5,12 @@ geopandas
 h3
 pygeohash
 shapely
+# pyproj: sumolib의 net.convertLonLat2XY()가 내부적으로 사용.
+#   없으면 poi_extractor의 POI->edge 매핑이 전부 실패하고 조용히 랜덤 구역으로 대체됨.
+#   geopandas 의존성으로 딸려오지만, geopandas 설치가 실패해도 이것만은 들어가도록 명시.
+pyproj
+# rtree: net.getNeighboringEdges()의 공간 인덱스. 없으면 전수 탐색으로 느려짐.
+rtree
 
 # Deep Learning & ML (Module 3)
 torch
