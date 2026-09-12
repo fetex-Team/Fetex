@@ -13,3 +13,6 @@ pyproj>=3.6
 eclipse-sumo>=1.27.1
 sumolib>=1.27.1
 traci>=1.27.1
+# rtree: sumolib의 net.getNeighboringEdges()가 쓰는 공간 인덱스.
+#   없으면 경고를 내고 전수 탐색으로 대체된다. 결과는 같고 속도만 느려진다.
+rtree>=1.0

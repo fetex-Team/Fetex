@@ -47,6 +47,57 @@ def save_cache(cache):
         json.dump(cache, f, ensure_ascii=False, indent=2)
 
 
+def _make_bbox(lat: float, lon: float, margin_deg: float, margin_m: float) -> tuple:
+    """중심점(lat, lon)과 반경으로 위경도 사각형을 계산한다."""
+    if margin_m is not None:
+        lat_margin_deg = margin_m / 111320.0
+        lng_margin_deg = margin_m / (111320.0 * math.cos(math.radians(lat)))
+    else:
+        lat_margin_deg = margin_deg
+        lng_margin_deg = margin_deg
+    return lat_margin_deg, lng_margin_deg
+
+
+def _cached_entries_for(cache: dict, place_name: str) -> list:
+    """같은 지역명으로 저장된 캐시 항목을 전부 찾는다.
+
+    키 형식이 두 가지 섞여 있다.
+      - "강남역::m500.0"  (반경 포함, 현재 형식)
+      - "강남역"          (반경 없음, 예전 형식)
+    둘 다 같은 지역의 좌표를 담고 있으므로 전부 후보로 본다.
+    """
+    prefix = place_name + "::"
+    keys = [k for k in cache if k == place_name or k.startswith(prefix)]
+    # 반경이 붙은 현재 형식을 먼저 쓰고, 없을 때만 반경 없는 예전 형식을 쓴다.
+    # 같은 지역이라도 조회 시점에 따라 중심점이 미세하게 다를 수 있으므로
+    # 정렬해서 항상 같은 항목을 고르게 한다 (실행할 때마다 결과가 달라지지 않도록).
+    keys.sort(key=lambda k: (0 if "::" in k else 1, k))
+    return [cache[k] for k in keys]
+
+
+def _bbox_from_cached_center(cache: dict, place_name: str,
+                             margin_deg: float, margin_m: float):
+    """캐시에 저장된 사각형의 중심점을 꺼내 새 반경으로 사각형을 다시 만든다.
+
+    반환: lookup_region과 같은 형식의 dict / 쓸 만한 항목이 없으면 None
+    """
+    for entry in _cached_entries_for(cache, place_name):
+        try:
+            lat = (float(entry["lat_min"]) + float(entry["lat_max"])) / 2
+            lon = (float(entry["lng_min"]) + float(entry["lng_max"])) / 2
+        except (KeyError, TypeError, ValueError):
+            continue
+        lat_margin_deg, lng_margin_deg = _make_bbox(lat, lon, margin_deg, margin_m)
+        return {
+            "lat_min": round(lat - lat_margin_deg, 6),
+            "lat_max": round(lat + lat_margin_deg, 6),
+            "lng_min": round(lon - lng_margin_deg, 6),
+            "lng_max": round(lon + lng_margin_deg, 6),
+            "display_name": entry.get("display_name", place_name),
+        }
+    return None
+
+
 def lookup_region(place_name: str, margin_deg: float = 0.006, margin_m: float = None) -> dict:
     """
     place_name(지역명)을 Nominatim으로 검색해서 위경도 범위를 반환.
@@ -65,6 +116,18 @@ def lookup_region(place_name: str, margin_deg: float = 0.006, margin_m: float = 
     if cache_key in cache:
         print(f"[캐시 사용] '{place_name}' → {cache[cache_key]['display_name']}")
         return cache[cache_key]
+
+    # 반경이 다르면 위에서 캐시 미스가 난다. 하지만 같은 지역의 다른 반경 항목이
+    # 있으면 그 사각형의 중심점(= 그 지역의 실제 좌표)을 꺼내 새 반경으로
+    # 다시 계산할 수 있다. 중심점은 반경과 무관하게 같으므로 API를 다시 부를 필요가 없다.
+    # (GUI에서 격자 슬라이더를 조금만 움직여도 Nominatim을 재호출하던 문제 해결)
+    reused = _bbox_from_cached_center(cache, place_name, margin_deg, margin_m)
+    if reused is not None:
+        print(f"[캐시 재계산] '{place_name}' → {reused['display_name']} "
+              f"(저장된 중심점을 새 반경으로 다시 계산)")
+        cache[cache_key] = reused
+        save_cache(cache)
+        return reused
 
     params = urllib.parse.urlencode({
         "q": place_name,

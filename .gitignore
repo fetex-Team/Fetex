@@ -1,0 +1,24 @@
+# --- 인증키 / 비밀값 ---
+.env
+.env.*
+!.env.example
+*.key
+secrets.json
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# --- 대용량 데이터 / 산출물 ---
+data/raw/
+realdata/*.csv
+!realdata/TRANS_250M_IN_SAMPLE.csv
+_result_combo*.json
+
+# --- OS ---
+Thumbs.db
+desktop.ini
+.DS_Store
