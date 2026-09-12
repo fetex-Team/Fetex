@@ -16,7 +16,8 @@ venv/
 data/raw/
 realdata/*.csv
 !realdata/TRANS_250M_IN_SAMPLE.csv
-_result_combo*.json
+_result_*.json
+data/eda/*.html
 
 # --- OS ---
 Thumbs.db

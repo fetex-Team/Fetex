@@ -12,6 +12,7 @@ DEFAULT_CONFIG = {
     "num_obstacles": 2, "num_passengers": 1000,
     "region": "강남역", "use_real_map": True,
     "sim_start_hour": 8, "sim_end_hour": 10,
+    "sim_date": "2026-09-07",  # 시뮬레이션 로그의 날짜 (요일/주말 피처 계산용, 2026-09-07=월요일)
     "passenger_wait_timeout": 500,
     "passenger_seed": 42,
     "passenger_mode": "replay", "sim_date": "2026-08-31",
@@ -59,8 +60,9 @@ DEFAULT_CONFIG = {
     "restaurant_window2_start": 17.0, "restaurant_window2_end": 22.0,
     "restaurant_civilian_taxi_probability": 0.10,
     # Module 2
-    "h3_resolution": 8, "freq": "5min", "max_lag": 6,
-    "rolling_short": 3, "rolling_long": 6,
+    # 명세 M3: 5분 단위로 t+1~t+6 예측. lag 12칸=1시간, rolling 6/12칸=30분/1시간
+    "h3_resolution": 9, "freq": "5min", "max_lag": 12,
+    "rolling_short": 6, "rolling_long": 12, "forecast_horizons": 6,
     # Module 3
     "xgb_n_estimators": 100, "xgb_max_depth": 6, "xgb_learning_rate": 0.1,
     "test_size": 0.2,
