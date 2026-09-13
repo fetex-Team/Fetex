@@ -43,7 +43,8 @@ class PassengerSpawnManager:
     def __init__(self, zones: dict, sim_start_hour: float, sim_end_hour: float = None,
                  school_pop_base: int = None, company_pop_base: int = None,
                  seed: int = None):
-        self.rng = random.Random(seed)
+        if seed is not None:
+            random.seed(seed)
 
         self.sim_start_hour = sim_start_hour
         self.school_pop_base = int(CFG.get("school_pop_base", 400) if school_pop_base is None else school_pop_base)
@@ -173,9 +174,9 @@ class PassengerSpawnManager:
         return pid
 
     def _pick_edge(self, pool: list, exclude: str = None) -> str:
-        candidate = self.rng.choice(pool)
+        candidate = random.choice(pool)
         if candidate == exclude and len(pool) > 1:
-            candidate = self.rng.choice(pool)
+            candidate = random.choice(pool)
         return candidate
 
     # ---------- 도착(흡수) 감지 ----------
@@ -207,10 +208,10 @@ class PassengerSpawnManager:
         # 학교 등교: 7~8시, 8시에 가까울수록 택시 확률 선형 증가, 9시 이후 완전 중단
         if self.school_start_hour <= now_hour < self.school_end_hour:
             rate = self.school_pop_base / 3600.0  # 초당 시도 횟수(윈도우 1시간 기준)
-            if self.rng.random() < rate:
+            if random.random() < rate:
                 peak = min(max(self.school_taxi_peak_hour, self.school_start_hour), self.school_end_hour)
                 taxi_prob = 0.0 if now_hour <= self.school_start_hour else min(1.0, (now_hour - self.school_start_hour) / max(peak - self.school_start_hour, 1e-9))
-                if self.rng.random() < taxi_prob:
+                if random.random() < taxi_prob:
                     start_e = self._pick_edge(self.transit_edges)
                     end_e = self._pick_edge(self.school_edges)
                     self._spawn_person(now_seconds, start_e, end_e, dest_category="school")
@@ -234,7 +235,7 @@ class PassengerSpawnManager:
             for _ in range(attempts):
                 peak = min(max(self.company_taxi_peak_hour, self.company_start_hour), self.company_end_hour)
                 taxi_prob = 0.0 if now_hour <= self.company_start_hour else min(1.0, (now_hour - self.company_start_hour) / max(peak - self.company_start_hour, 1e-9))
-                if self.rng.random() < taxi_prob:
+                if random.random() < taxi_prob:
                     start_e = self._pick_edge(self.transit_edges)
                     end_e = self._pick_edge(self.company_edges)
                     self._spawn_person(now_seconds, start_e, end_e, dest_category="company")
@@ -272,7 +273,7 @@ class PassengerSpawnManager:
             remaining = self._school_afternoon_pool_snapshot - self._school_afternoon_spawned_count
             if remaining > 0:
                 rate = self._school_afternoon_pool_snapshot / 3600.0
-                if self.rng.random() < rate:
+                if random.random() < rate:
                     start_e = self._pick_edge(self.school_edges)
                     end_e = self._pick_edge(self.residential_edges)
                     self._spawn_person(now_seconds, start_e, end_e, dest_category="residential")
@@ -290,9 +291,9 @@ class PassengerSpawnManager:
 
         if self.evening_start_hour <= now_hour < self.evening_end_hour:
             rate = self._evening_pool_snapshot / max((self.evening_end_hour - self.evening_start_hour) * 3600.0, 1.0)
-            if self.rng.random() < rate:
-                if self.rng.random() < self.evening_taxi_fraction:  # 버스35%+지하철35% 제외 -> 30%만 택시
-                    dest_pool = self.residential_edges if self.rng.random() < self.evening_residential_fraction else self.restaurant_edges
+            if random.random() < rate:
+                if random.random() < self.evening_taxi_fraction:  # 버스35%+지하철35% 제외 -> 30%만 택시
+                    dest_pool = self.residential_edges if random.random() < self.evening_residential_fraction else self.restaurant_edges
                     start_e = self._pick_edge(self.company_edges)
                     end_e = self._pick_edge(dest_pool)
                     dest_cat = "residential" if dest_pool is self.residential_edges else "restaurant"
@@ -304,7 +305,7 @@ class PassengerSpawnManager:
             self._evening_dump_done = True
             remaining = max(0, self._evening_pool_snapshot - self._evening_spawned_count)
             for _ in range(remaining):
-                dest_pool = self.residential_edges if self.rng.random() < self.evening_residential_fraction else self.restaurant_edges
+                dest_pool = self.residential_edges if random.random() < self.evening_residential_fraction else self.restaurant_edges
                 start_e = self._pick_edge(self.company_edges)
                 end_e = self._pick_edge(dest_pool)
                 dest_cat = "residential" if dest_pool is self.residential_edges else "restaurant"
@@ -347,7 +348,7 @@ class PassengerSpawnManager:
         self._restaurant_civilian_accumulator -= attempts
 
         for _ in range(attempts):
-            if self.rng.random() < self.restaurant_civilian_taxi_probability:
+            if random.random() < self.restaurant_civilian_taxi_probability:
                 start_e = self._pick_edge(self.transit_edges)
                 end_e = self._pick_edge(self.restaurant_edges)
                 self._spawn_person(now_seconds, start_e, end_e, dest_category="restaurant")
@@ -367,7 +368,7 @@ class PassengerSpawnManager:
         self._gacha_accumulator -= attempts
 
         for _ in range(attempts):
-            if self.rng.random() < self.residential_taxi_probability:
+            if random.random() < self.residential_taxi_probability:
                 start_e = self._pick_edge(self.all_edges)
                 end_e = self._pick_edge(self.all_edges, exclude=start_e)
                 self._spawn_person(now_seconds, start_e, end_e, dest_category=None)
@@ -387,25 +388,3 @@ class PassengerSpawnManager:
         self._maintain_restaurant_timers(now_seconds)
         self._maintain_restaurant_civilian(now_seconds, now_hour)
         self._maintain_residential_gacha(now_seconds)
-
-class ReplayPassengerManager:
-    """고정 호출 목록을 재생한다. 배차 성공 여부가 다음 호출 발생을 바꾸지 않는다."""
-    def __init__(self, calls, start, end):
-        selected = calls[(calls.pickup_datetime >= start) & (calls.pickup_datetime < end)].copy()
-        selected['depart_sec'] = (selected.pickup_datetime - start).dt.total_seconds()
-        self.calls = selected.sort_values(['depart_sec', 'request_id']).reset_index(drop=True)
-        self.rows = list(self.calls.itertuples(index=False)); self.index = 0
-        self.request_times = {}; self.failed_ids = set()
-
-    def maintain(self, now_seconds, timeout_removed_pids=None):
-        while self.index < len(self.rows) and self.rows[self.index].depart_sec <= now_seconds:
-            row = self.rows[self.index]; self.index += 1
-            self.request_times[row.request_id] = row.depart_sec
-            try:
-                traci.person.add(row.request_id, row.from_edge, pos=0, depart=now_seconds)
-                traci.person.appendDrivingStage(row.request_id, row.to_edge, lines='taxi')
-            except traci.exceptions.TraCIException:
-                # 삽입 실패도 발생한 수요로 기록하며 성공률 분모에서 누락시키지 않는다.
-                self.failed_ids.add(row.request_id)
-                if row.request_id in traci.person.getIDList():
-                    traci.person.remove(row.request_id)

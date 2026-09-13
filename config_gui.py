@@ -2,17 +2,17 @@
 import json, os, subprocess, sys, tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 from region_autocomplete import RegionSearchEntry
-from config_loader import DEFAULT_CONFIG, validate_config
+from config_loader import DEFAULT_CONFIG
 
 ROOT=os.path.dirname(os.path.abspath(__file__)); PRESET_DIR=os.path.join(ROOT,"presets"); os.makedirs(PRESET_DIR,exist_ok=True)
 CONFIG_PATH=os.path.join(ROOT,"config.json")
-FREQ_OPTIONS=["5min"]
-STRATEGIES=["patrol","prepositioned","forecast"]
+FREQ_OPTIONS=["1min","5min","10min","15min","30min"]
+STRATEGIES=["patrol","prepositioned"]
 
 # A/B 비교하기 다이얼로그에서 팩터로 고를 수 있는 항목들 (key -> (라벨, 선택 가능한 값 목록))
 FACTOR_OPTIONS={
 "taxi_strategy":("택시 전략",STRATEGIES),
-"taxi_dispatch_algorithm":("배차 알고리즘",["greedy","routeExtension","traci","hungarian"]),
+"taxi_dispatch_algorithm":("배차 알고리즘",["greedy","routeExtension","traci","hungarian","rl_reposition"]),
 }
 
 # key, label, min, max, decimals, integer
@@ -32,10 +32,10 @@ NUMERIC_GROUPS={
 "Module 2 — 전처리":[("h3_resolution","H3 resolution",5,15,0,1),("max_lag","Max lag",1,100,0,1),("rolling_short","단기 rolling window",1,100,0,1),("rolling_long","장기 rolling window",1,200,0,1)],
 "Module 3 — 예측모델":[("xgb_n_estimators","XGB n_estimators",10,1000,0,1),("xgb_max_depth","XGB max_depth",1,30,0,1),("xgb_learning_rate","XGB learning_rate",0.001,1,4,0),("test_size","Test size",0.01,0.5,3,0),("cnn_hidden_dim","CNN hidden_dim",8,512,0,1),("cnn_num_layers","CNN num_layers",1,8,0,1),("cnn_kernel_size","CNN kernel_size",1,15,0,1),("cnn_epochs","CNN epochs",1,1000,0,1),("cnn_batch_size","CNN batch_size",1,512,0,1),("cnn_lr","CNN learning rate",0.00001,0.1,6,0)],
 "Module 4 — 배차/가격":[("base_fare","기본요금(원)",0,50000,0,1),("min_multiplier","최소 할증배수",0.1,5,2,0),("max_multiplier","최대 할증배수",0.1,10,2,0),("surge_coefficient","할증 증가계수",0,5,3,0),("mock_available_taxis_min","테스트 가용택시 최소",0,500,0,1),("mock_available_taxis_max","테스트 가용택시 최대",0,500,0,1),("mock_taxi_count","배차 테스트 택시 수",1,500,0,1),("mock_passenger_count","배차 테스트 승객 수",1,500,0,1)],
-"공통/실험":[("synthetic_rate","합성 호출 발생 강도(replay)",0.01,10,3,0),("training_days","합성 학습 기간(일)",7,365,0,1),("reposition_fraction","5분당 재배치 상한 비율",0,1,2,0),("demo_data_rows","학습 데모 데이터 행 수",100,100000,0,1),("demo_data_minutes","추론 데모 데이터 길이",10,100000,0,1),("xgb_random_state","XGB random state",0,2147483647,0,1),("train_random_state","학습 random state",0,2147483647,0,1)]}
+"공통/실험":[("demo_data_rows","학습 데모 데이터 행 수",100,100000,0,1),("demo_data_minutes","추론 데모 데이터 길이",10,100000,0,1),("xgb_random_state","XGB random state",0,2147483647,0,1),("train_random_state","학습 random state",0,2147483647,0,1)]}
 
 BOOLS=[("use_real_map","실제 OSM 지도 사용"),("dispatch_use_euclidean","Module 4 테스트 거리: 유클리드 사용"),("suppress_sumo_warnings","SUMO 경고 로그 숨기기 (속도 향상)")]
-CHOICES=[("passenger_mode","호출 생성 모드",["replay","legacy"]),("taxi_strategy","택시 전략",STRATEGIES),("taxi_dispatch_algorithm","SUMO taxi dispatch algorithm",["greedy","routeExtension","hungarian"]),("taxi_idle_algorithm","SUMO taxi idle algorithm",["randomCircling","stopOnRoad","taxiStop"])]
+CHOICES=[("taxi_strategy","택시 전략",STRATEGIES),("taxi_dispatch_algorithm","SUMO taxi dispatch algorithm",["greedy","routeExtension","traci","hungarian","rl_reposition"]),("taxi_idle_algorithm","SUMO taxi idle algorithm",["randomCircling","stopOnRoad","taxiStop"])]
 
 class ConfigGUI:
  def __init__(self,root):
@@ -67,13 +67,12 @@ class ConfigGUI:
    r=ttk.Frame(f); r.pack(fill="x",pady=5); ttk.Label(r,text=label,width=30).pack(side="left"); v=tk.StringVar(); self.choice_vars[key]=v; ttk.Combobox(r,textvariable=v,values=vals,state="readonly",width=20).pack(side="right")
   r=ttk.Frame(f); r.pack(fill="x",pady=8); ttk.Label(r,text="Passenger seed (비우면 랜덤)",width=30).pack(side="left"); self.seed_var=tk.StringVar(); ttk.Entry(r,textvariable=self.seed_var,width=20).pack(side="right")
  def current(self):
-  c={**getattr(self,"loaded_config",DEFAULT_CONFIG),"region":self.region.get() or "홍대입구","freq":self.freq_var.get() or DEFAULT_CONFIG["freq"],"passenger_seed":None,"taxi_strategy":self.choice_vars["taxi_strategy"].get() or DEFAULT_CONFIG["taxi_strategy"]}
+  c={"region":self.region.get() or "홍대입구","freq":self.freq_var.get() or DEFAULT_CONFIG["freq"],"passenger_seed":None,"taxi_strategy":self.choice_vars["taxi_strategy"].get() or DEFAULT_CONFIG["taxi_strategy"]}
   s=self.seed_var.get().strip(); c["passenger_seed"]=int(s) if s.lstrip("-").isdigit() else None
   c.update({k:v.get() for k,v in self.bool_vars.items()}); c.update({k:v.get() for k,v in self.choice_vars.items()})
   for k,(v,dec,isint) in self.vars.items(): c[k]=int(v.get()) if isint else round(float(v.get()),dec)
   return c
  def set_values(self,c):
-  self.loaded_config=c.copy()
   self.region.set(c.get("region","홍대입구")); self.freq_var.set(c.get("freq",DEFAULT_CONFIG["freq"])); self.seed_var.set("" if c.get("passenger_seed") is None else str(c.get("passenger_seed")))
   for k,v in self.bool_vars.items(): v.set(bool(c.get(k,DEFAULT_CONFIG.get(k,False))))
   for k,v in self.choice_vars.items(): v.set(c.get(k,DEFAULT_CONFIG.get(k,"")))
@@ -85,13 +84,10 @@ class ConfigGUI:
   except Exception: c=DEFAULT_CONFIG.copy()
   merged={**DEFAULT_CONFIG,**c}; self.set_values(merged); self.status.config(text="현재 config.json을 GUI에 불러왔습니다.") if hasattr(self,'status') else None
  def save_config_only(self):
-  try:
-   c=self.current();validate_config({**DEFAULT_CONFIG,**c})
-  except (ValueError,TypeError,tk.TclError) as error:
-   messagebox.showerror("설정 오류",str(error));return False
+  c=self.current()
   with open(CONFIG_PATH,"w",encoding="utf-8") as f:
    json.dump(c,f,ensure_ascii=False,indent=2)
-  self.status.config(text="config.json 저장 완료");return True
+  self.status.config(text="설정을 적용했습니다. (config.json 저장 완료)")
  def refresh_presets(self):
   files=[f[:-5] for f in os.listdir(PRESET_DIR) if f.endswith(".json")]; self.preset_combo["values"]=files;
   if files:self.preset_combo.current(0)
@@ -120,20 +116,62 @@ class ConfigGUI:
     subprocess.Popen(cmd_args,cwd=ROOT,env=self._env(),creationflags=subprocess.CREATE_NEW_CONSOLE);return True
    subprocess.Popen([sys.executable,path,*args],cwd=ROOT,env=self._env());return True
   except Exception as e:messagebox.showerror("실행 오류",str(e));return False
- def prepare_environment(self):
-  # GUI 설정과 실행 스냅샷이 어긋나지 않도록 모든 실행 경로에서 재생성한다.
-  return self.save_config_only() and self._run(os.path.join("module1_simulation","build_env.py"),blocking=True)
  def run_main(self):
-  if self.prepare_environment():self._run("main.py")
+  self.save_config_only();
+  if self._run(os.path.join("module1_simulation","build_env.py"),blocking=True):self._run("main.py")
+
  def run_training(self):
-  if self.prepare_environment():self._run("train.py")
- def run_headless_compare(self):
-  if self.prepare_environment():self._run("measure_wait_time.py",["compare"])
- def open_dispatch_compare_dialog(self):
-    win = tk.Toplevel(self.root)
-    win.title("배차 알고리즘 A/B 비교")
-    win.geometry("320x160")
-    win.resizable(False, False)
+    self.save_config_only()
+
+    try:
+        # 1. 기존 학습 데이터 전처리/통합
+        self.status.config(text="1/3 train.py 실행 중...")
+        self.root.update()
+
+        self._run("train.py", blocking=True)
+
+        # 2. 카테고리별 수요 예측 모델 학습
+        self.status.config(text="2/3 category demand 모델 학습 중...")
+        self.root.update()
+
+        self._run(
+            os.path.join("module3_prediction", "train_category_demand.py"),
+            blocking=True
+        )
+
+        # 3. 강화학습
+        self.status.config(text="3/3 강화학습 실행 중...")
+        self.root.update()
+
+        self._run(
+            os.path.join("module4_dispatch", "rl_train.py"),
+            blocking=True
+        )
+
+        self.status.config(text="전체 학습 완료")
+        messagebox.showinfo(
+            "학습 완료",
+            "전체 학습이 완료되었습니다.\n\n"
+            "생성 파일:\n"
+            "• category_demand_models.pkl\n"
+            "• rl_reposition_model.zip"
+        )
+
+    except subprocess.CalledProcessError as e:
+        self.status.config(text="학습 중 오류 발생")
+        messagebox.showerror(
+            "학습 오류",
+            f"학습 과정에서 오류가 발생했습니다.\n\n"
+            f"실패한 단계의 종료 코드: {e.returncode}"
+        )
+    except Exception as e:
+        self.status.config(text="학습 중 오류 발생")
+        messagebox.showerror("학습 오류", str(e))
+ def open_ab_compare_dialog(self):
+  win=tk.Toplevel(self.root)
+  win.title("A/B 비교하기")
+  win.geometry("380x460")
+  win.resizable(False,False)
 
   ttk.Label(win,text="비교할 값을 체크하세요. 각 항목당 2개 이상 체크해야 합니다.\n"
                       "체크된 값들의 카테시안 조합만큼 새 창이 병렬로 뜹니다.",
@@ -161,14 +199,23 @@ class ConfigGUI:
     if chosen:
      selected[key]=chosen
 
-    def run_compare():
-        a, b = var_a.get(), var_b.get()
-        if a == b:
-            messagebox.showwarning("경고", "A와 B가 같으면 비교 의미가 없습니다.")
-            return
-        win.destroy()
-        if self.prepare_environment():
-            self._run("parallel_dispatch_orchestrator.py", [a, b])
+   if not selected:
+    messagebox.showwarning("경고","비교할 항목을 하나 이상 체크하세요.")
+    return
+
+   import itertools
+   keys=list(selected.keys())
+   combos=[dict(zip(keys,combo)) for combo in itertools.product(*[selected[k] for k in keys])]
+
+   if len(combos)>8:
+    if not messagebox.askyesno("확인",f"조합이 {len(combos)}개라 창이 {len(combos)}개 동시에 뜹니다. 계속할까요?"):
+     return
+
+   win.destroy()
+   self.save_config_only()
+   self._run("multi_factor_compare.py",[json.dumps(combos,ensure_ascii=False)])
+
+  ttk.Button(win,text="실행 (조합별로 새 창에서 병렬 측정)",command=run_compare).pack(pady=15,fill="x",padx=15)
 
 if __name__=="__main__":
  root=tk.Tk();ConfigGUI(root);root.mainloop()

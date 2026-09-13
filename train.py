@@ -1,10 +1,6 @@
 import os
 import sys
-
-# [macOS 세그폴트 방지] torch와 xgboost가 각각 다른 OpenMP(libomp)를 들고 와서 GridSearch 중
-# "Segmentation fault: 11"로 죽는 문제. torch/xgboost import 전에 반드시 설정해야 함.
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
+import glob
 
 # 1. 파이썬 모듈 탐색 경로(sys.path)에 최상위 프로젝트 폴더(ai_mobility_project) 등록
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -20,57 +16,116 @@ import numpy as np
 import pandas as pd
 import joblib
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
-from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split, GridSearchCV
 
 from config_loader import CFG
 
 # 하위 모듈 불러오기
 from module3_prediction.models import CNNLSTMModel, build_xgboost_model
 from evaluate import calculate_metrics
-from module2_preprocessing.pipeline import build_feature_table
-from module2_preprocessing.time_series_prep import time_based_split
-from module2_preprocessing.sim_log_recorder import latest_log_path
+from module2_preprocessing.spatial_indexing import SpatialIndexer
+from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
+from module2_preprocessing.external_data_merge import merge_external_data
 
-# 학습 타겟: Module 2 피처 테이블의 y_h1(t+1, 5분 뒤) ~ y_h6(t+6, 30분 뒤).
-# 아래 단일 출력 모델은 TARGET 한 개만 사용. 다중 시점(6개) 동시 예측은 y_h1..y_h6 전체를
-# y로 넘기고 CNNLSTMModel(output_dim=6) / MultiOutputRegressor(XGB)로 바꾸면 됨 (Module 3 담당).
-TARGET = "y_h1"
+# measure_wait_time.py의 run_and_measure()가 시뮬레이션을 돌릴 때마다 append하는
+# 실제 수요 로그. (단독 실행 / parallel_dispatch_worker.py / multi_factor_compare.py의
+# 병렬 워커 전부 여기에 로그를 남김 — run_simulation.py의 GUI 실행만 미포함)
+#
+# 여러 대(로컬/콜랍 등)에서 따로 돌린 로그를 합칠 때는, 파일을 직접 덮어쓰거나 diff 떠서
+# 수동 병합하지 말고 아래처럼 "simulation_demand_log" 로 시작하는 이름으로 나란히 두면 됨.
+# 예) simulation_demand_log.csv, simulation_demand_log_260912.csv, simulation_demand_log_colab1.csv
+# -> 여기서 자동으로 전부 찾아서 합치고 완전히 동일한 행(중복)만 제거함.
+DEMAND_LOG_DIR = os.path.join(PROJECT_ROOT, "data", "raw")
+DEMAND_LOG_GLOB = "simulation_demand_log*.csv"
+
+# 로그가 이 건수보다 적으면 lag/rolling 피처 생성 시 dropna로 대부분 날아갈 수 있어 경고만 출력
+MIN_RECOMMENDED_ROWS = 200
 
 
-def prepare_real_sequence_dataset(max_lag=None, log_path=None):
-    """
-    Module 2 파이프라인(module2_preprocessing.pipeline)으로 학습용 피처 테이블 생성.
-    - data/sim_logs/demand_log_*.csv 전체를 이어 붙여 사용 (log_path를 주면 그 파일만)
-    - 로그가 하나도 없으면 에러 (가짜 랜덤 데이터 폴백은 제거 — 평가 시 혼동 방지)
-    반환: feature_df, feature_cols, target_cols
-    """
-    logs = [log_path] if log_path else [os.path.join(PROJECT_ROOT, "data", "sim_logs", "demand_log_*.csv")]
-    if not log_path and latest_log_path() is None:
-        raise FileNotFoundError("data/sim_logs에 호출 로그가 없습니다. 먼저 `python measure_wait_time.py`로 시뮬레이션을 돌려 로그를 만드세요.")
-    feature_df = build_feature_table(logs, max_lag=max_lag)
-    return feature_df, feature_df.attrs["feature_cols"], feature_df.attrs["target_cols"]
+def _load_all_demand_logs():
+    """data/raw/ 안의 simulation_demand_log*.csv 전부를 찾아 하나로 합치고 완전 중복 행 제거."""
+    paths = sorted(glob.glob(os.path.join(DEMAND_LOG_DIR, DEMAND_LOG_GLOB)))
+    if not paths:
+        return None, []
+
+    frames = []
+    for p in paths:
+        try:
+            frames.append(pd.read_csv(p, parse_dates=["pickup_datetime"]))
+        except Exception as e:
+            print(f"[경고] {p} 읽기 실패, 건너뜁니다: {e}")
+
+    if not frames:
+        return None, []
+
+    merged = pd.concat(frames, ignore_index=True)
+    before = len(merged)
+    merged = merged.drop_duplicates(subset=["pickup_datetime", "latitude", "longitude"])
+    after = len(merged)
+    if before != after:
+        print(f"[안내] 완전 중복 행 {before - after}건 제거 (병합 전 {before}건 -> 병합 후 {after}건)")
+    return merged, paths
+
+
+def prepare_real_sequence_dataset(max_lag=None):
+    """Module 2 파이프라인을 거쳐 시계열 시퀀스(N, Seq_Len, Features) 데이터셋 생성"""
+    max_lag = max_lag if max_lag is not None else CFG["max_lag"]
+
+    df, found_paths = _load_all_demand_logs()
+    if df is not None:
+        file_list = ", ".join(os.path.basename(p) for p in found_paths)
+        print(f"[안내] 로그 파일 {len(found_paths)}개({file_list})에서 총 {len(df)}건을 "
+              f"학습 데이터로 사용합니다 ({DEMAND_LOG_DIR}).")
+        if len(df) < MIN_RECOMMENDED_ROWS:
+            print(f"[경고] 로그가 {len(df)}건뿐입니다 (권장 {MIN_RECOMMENDED_ROWS}건 이상). "
+                  f"lag/rolling 피처(max_lag={max_lag}) 생성 시 dropna로 대부분 날아갈 수 있으니, "
+                  f"measure_wait_time.py나 A/B·멀티팩터 비교를 몇 차례 더 돌려서 로그를 쌓는 것을 권장합니다.")
+    else:
+        print(f"[경고] {DEMAND_LOG_DIR}에 {DEMAND_LOG_GLOB} 로그가 없어 가상 데이터로 대체합니다. "
+              f"먼저 measure_wait_time.py / A·B 비교 / 멀티팩터 비교를 한 번 이상 돌려 "
+              f"학습용 수요 로그를 쌓아주세요.")
+        dates = pd.date_range("2026-08-28 18:00:00", periods=1000, freq="1min")
+        df = pd.DataFrame({
+            'pickup_datetime': dates,
+            'latitude': np.random.uniform(37.495, 37.505, 1000),
+            'longitude': np.random.uniform(127.020, 127.035, 1000)
+        })
+
+    df = merge_external_data(df)
+
+    indexer = SpatialIndexer()  # config.json의 h3_resolution 사용
+    df = indexer.process_dataframe(df, lat_col='latitude', lng_col='longitude')
+
+    prep = TimeSeriesPreprocessor(max_lag=max_lag)  # config.json의 freq 사용
+    agg_df = prep.aggregate_demands(df, timestamp_col='pickup_datetime', spatial_col='h3_index')
+    feature_df = prep.create_features(agg_df, spatial_col='h3_index')
+
+    if len(feature_df) == 0:
+        raise ValueError(
+            "피처 생성 후 남은 행이 0개입니다. 수요 로그가 너무 적거나(짧은 시뮬레이션 1~2회) "
+            "h3_index/시간 버킷이 너무 분산되어 lag/rolling 윈도우를 채우지 못했습니다. "
+            "시뮬레이션을 더 돌려 data/raw/simulation_demand_log.csv를 늘린 뒤 다시 시도하세요."
+        )
+
+    feature_cols = [c for c in feature_df.columns if c not in ['time_bucket', 'h3_index', 'demand']]
+
+    # 2D Tabular Feature Matrix (XGBoost용)
+    X_mat = feature_df[feature_cols].fillna(0).values
+    y_vec = feature_df['demand'].fillna(0).values
+
+    return X_mat, y_vec, feature_cols, max_lag
 
 
 if __name__ == "__main__":
     os.makedirs('saved_models', exist_ok=True)
 
-    # 1. 데이터셋 준비 및 Train/Test 분리 — 시간 기준 (비율은 config.json test_size)
-    #    사용법: python train.py [로그CSV경로]  (생략 시 data/sim_logs의 모든 로그)
-    log_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    feature_df, feature_cols, target_cols = prepare_real_sequence_dataset(log_path=log_arg)
-    train_df, _val_df, test_df, cuts = time_based_split(feature_df, CFG["test_size"])
-    train_df = train_df.sort_values(['time_bucket', 'h3_index'])  # TimeSeriesSplit이 시간 순서로 fold를 자르도록
-    test_df = test_df.sort_values(['time_bucket', 'h3_index'])
+    # 1. 데이터셋 준비 및 Train/Test 분리 (비율은 config.json에서 조절)
+    X_mat, y_vec, feature_cols, seq_len = prepare_real_sequence_dataset()
+    X_train, X_test, y_train, y_test = train_test_split(
+        X_mat, y_vec, test_size=CFG["test_size"], random_state=42, shuffle=False
+    )
 
-    X_train = train_df[feature_cols].fillna(0).values
-    y_train = train_df[TARGET].values
-    X_test = test_df[feature_cols].fillna(0).values
-    y_test = test_df[TARGET].values
-    seq_len = CFG["max_lag"]
-
-    print(f"[데이터 분리 완료] Train: {len(X_train)}개 (< {cuts['test_cut']}), Test: {len(X_test)}개 "
-          f"| 셀 {feature_df['h3_index'].nunique()}개 | Features: {len(feature_cols)}개 | 타겟 {TARGET} (전체 {target_cols}) | test_size={CFG['test_size']}")
+    print(f"[데이터 분리 완료] Train: {len(X_train)}개, Test: {len(X_test)}개 | Features: {len(feature_cols)}개 | test_size={CFG['test_size']}")
 
     # ------------------------------------------------------------
     # 2. XGBoost 학습, 하이퍼파라미터 튜닝(GridSearch), 평가 및 저장
@@ -89,12 +144,21 @@ if __name__ == "__main__":
     }
     print(f"탐색 범위: {param_grid}")
 
-    base_xgb = build_xgboost_model()
-    grid_search = GridSearchCV(base_xgb, param_grid, cv=TimeSeriesSplit(n_splits=3), scoring='neg_root_mean_squared_error')
-    grid_search.fit(X_train, y_train)
+    # 데이터가 적을 때 GridSearchCV의 cv=3 fold가 표본 부족으로 실패하지 않도록 안전장치
+    n_splits = min(3, len(X_train)) if len(X_train) > 1 else 1
+    if n_splits < 3:
+        print(f"[경고] 학습 표본이 적어({len(X_train)}개) cross-validation fold를 {n_splits}로 줄입니다.")
 
-    best_xgb = grid_search.best_estimator_
-    print(f"최적 파라미터: {grid_search.best_params_}")
+    base_xgb = build_xgboost_model()
+    if n_splits >= 2:
+        grid_search = GridSearchCV(base_xgb, param_grid, cv=n_splits, scoring='neg_root_mean_squared_error')
+        grid_search.fit(X_train, y_train)
+        best_xgb = grid_search.best_estimator_
+        print(f"최적 파라미터: {grid_search.best_params_}")
+    else:
+        print("[경고] 표본이 너무 적어 GridSearchCV를 생략하고 기본 파라미터로 학습합니다.")
+        best_xgb = base_xgb
+        best_xgb.fit(X_train, y_train)
 
     # 성능 평가 (calculate_metrics 활용)
     xgb_preds = best_xgb.predict(X_test)
@@ -110,16 +174,10 @@ if __name__ == "__main__":
 
     num_features = X_train.shape[1]  # 피처 전체 사용
 
-    # [jwy 이식] CNN 입력 표준화 — 피처 단위가 제각각이라(수요 수, 기온, sin/cos)
-    # 스케일 없이 넣으면 학습이 진동함. 학습 데이터로만 fit하고 scaler를 모델과 함께 저장.
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    X_train_seq = torch.tensor(X_train_scaled, dtype=torch.float32).unsqueeze(1)
+    X_train_seq = torch.tensor(X_train, dtype=torch.float32).unsqueeze(1)
     y_train_seq = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
 
-    X_test_seq = torch.tensor(X_test_scaled, dtype=torch.float32).unsqueeze(1)
+    X_test_seq = torch.tensor(X_test, dtype=torch.float32).unsqueeze(1)
     y_test_seq = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
 
     train_loader = DataLoader(
@@ -159,8 +217,7 @@ if __name__ == "__main__":
     torch.save({
         'state_dict': dl_model.state_dict(),
         'input_dim': num_features,
-        'feature_cols': feature_cols,
-        'scaler': scaler  # [jwy 이식] 평가·추론 시 같은 스케일 적용
+        'feature_cols': feature_cols
     }, 'saved_models/cnn_lstm_demand.pt')
 
     print("\n[완료] 학습, 튜닝, 평가 및 모델 저장 완료!")

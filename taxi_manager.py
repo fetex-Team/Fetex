@@ -3,13 +3,26 @@ import traci
 
 from config_loader import CFG
 
+CATEGORY_PEAK_HOURS = {
+    # 회사는 "아침에 붐비는 건물"이지만, 그 시간엔 회사 앞에서 택시를 부르는 사람이 없음
+    # (다들 도착하는 쪽이라 출발지가 아님) -> 아침 피크는 빼고, 실제로 회사에서
+    # 택시를 부르는 시점(점심 나갈 때, 퇴근할 때)만 남김
+    "company": [CFG.get("lunch_start_hour", 12.0), CFG.get("evening_start_hour", 18.0), CFG.get("late_evening_start_hour", 23.0)],
+    # 학교도 마찬가지로 등교(7~8시)는 도착 방향이라 빼고, 하교(실제 출발지가 되는 시점)만 남김
+    "school": [CFG.get("school_afternoon_start_hour", 16.0)],
+    "residential": [CFG.get("school_start_hour", 7.0), CFG.get("evening_start_hour", 18.0), CFG.get("late_evening_start_hour", 23.0)],
+    "restaurant": [CFG.get("lunch_start_hour", 12.0), CFG.get("evening_start_hour", 18.0)],
+    # 아침 출근/등교 승객의 실제 출발지는 정류장/지하철입구이므로, 아침 피크를 여기로 옮김
+    "subway_entrance": [CFG.get("school_start_hour", 7.0), CFG.get("company_start_hour", 8.0), CFG.get("evening_start_hour", 18.0)],
+    "bus_stop": [CFG.get("school_start_hour", 7.0), CFG.get("company_start_hour", 8.0), CFG.get("evening_start_hour", 18.0)],
+}
+
 
 class TaxiFleetManager:
     def __init__(self, target_count: int, boundary_edges: list, all_edges: list,
                  vtype: str = "taxi_type", strategy: str = "patrol",
                  hotspot_edges: list = None, zones: dict = None,
                  sim_start_hour: float = 0, remaining_edges_threshold: int = None, **kwargs):
-        self.rng = random.Random(CFG["passenger_seed"] if CFG["passenger_seed"] is not None else 42)
         self.target_count = target_count
         self.boundary_edges = boundary_edges or all_edges  # 재생성 시 사용할 검증된 출발점
         self.all_edges = all_edges
@@ -34,15 +47,7 @@ class TaxiFleetManager:
     def _category_busyness_ranking(self, now_seconds: float) -> list:
         now_hour = self._current_hour(now_seconds) % 24
         scored = []
-        peaks = {
-            "company": [CFG["lunch_start_hour"], CFG["evening_start_hour"]],
-            "school": [CFG["school_afternoon_start_hour"]],
-            "residential": [CFG["school_start_hour"], CFG["evening_start_hour"]],
-            "restaurant": [CFG["lunch_start_hour"], CFG["evening_start_hour"]],
-            "subway_entrance": [CFG["school_start_hour"], CFG["company_start_hour"], CFG["evening_start_hour"]],
-            "bus_stop": [CFG["school_start_hour"], CFG["company_start_hour"], CFG["evening_start_hour"]],
-        }
-        for category, peak_hours in peaks.items():
+        for category, peak_hours in CATEGORY_PEAK_HOURS.items():
             min_diff = min(abs((now_hour - p + 12) % 24 - 12) for p in peak_hours)
             score = 3.0 - min_diff
             scored.append((category, score))
@@ -74,12 +79,12 @@ class TaxiFleetManager:
     def _pick_target_edge(self, now_seconds: float, current_edge: str) -> str:
         if self.strategy == "prepositioned":
             primary_pool, secondary_pool = self._current_hotspot_pools(now_seconds)
-            pool = primary_pool if self.rng.random() < self.primary_prob else secondary_pool
+            pool = primary_pool if random.random() < self.primary_prob else secondary_pool
         else:
             pool = self.all_edges
 
         for _ in range(self.target_pick_attempts):
-            candidate = self.rng.choice(pool)
+            candidate = random.choice(pool)
             if candidate == current_edge:
                 continue
             # 후보 edge 자체가 내부(intersection) edge면 경로탐색 대상이 아니므로 스킵
@@ -117,7 +122,7 @@ class TaxiFleetManager:
         self._respawn_counter += 1
         new_vid = f"{self.respawn_prefix}_{self._respawn_counter}"
         route_id = f"route_{new_vid}"
-        start_edge = self.rng.choice(self.boundary_edges)
+        start_edge = random.choice(self.boundary_edges)
 
         try:
             traci.route.add(route_id, [start_edge])
@@ -128,7 +133,6 @@ class TaxiFleetManager:
     def maintain(self, now_seconds: float = 0):
         try:
             current_ids = set(traci.vehicle.getIDList())
-            idle_ids = set(traci.vehicle.getTaxiFleet(0))
             # 더 이상 존재하지 않는 차량의 실패 카운터는 정리 (메모리 누수 방지)
             self.fail_counts = {vid: c for vid, c in self.fail_counts.items() if vid in current_ids}
 
@@ -139,24 +143,32 @@ class TaxiFleetManager:
             # 고립 edge(fail_counts 5회), 정지위치 배정 실패로 인한 자연 도착 처리,
             # teleport 등 원인이 무엇이든 결과(대수 유지)만은 항상 보장하기 위함.
             # ------------------------------------------------------------
-            # 출발 도로가 막혀 삽입 대기 중인 택시도 공급에 포함한다.
-            # 이 차량을 빼면 아직 출발하지 않은 대수만큼 새 택시가 중복 생성된다.
-            fleet = set(traci.vehicle.getTaxiFleet(-1))
-            pending = {vid for vid in traci.simulation.getPendingVehicles()
-                       if traci.vehicle.getTypeID(vid) == self.vtype}
-            taxi_count = len(fleet | pending)
+            taxi_count = sum(
+                1 for vid in current_ids if traci.vehicle.getTypeID(vid) == self.vtype
+            )
             shortage = self.target_count - taxi_count
             for _ in range(max(0, shortage)):
                 self._spawn_new_taxi()
 
-            for vid in sorted(idle_ids & current_ids):
+            for vid in current_ids:
                 if traci.vehicle.getTypeID(vid) != self.vtype:
                     continue
 
-                if vid not in idle_ids:
-                    continue  # 픽업 중 택시도 배정된 경로를 보존한다.
-                if self.strategy == "forecast":
-                    continue  # 수요 예측 매니저가 빈 택시의 목적지를 결정한다.
+                if traci.vehicle.getPersonIDList(vid):
+                    continue  # 손님 태우고 이동 중 — 건드리지 않음
+
+                # [추가] Hungarian이 방금 이 택시한테 픽업/하차 예약(stop)을 배정했지만
+                # 아직 그 지점에 도착 전인 경우. isStopped()는 "지금 당장 멈춰있는지"만
+                # 보기 때문에, 이 경우는 못 잡아냄 - getStops(vid, 0)으로 예정된 정지가
+                # 하나라도 있으면 이 순찰 재경로 로직을 건드리지 않고 넘어감.
+                # (안 그러면 예약된 stop과 여기서 걸리는 changeTarget이 충돌해서
+                #  "could not assign stop ... after rerouting (taxi:dispatch)" 에러 -> 누적되면
+                #  SUMO 내부 상태 손상으로 bad allocation 크래시까지 이어짐)
+                try:
+                    if traci.vehicle.getStops(vid, 0):
+                        continue
+                except traci.exceptions.TraCIException:
+                    continue
 
                 current_edge = traci.vehicle.getRoadID(vid)
                 # 교차로 내부(internal) edge에 걸쳐있는 순간엔 경로탐색이 불안정하므로 건드리지 않고

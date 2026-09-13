@@ -1,12 +1,12 @@
 {
   "region": "강남역",
-  "freq": "5min",
-  "passenger_seed": 42,
-  "taxi_strategy": "forecast",
+  "freq": "10min",
+  "passenger_seed": null,
+  "taxi_strategy": "patrol",
   "use_real_map": true,
   "dispatch_use_euclidean": true,
   "suppress_sumo_warnings": true,
-  "taxi_dispatch_algorithm": "greedy",
+  "taxi_dispatch_algorithm": "hungarian",
   "taxi_idle_algorithm": "randomCircling",
   "grid_x": 10,
   "grid_y": 10,
@@ -16,7 +16,7 @@
   "num_auto_cars": 1,
   "num_obstacles": 2,
   "num_passengers": 10000,
-  "sim_start_hour": 9,
+  "sim_start_hour": 10,
   "sim_end_hour": 11,
   "passenger_wait_timeout": 500,
   "depart_jitter_sec": 300.0,
@@ -87,7 +87,5 @@
   "demo_data_rows": 1000,
   "demo_data_minutes": 500,
   "xgb_random_state": 42,
-  "train_random_state": 42,
-  "passenger_mode": "replay",
-  "sim_date": "2026-08-31"
+  "train_random_state": 42
 }

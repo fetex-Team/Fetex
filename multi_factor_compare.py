@@ -30,7 +30,7 @@ CONFIG_PATH = os.path.join(ROOT, "config.json")
 
 # build_env.py와 동일한 규칙: "hungarian"은 SUMO 내장 알고리즘이 아니라
 # traci 콜백으로 직접 배정하는 모드이므로 SUMO 쪽엔 "traci"로 알려줘야 함
-DISPATCH_SUMO_VALUE = {"hungarian": "traci"}
+DISPATCH_SUMO_VALUE = {"hungarian": "traci", "rl_reposition": "traci"}
 
 
 def _sumo_dispatch_value(algo: str) -> str:

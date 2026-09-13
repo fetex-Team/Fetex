@@ -45,8 +45,7 @@ def filter_to_largest_scc(net, edge_ids: list) -> list:
             edge_obj = net.getEdge(eid)
         except Exception:
             continue
-        for out_edge in edge_obj.getAllowedOutgoing("taxi"):
-            # 차선/회전 연결의 taxi 통행권까지 반영한다.
+        for out_edge in edge_obj.getOutgoing():
             out_id = out_edge.getID()
             # 후보 목록(edge_ids)에 없는 edge(internal 등)로 가는 연결은 그래프에 안 넣음
             if out_id in edge_id_set:

@@ -76,7 +76,7 @@ def _cached_entries_for(cache: dict, place_name: str) -> list:
 
 
 def _bbox_from_cached_center(cache: dict, place_name: str,
-                             margin_deg: float, margin_m: float):
+                              margin_deg: float, margin_m: float):
     """캐시에 저장된 사각형의 중심점을 꺼내 새 반경으로 사각형을 다시 만든다.
 
     반환: lookup_region과 같은 형식의 dict / 쓸 만한 항목이 없으면 None
@@ -152,12 +152,7 @@ def lookup_region(place_name: str, margin_deg: float = 0.006, margin_m: float = 
     lat = float(result["lat"])
     lon = float(result["lon"])
 
-    if margin_m is not None:
-        lat_margin_deg = margin_m / 111320.0
-        lng_margin_deg = margin_m / (111320.0 * math.cos(math.radians(lat)))
-    else:
-        lat_margin_deg = margin_deg
-        lng_margin_deg = margin_deg
+    lat_margin_deg, lng_margin_deg = _make_bbox(lat, lon, margin_deg, margin_m)
 
     region = {
         "lat_min": round(lat - lat_margin_deg, 6),
