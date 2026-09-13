@@ -218,7 +218,7 @@ def create_network_and_routes():
     _dispatch_algo = str(CFG.get("taxi_dispatch_algorithm", "greedy"))
     # "hungarian"은 SUMO 내장 알고리즘이 아니라 traci 콜백으로 우리가 직접 배정하는 모드이므로
     # SUMO 쪽엔 "traci"로 알려주고, 실제 선택값은 meta에 별도로 남겨 run_simulation/measure_wait_time이 읽게 함
-    _sumo_dispatch_value = "traci" if _dispatch_algo == "hungarian" else _dispatch_algo
+    _sumo_dispatch_value = "traci" if _dispatch_algo in ("hungarian", "rl_reposition") else _dispatch_algo
     ET.SubElement(proc_tag, "device.taxi.dispatch-algorithm", value=_sumo_dispatch_value)
     # 손님 없는 택시가 정지해서 대기(idling stop)하지 않고, 정해진 구역 안에서
     # 계속 순환(빙빙 돌기)하며 대기하게 함. 기존 기본값(정지 대기)은 정지 위치 계산이
