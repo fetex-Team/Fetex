@@ -1,0 +1,26 @@
+# 줄바꿈 문자 기본 설정: 모든 텍스트 파일은 LF(Mac/Linux 표준)로 정규화
+* text=auto eol=lf
+
+# 텍스트 소스코드 및 문서 (LF 강제)
+*.py text diff=python eol=lf
+*.json text eol=lf
+*.xml text eol=lf
+*.osm text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.sh text eol=lf
+*.command text eol=lf
+
+# Windows 배치 스크립트는 CRLF 유지 (CMD 실행 오류 방지)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 바이너리 파일 (줄바꿈 변환 절대 금지 - 파일 손상 방지)
+*.pt binary
+*.pkl binary
+*.joblib binary
+*.zip binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.pyc binary
