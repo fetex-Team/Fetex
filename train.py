@@ -108,7 +108,12 @@ def prepare_real_sequence_dataset(max_lag=None):
             "시뮬레이션을 더 돌려 data/raw/simulation_demand_log.csv를 늘린 뒤 다시 시도하세요."
         )
 
-    feature_cols = [c for c in feature_df.columns if c not in ['time_bucket', 'h3_index', 'demand']]
+    # 모델 입력 피처: ID, 문자열(time_slot), 미래 타겟(y_h*) 제외 (데이터 누수 방지)
+    feature_cols = [
+        c for c in feature_df.columns
+        if c not in ['time_bucket', 'h3_index', 'geohash', 'demand', 'time_slot']
+        and not c.startswith('y_h')
+    ]
 
     # 2D Tabular Feature Matrix (XGBoost용)
     X_mat = feature_df[feature_cols].fillna(0).values
@@ -193,7 +198,7 @@ if __name__ == "__main__":
     )
 
     # hidden_dim, num_layers, kernel_size는 CNNLSTMModel 내부에서 config.json 값을 자동으로 사용
-    dl_model = CNNLSTMModel(input_dim=num_features)
+    dl_model = CNNLSTMModel(input_dim=num_features, output_dim=1)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(dl_model.parameters(), lr=CFG["cnn_lr"])
 
@@ -223,6 +228,7 @@ if __name__ == "__main__":
     torch.save({
         'state_dict': dl_model.state_dict(),
         'input_dim': num_features,
+        'output_dim': 1,
         'feature_cols': feature_cols,
         'scaler': scaler
     }, 'saved_models/cnn_lstm_demand.pt')

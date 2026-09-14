@@ -57,7 +57,7 @@ def evaluate_saved_models():
 
     # 3. CNN-LSTM 평가
     dl_data = torch.load(dl_path, weights_only=False)
-    dl_model = CNNLSTMModel(input_dim=dl_data['input_dim'])
+    dl_model = CNNLSTMModel(input_dim=dl_data['input_dim'], output_dim=dl_data.get('output_dim', 1))
     dl_model.load_state_dict(dl_data['state_dict'])
     dl_model.eval()
 

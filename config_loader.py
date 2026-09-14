@@ -1,8 +1,11 @@
 """프로젝트 전체 설정의 단일 원본."""
 import json
 import os
+import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 
 DEFAULT_CONFIG = {
@@ -112,7 +115,7 @@ def _apply_region_coords(merged, region):
         coords = {k: result[k] for k in ("lat_min","lat_max","lng_min","lng_max")}
         print(f"[안내] '{region}' 좌표를 실시간 API(Nominatim)로 조회했습니다.")
     except Exception as e:
-        print(f"[안내] 좌표 API 조회 실패({type(e).__name__}) — 프리셋으로 대체합니다.")
+        print(f"[안내] 좌표 API 조회 실패({type(e).__name__}) - 프리셋으로 대체합니다.")
     if coords:
         merged.update(coords)
         temp = REGION_PRESETS.get(region, {})
@@ -120,7 +123,7 @@ def _apply_region_coords(merged, region):
     elif region in REGION_PRESETS:
         merged.update(REGION_PRESETS[region])
     else:
-        print(f"[안내] '{region}' 프리셋 없음 — 홍대입구로 대체합니다.")
+        print(f"[안내] '{region}' 프리셋 없음 - 홍대입구로 대체합니다.")
         merged.update(REGION_PRESETS["홍대입구"]); merged["region"] = "홍대입구"
 
 def _apply_live_weather(merged, region):
