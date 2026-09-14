@@ -4,8 +4,13 @@
 # 텍스트 소스코드 및 문서 (LF 강제)
 *.py text diff=python eol=lf
 *.json text eol=lf
+*.csv text eol=lf
 *.xml text eol=lf
 *.osm text eol=lf
+*.sumocfg text eol=lf
+*.ipynb text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
 *.md text eol=lf
 *.txt text eol=lf
 *.sh text eol=lf
@@ -20,6 +25,14 @@
 *.pkl binary
 *.joblib binary
 *.zip binary
+*.onnx binary
+*.parquet binary
+*.db binary
+*.sqlite binary
+*.sqlite3 binary
+*.tar binary
+*.gz binary
+*.7z binary
 *.png binary
 *.jpg binary
 *.jpeg binary

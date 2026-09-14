@@ -23,3 +23,27 @@ data/eda/*.html
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# --- 강화학습 임시 체크포인트 ---
+module4_dispatch/checkpoints/
+
+# --- 에디터 / IDE ---
+.vscode/
+.idea/
+*.swp
+*~
+
+# --- 로그 및 테스트 캐시 ---
+*.log
+*.stderr
+*.out
+nc_stderr.txt
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- SUMO 대용량 덤프 ---
+tripinfo*.xml
+vehroutes*.xml
+*.dump
+
