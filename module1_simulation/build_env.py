@@ -136,7 +136,7 @@ def create_network_and_routes():
     if CFG.get("use_real_map"):
         _apply_region_coords(CFG, CFG["region"])
         from real_map_fetch import build_real_map_network
-        print(f"[안내] 실제 지도 모드 — '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
+        print(f"[안내] 실제 지도 모드 - '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
         net_file, raw_osm_path = build_real_map_network(
             CFG["lat_min"], CFG["lat_max"], CFG["lng_min"], CFG["lng_max"], config_dir
         )
@@ -296,7 +296,7 @@ def create_network_and_routes():
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
     print(f"[안내] Digital Twin 시뮬레이션 환경 구성 완료 "
-          f"(호출 모드: {CFG['passenger_mode']}, 정적 승객: {len(trips)}명)")
+          f"(호출 모드: {CFG.get('passenger_mode', 'replay')}, 정적 승객: {len(trips)}명)")
 
 
 if __name__ == "__main__":

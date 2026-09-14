@@ -64,7 +64,7 @@ def main():
 
     def check(name, ok, detail=""):
         results.append((name, ok, detail))
-        print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
+        print(f"  [{'PASS' if ok else 'FAIL'}] {name}" + (f" - {detail}" if detail else ""))
 
     print("\n1) 좌표 API 실패 시 REGION_PRESETS 폴백")
     for region, preset in REGION_PRESETS.items():
