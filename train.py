@@ -1,5 +1,6 @@
 import os
 import sys
+import glob
 
 # 1. 파이썬 모듈 탐색 경로(sys.path)에 최상위 프로젝트 폴더(ai_mobility_project) 등록
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -27,18 +28,70 @@ from module2_preprocessing.spatial_indexing import SpatialIndexer
 from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
 from module2_preprocessing.external_data_merge import merge_external_data
 
+# measure_wait_time.py의 run_and_measure()가 시뮬레이션을 돌릴 때마다 append하는
+# 실제 수요 로그. (단독 실행 / parallel_dispatch_worker.py / multi_factor_compare.py의
+# 병렬 워커 전부 여기에 로그를 남김 — run_simulation.py의 GUI 실행만 미포함)
+#
+# 여러 대(로컬/콜랍 등)에서 따로 돌린 로그를 합칠 때는, 파일을 직접 덮어쓰거나 diff 떠서
+# 수동 병합하지 말고 아래처럼 "simulation_demand_log" 로 시작하는 이름으로 나란히 두면 됨.
+# 예) simulation_demand_log.csv, simulation_demand_log_260912.csv, simulation_demand_log_colab1.csv
+# -> 여기서 자동으로 전부 찾아서 합치고 완전히 동일한 행(중복)만 제거함.
+DEMAND_LOG_DIR = os.path.join(PROJECT_ROOT, "data", "raw")
+DEMAND_LOG_GLOB = "simulation_demand_log*.csv"
+
+# 로그가 이 건수보다 적으면 lag/rolling 피처 생성 시 dropna로 대부분 날아갈 수 있어 경고만 출력
+MIN_RECOMMENDED_ROWS = 200
+
+
+def _load_all_demand_logs():
+    """data/raw/ 안의 simulation_demand_log*.csv 전부를 찾아 하나로 합치고 완전 중복 행 제거."""
+    paths = sorted(glob.glob(os.path.join(DEMAND_LOG_DIR, DEMAND_LOG_GLOB)))
+    if not paths:
+        return None, []
+
+    frames = []
+    for p in paths:
+        try:
+            frames.append(pd.read_csv(p, parse_dates=["pickup_datetime"]))
+        except Exception as e:
+            print(f"[경고] {p} 읽기 실패, 건너뜁니다: {e}")
+
+    if not frames:
+        return None, []
+
+    merged = pd.concat(frames, ignore_index=True)
+    before = len(merged)
+    merged = merged.drop_duplicates(subset=["pickup_datetime", "latitude", "longitude"])
+    after = len(merged)
+    if before != after:
+        print(f"[안내] 완전 중복 행 {before - after}건 제거 (병합 전 {before}건 -> 병합 후 {after}건)")
+    return merged, paths
+
 
 def prepare_real_sequence_dataset(max_lag=None):
     """Module 2 파이프라인을 거쳐 시계열 시퀀스(N, Seq_Len, Features) 데이터셋 생성"""
     max_lag = max_lag if max_lag is not None else CFG["max_lag"]
 
-    n_points = int(CFG.get("demo_data_minutes", 1000))
-    dates = pd.date_range("2026-08-28 18:00:00", periods=n_points, freq="1min")
-    df = pd.DataFrame({
-        'pickup_datetime': dates,
-        'latitude': np.random.uniform(37.495, 37.505, n_points),
-        'longitude': np.random.uniform(127.020, 127.035, n_points)
-    })
+    df, found_paths = _load_all_demand_logs()
+    if df is not None:
+        file_list = ", ".join(os.path.basename(p) for p in found_paths)
+        print(f"[안내] 로그 파일 {len(found_paths)}개({file_list})에서 총 {len(df)}건을 "
+              f"학습 데이터로 사용합니다 ({DEMAND_LOG_DIR}).")
+        if len(df) < MIN_RECOMMENDED_ROWS:
+            print(f"[경고] 로그가 {len(df)}건뿐입니다 (권장 {MIN_RECOMMENDED_ROWS}건 이상). "
+                  f"lag/rolling 피처(max_lag={max_lag}) 생성 시 dropna로 대부분 날아갈 수 있으니, "
+                  f"measure_wait_time.py나 A/B·멀티팩터 비교를 몇 차례 더 돌려서 로그를 쌓는 것을 권장합니다.")
+    else:
+        print(f"[경고] {DEMAND_LOG_DIR}에 {DEMAND_LOG_GLOB} 로그가 없어 가상 데이터로 대체합니다. "
+              f"먼저 measure_wait_time.py / A·B 비교 / 멀티팩터 비교를 한 번 이상 돌려 "
+              f"학습용 수요 로그를 쌓아주세요.")
+        dates = pd.date_range("2026-08-28 18:00:00", periods=1000, freq="1min")
+        df = pd.DataFrame({
+            'pickup_datetime': dates,
+            'latitude': np.random.uniform(37.495, 37.505, 1000),
+            'longitude': np.random.uniform(127.020, 127.035, 1000)
+        })
+
     df = merge_external_data(df)
 
     indexer = SpatialIndexer()  # config.json의 h3_resolution 사용
@@ -47,6 +100,13 @@ def prepare_real_sequence_dataset(max_lag=None):
     prep = TimeSeriesPreprocessor(max_lag=max_lag)  # config.json의 freq 사용
     agg_df = prep.aggregate_demands(df, timestamp_col='pickup_datetime', spatial_col='h3_index')
     feature_df = prep.create_features(agg_df, spatial_col='h3_index')
+
+    if len(feature_df) == 0:
+        raise ValueError(
+            "피처 생성 후 남은 행이 0개입니다. 수요 로그가 너무 적거나(짧은 시뮬레이션 1~2회) "
+            "h3_index/시간 버킷이 너무 분산되어 lag/rolling 윈도우를 채우지 못했습니다. "
+            "시뮬레이션을 더 돌려 data/raw/simulation_demand_log.csv를 늘린 뒤 다시 시도하세요."
+        )
 
     feature_cols = [c for c in feature_df.columns if c not in ['time_bucket', 'h3_index', 'demand']]
 
@@ -85,12 +145,21 @@ if __name__ == "__main__":
     }
     print(f"탐색 범위: {param_grid}")
 
-    base_xgb = build_xgboost_model()
-    grid_search = GridSearchCV(base_xgb, param_grid, cv=3, scoring='neg_root_mean_squared_error')
-    grid_search.fit(X_train, y_train)
+    # 데이터가 적을 때 GridSearchCV의 cv=3 fold가 표본 부족으로 실패하지 않도록 안전장치
+    n_splits = min(3, len(X_train)) if len(X_train) > 1 else 1
+    if n_splits < 3:
+        print(f"[경고] 학습 표본이 적어({len(X_train)}개) cross-validation fold를 {n_splits}로 줄입니다.")
 
-    best_xgb = grid_search.best_estimator_
-    print(f"최적 파라미터: {grid_search.best_params_}")
+    base_xgb = build_xgboost_model()
+    if n_splits >= 2:
+        grid_search = GridSearchCV(base_xgb, param_grid, cv=n_splits, scoring='neg_root_mean_squared_error')
+        grid_search.fit(X_train, y_train)
+        best_xgb = grid_search.best_estimator_
+        print(f"최적 파라미터: {grid_search.best_params_}")
+    else:
+        print("[경고] 표본이 너무 적어 GridSearchCV를 생략하고 기본 파라미터로 학습합니다.")
+        best_xgb = base_xgb
+        best_xgb.fit(X_train, y_train)
 
     # 성능 평가 (calculate_metrics 활용)
     xgb_preds = best_xgb.predict(X_test)
@@ -106,7 +175,7 @@ if __name__ == "__main__":
 
     num_features = X_train.shape[1]  # 피처 전체 사용
 
-    # 피처 스케일링 (모든 숫자의 단위를 평균 0, 표준편차 1로 맞춰서 진동 방지)
+    # 피처 스케일링: 단위가 서로 다른 피처(기온, 수요량, sin/cos 등)를 표준화하여 Loss 발산 방지
     scaler = StandardScaler()
     X_train_scaled = scaler.fit_transform(X_train)
     X_test_scaled = scaler.transform(X_test)

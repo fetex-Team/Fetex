@@ -12,9 +12,9 @@ _parser.add_argument("--config-path", default=None)
 _parser.add_argument("--config-dir", default=None)
 _args, _ = _parser.parse_known_args()
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config_loader import CFG, load_config
 if _args.config_path:
-    CFG = load_config(_args.config_path)
+    os.environ["MOBILITY_CONFIG"] = os.path.abspath(_args.config_path)
+from config_loader import CFG, ROOT, _apply_region_coords
 from poi_extractor import get_zones, get_boundary_edges, CATEGORIES
 from largest_component_filter import filter_to_largest_scc
 DEPART_JITTER_SEC = float(CFG.get("depart_jitter_sec", 300.0))
@@ -36,12 +36,12 @@ def _pick_connected(net, pool_a: list, pool_b: list, max_tries: int = 15):
         if a == b:
             continue
         try:
-            path, cost = net.getShortestPath(net.getEdge(a), net.getEdge(b))
+            path, cost = net.getShortestPath(net.getEdge(a), net.getEdge(b), vClass="taxi")
             if path is not None:
                 return a, b
         except Exception:
             continue
-    return a, b
+    raise ValueError("허용된 택시 경로를 찾지 못했습니다. 도로 연결을 확인하세요.")
 
 
 def build_passenger_schedule(zones: dict, sim_start_hour: float, sim_end_hour: float,
@@ -115,7 +115,10 @@ def place_initial_taxis(routes, net, edges: list, boundary_edges: list, num_taxi
 
 
 def create_network_and_routes():
-    config_dir = f"module1_simulation/{_args.config_dir or 'sumo_config'}"
+    config_dir = os.path.join(ROOT, "module1_simulation", _args.config_dir or "sumo_config")
+    seed = CFG.get("passenger_seed")
+    random.seed(seed if seed is not None else 42)
+    np.random.seed(seed if seed is not None else 42)
     os.makedirs(config_dir, exist_ok=True)
 
     sim_start_hour = CFG.get("sim_start_hour", 0)
@@ -131,6 +134,7 @@ def create_network_and_routes():
     raw_osm_path = None
 
     if CFG.get("use_real_map"):
+        _apply_region_coords(CFG, CFG["region"])
         from real_map_fetch import build_real_map_network
         print(f"[안내] 실제 지도 모드 — '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
         net_file, raw_osm_path = build_real_map_network(
@@ -140,7 +144,7 @@ def create_network_and_routes():
         print(f"{CFG['grid_x']}x{CFG['grid_y']} 블럭 도로망 생성 중... (블록 길이 {CFG['grid_length']}m)")
         subprocess.run([
             'netgenerate', '--grid',
-            '--grid.x-number', str(CFG['grid_x']), '--grid.y-number', str(CFG['grid_y']),
+            '--grid.x-number', str(CFG['grid_x'] + 1), '--grid.y-number', str(CFG['grid_y'] + 1),
             '--grid.length', str(CFG['grid_length']),
             '--sidewalks.guess', 'true',
             '--crossings.guess', 'true',
@@ -151,11 +155,13 @@ def create_network_and_routes():
     net = sumolib.net.readNet(net_file)
     valid_edges = [
         e for e in net.getEdges()
-        if not e.getFunction() == 'internal' and e.allows('passenger')
+        if not e.getFunction() == 'internal' and e.allows('passenger') and e.allows('taxi')
     ]
     edges = [e.getID() for e in valid_edges if len(e.getOutgoing()) > 0]
     edges = filter_to_largest_scc(net, edges)  # 서로 왕복 불가능한 고립 도로 조각 제거
 
+    if len(edges) < 2:
+        raise ValueError("택시가 왕복 가능한 도로가 부족합니다.")
     zones = get_zones(CFG, net, raw_osm_path=raw_osm_path)
     # zones에도 SCC 필터를 동일하게 적용 — 고립된 edge가 목적지로 뽑히면
     # 아무리 재시도해도 도달 불가능해서 "unreachable" 에러가 무한 반복되므로 여기서 걸러냄
@@ -171,7 +177,9 @@ def create_network_and_routes():
     # 3. routes XML 생성
     routes = ET.Element("routes")
 
-    ET.SubElement(routes, "vType", id="normal_type", vClass="passenger", color="1,1,1", guiShape="passenger", length="7.0", width="2.8", scale="1.0")
+    # 일반 차량은 4개 외형 타입에 균등 배분한다.
+    for i, shape in enumerate(("passenger/sedan", "passenger/hatchback", "passenger/wagon", "passenger/van")):
+        ET.SubElement(routes, "vType", id=f"normal_type_{i}", vClass="passenger", guiShape=shape)
     taxi_vtype = ET.SubElement(routes, "vType", id="taxi_type", vClass="taxi", color="1,1,0", guiShape="passenger/sedan", length="8.0", width="3.0", scale="1.0", personCapacity="4")
     # vType 자체에 파라미터를 박아두면, 이 타입으로 생성되는 모든 차량이 정적(아래 개별 trip)이든
     # 시뮬레이션 도중 taxi_manager.py가 traci.vehicle.add()로 동적 생성하는 것이든 상관없이
@@ -181,7 +189,7 @@ def create_network_and_routes():
     ET.SubElement(routes, "vType", id="auto_type", vClass="passenger", color="0,1,0", guiShape="passenger/hatchback", length="7.0", width="2.8", scale="1.0")
     ET.SubElement(routes, "vType", id="obstacle_type", vClass="ignoring", color="1,0,0", guiShape="truck", length="10.0", width="3.5", scale="1.0")
 
-    def add_random_trip(v_id, v_type="normal_type", color=None):
+    def add_random_trip(v_id, v_type, color=None):
         start_edge, end_edge = _pick_connected(net, edges, edges)
         attribs = {"id": v_id, "depart": "0", "from": start_edge, "to": end_edge, "type": v_type}
         if color:
@@ -189,18 +197,19 @@ def create_network_and_routes():
         return ET.SubElement(routes, "trip", **attribs)
 
     for i in range(CFG['num_normal_cars']):
-        add_random_trip(f"normal_car_{i}", "normal_type", color="1,1,1")
+        add_random_trip(f"normal_car_{i}", f"normal_type_{i % 4}", color="1,1,1")
     for i in range(CFG['num_auto_cars']):
         add_random_trip(f"auto_{i}", "auto_type")
     for i in range(CFG['num_obstacles']):
-        add_random_trip(f"obstacle_{i}", "obstacle_type")
+        obstacle = add_random_trip(f"obstacle_{i}", "obstacle_type")
+        ET.SubElement(obstacle, "stop", lane=obstacle.get("from") + "_0", endPos="10", duration=str((sim_end_hour - sim_start_hour) * 3600))
 
     # 택시 초기 배치
     place_initial_taxis(routes, net, edges, boundary_edges, CFG['num_taxis'])
 
     # 승객 배치
-    trips = build_passenger_schedule(zones, sim_start_hour, sim_end_hour, CFG['num_passengers'],
-                                      seed=passenger_seed, net=net)
+    trips = (build_passenger_schedule(zones, sim_start_hour, sim_end_hour, CFG['num_passengers'],
+                                      seed=passenger_seed, net=net) if CFG.get("passenger_mode") == "legacy" else [])
     for pax_id, (depart, start_edge, end_edge) in enumerate(trips):
         person = ET.SubElement(routes, "person", id=f"passenger_{pax_id}", depart=str(depart))
         ET.SubElement(person, "ride", **{"from": start_edge, "to": end_edge, "lines": "taxi"})
@@ -218,6 +227,8 @@ def create_network_and_routes():
     _dispatch_algo = str(CFG.get("taxi_dispatch_algorithm", "greedy"))
     # "hungarian"은 SUMO 내장 알고리즘이 아니라 traci 콜백으로 우리가 직접 배정하는 모드이므로
     # SUMO 쪽엔 "traci"로 알려주고, 실제 선택값은 meta에 별도로 남겨 run_simulation/measure_wait_time이 읽게 함
+    if _dispatch_algo not in ("greedy", "routeExtension", "hungarian"):
+        raise ValueError("배차 알고리즘은 greedy/routeExtension/hungarian 중에서 선택하세요.")
     _sumo_dispatch_value = "traci" if _dispatch_algo == "hungarian" else _dispatch_algo
     ET.SubElement(proc_tag, "device.taxi.dispatch-algorithm", value=_sumo_dispatch_value)
     # 손님 없는 택시가 정지해서 대기(idling stop)하지 않고, 정해진 구역 안에서
@@ -237,9 +248,27 @@ def create_network_and_routes():
     cfg_file = os.path.join(config_dir, "simulation.sumocfg")
     ET.ElementTree(cfg).write(cfg_file)
 
+    # 실제 지도는 투영 좌표를 사용하고, 합성 격자는 지역 bbox에 대응시키는 명시적 좌표 매핑을 쓴다.
+    import h3
+    min_x, min_y, max_x, max_y = net.getBoundary()
+    edge_latlng = {}
+    for eid in edges:
+        shape = net.getEdge(eid).getShape()
+        x, y = shape[len(shape) // 2]
+        if CFG.get("use_real_map"):
+            lng, lat = net.convertXY2LonLat(x, y)
+        else:
+            lat = CFG["lat_min"] + (y - min_y) / (max_y - min_y) * (CFG["lat_max"] - CFG["lat_min"])
+            lng = CFG["lng_min"] + (x - min_x) / (max_x - min_x) * (CFG["lng_max"] - CFG["lng_min"])
+        edge_latlng[eid] = [lat, lng]
+    edge_cells = {eid: h3.latlng_to_cell(*coords, CFG["h3_resolution"]) for eid, coords in edge_latlng.items()}
+
     # 사이드카 메타 파일 저장
     import json
     meta = {
+        "config": dict(CFG),
+        "edge_cells": edge_cells, "edge_latlng": edge_latlng,
+        "coordinate_mapping": "OSM projection" if CFG.get("use_real_map") else "synthetic bbox mapping",
         "edges": edges,
         "boundary_edges": boundary_edges,
         "taxi_strategy": taxi_strategy,
@@ -267,7 +296,7 @@ def create_network_and_routes():
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
     print(f"[안내] Digital Twin 시뮬레이션 환경 구성 완료 "
-          f"(정적 생성된 주택발 승객: {len(trips)}명 / 학교·회사·음식점은 실시간 매니저가 담당)")
+          f"(호출 모드: {CFG['passenger_mode']}, 정적 승객: {len(trips)}명)")
 
 
 if __name__ == "__main__":

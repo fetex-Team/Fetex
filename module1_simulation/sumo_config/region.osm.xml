@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (2942777 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
+<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (2942776 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
  <bounds minlat="37.4954430" minlon="127.0213060" maxlat="37.5044260" maxlon="127.0326290"/>
  <node id="286490183" visible="true" version="3" changeset="35203064" timestamp="2015-11-09T21:42:01Z" user="panhoong" uid="624466" lat="37.5039457" lon="127.0259991"/>
  <node id="287525731" visible="true" version="23" changeset="115122718" timestamp="2021-12-19T11:39:36Z" user="user_5239402" uid="5239402" lat="37.5091066" lon="127.0642476">
@@ -45205,7 +45205,7 @@
   <tag k="route" v="bus"/>
   <tag k="type" v="route"/>
  </relation>
- <relation id="6946554" visible="true" version="82" changeset="182769071" timestamp="2026-05-17T07:08:43Z" user="aaei924" uid="10626814">
+ <relation id="6946554" visible="true" version="83" changeset="188922731" timestamp="2026-09-12T15:47:35Z" user="IJNSena" uid="17927050">
   <member type="node" ref="4547670374" role="platform"/>
   <member type="node" ref="4547670375" role="platform"/>
   <member type="node" ref="4547670376" role="platform"/>
@@ -45387,13 +45387,13 @@
   <member type="way" ref="472042767" role=""/>
   <tag k="colour" v="blue"/>
   <tag k="from" v="월암종점"/>
-  <tag k="name" v="서울 시내버스 441 → 신사동"/>
+  <tag k="name" v="서울 시내버스 441"/>
   <tag k="network" v="서울시 간선버스"/>
   <tag k="operator" v="우신버스"/>
   <tag k="public_transport:version" v="2"/>
   <tag k="ref" v="441"/>
   <tag k="route" v="bus"/>
-  <tag k="to" v="신사동사거리.신사역"/>
+  <tag k="to" v="한강버스압구정선착장B"/>
   <tag k="type" v="route"/>
   <tag k="via" v="신사사거리"/>
  </relation>

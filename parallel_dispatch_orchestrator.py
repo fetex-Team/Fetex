@@ -25,7 +25,7 @@ CONFIG_B_DIR = os.path.join(MODULE1, "sumo_config_B")
 RESULT_A = os.path.join(ROOT, "_result_A.json")
 RESULT_B = os.path.join(ROOT, "_result_B.json")
 
-DISPATCH_SUMO_VALUE = {"hungarian": "traci"}  # build_env.py와 동일 규칙
+DISPATCH_SUMO_VALUE = {"hungarian": "traci", "rl_reposition": "traci"}  # build_env.py와 동일 규칙
 
 
 def _sumo_dispatch_value(algo: str) -> str:

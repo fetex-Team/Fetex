@@ -157,6 +157,19 @@ class TaxiFleetManager:
                 if traci.vehicle.getPersonIDList(vid):
                     continue  # 손님 태우고 이동 중 — 건드리지 않음
 
+                # [추가] Hungarian이 방금 이 택시한테 픽업/하차 예약(stop)을 배정했지만
+                # 아직 그 지점에 도착 전인 경우. isStopped()는 "지금 당장 멈춰있는지"만
+                # 보기 때문에, 이 경우는 못 잡아냄 - getStops(vid, 0)으로 예정된 정지가
+                # 하나라도 있으면 이 순찰 재경로 로직을 건드리지 않고 넘어감.
+                # (안 그러면 예약된 stop과 여기서 걸리는 changeTarget이 충돌해서
+                #  "could not assign stop ... after rerouting (taxi:dispatch)" 에러 -> 누적되면
+                #  SUMO 내부 상태 손상으로 bad allocation 크래시까지 이어짐)
+                try:
+                    if traci.vehicle.getStops(vid, 0):
+                        continue
+                except traci.exceptions.TraCIException:
+                    continue
+
                 current_edge = traci.vehicle.getRoadID(vid)
                 # 교차로 내부(internal) edge에 걸쳐있는 순간엔 경로탐색이 불안정하므로 건드리지 않고
                 # 다음 스텝(정상 edge로 넘어간 뒤)까지 대기

@@ -11,16 +11,16 @@ from config_loader import CFG
 
 # 1. PyTorch CNN-LSTM 딥러닝 모델
 class CNNLSTMModel(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int = None, num_layers: int = None, output_dim: int = 1):
+    def __init__(self, input_dim: int, hidden_dim: int = None, num_layers: int = None, output_dim: int = 6):
         super(CNNLSTMModel, self).__init__()
 
         hidden_dim = hidden_dim if hidden_dim is not None else CFG["cnn_hidden_dim"]
         num_layers = num_layers if num_layers is not None else CFG["cnn_num_layers"]
         kernel_size = CFG["cnn_kernel_size"]
 
-        # kernel_size가 1보다 크면 padding을 줘서 시퀀스 길이가 줄지 않게 함
-        # (주의: 지금 구조가 seq_len=1 스냅샷이면 kernel_size>1의 효과가 제한적입니다.
-        #  진짜 시퀀스(N, seq_len>1, features) 구조로 바꾸면 이 값이 실제로 의미를 가짐)
+        # 과거 시퀀스의 길이를 유지하는 홀수 커널만 허용한다.
+        if kernel_size < 1 or kernel_size % 2 == 0:
+            raise ValueError("CNN kernel_size는 양의 홀수여야 합니다.")
         padding = kernel_size // 2
 
         # 1D Conv Layer: 지역적 패턴 extraction
@@ -51,7 +51,8 @@ def build_xgboost_model(n_estimators: int = None, max_depth: int = None, learnin
         n_estimators=n_estimators if n_estimators is not None else CFG["xgb_n_estimators"],
         max_depth=max_depth if max_depth is not None else CFG["xgb_max_depth"],
         learning_rate=learning_rate if learning_rate is not None else CFG["xgb_learning_rate"],
-        random_state=CFG.get("xgb_random_state", 42)
+        random_state=CFG.get("xgb_random_state", 42),
+        n_jobs=1,  # macOS에서 torch와 OpenMP 충돌(세그폴트) 방지
     )
 
 

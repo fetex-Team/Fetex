@@ -1,88 +1,25 @@
-# Byte-compiled / optimized / DLL files
-__pycache__/
-*.py[cod]
-*$py.class
-
-# C extensions
-*.so
-
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-share/python-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Unit test / coverage reports
-htmlcov/
-.tox/
-.nox/
-.coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.pyre/
-.pytest_cache/
-
-# Jupyter Notebook
-.ipynb_checkpoints
-
-# Environments / Virtual Environments
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
-
-# Environment Variables & Secrets
+# --- 인증키 / 비밀값 ---
 .env
 .env.*
 !.env.example
+*.key
+secrets.json
 
-# IDEs and Editors
-.vscode/
-.idea/
-*.sublime-project
-*.sublime-workspace
-*.swp
-*.swo
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.ipynb_checkpoints/
 
-# Operating System
-.DS_Store
+# --- 대용량 데이터 / 산출물 ---
+data/raw/
+realdata/*.csv
+!realdata/TRANS_250M_IN_SAMPLE.csv
+_result_*.json
+data/eda/*.html
+
+# --- OS ---
 Thumbs.db
 desktop.ini
-
-# Logs & Temporary Files
-*.log
-tmp/
-temp/
-
-# Large archives (임시 압축본)
-*.zip
-*.tar.gz
-*.rar
+.DS_Store

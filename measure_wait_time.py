@@ -13,6 +13,7 @@
     python measure_wait_time.py patrol         # config.json의 sim 설정 그대로, 택시 전략만 patrol로 강제
     python measure_wait_time.py prepositioned  # 택시 전략만 prepositioned로 강제
     python measure_wait_time.py compare        # 두 전략 각각 build_env.py부터 다시 돌려서 순차 비교
+    python measure_wait_time.py dispatch_compare [algo_a] [algo_b]  # 배차 알고리즘 A vs B 비교
 
 주의: build_env.py가 만든 entities.rou.xml에 이미 반영된 전략을 그대로 재생하려면
       인자 없이 실행하면 됩니다 (config.json의 taxi_strategy 값 사용).
@@ -21,12 +22,25 @@
 config.json의 taxi_dispatch_algorithm이 "hungarian"이면, build_env.py가 SUMO 쪽엔
 "traci"로 알려주고 실제 선택값은 runtime_meta.json에 남겨둠. 이 스크립트는 그 값을 읽어
 HungarianDispatcher를 매 스텝 maintain()해서 실제 배차를 수행함 (SUMO 내장 greedy 대신).
+
+[학습용 수요 로그 (신규)]
+run_and_measure()가 호출될 때마다(단독 실행 / parallel_dispatch_worker.py /
+multi_factor_compare.py의 병렬 워커 전부 포함, run_simulation.py의 GUI 실행은 미포함),
+새로 등장하는 승객의 "등장 시각 + 위경도"를 data/raw/simulation_demand_log.csv에
+append합니다. train.py의 prepare_real_sequence_dataset()이 이 CSV를 읽어 실제
+시뮬레이션 기반 수요로 학습하도록 연결되어 있습니다.
+
+날짜는 실행마다 과거 90일 내에서 랜덤 배정되어, 여러 번 돌릴수록 dayofweek/is_weekend
+같은 캘린더 피처에 실제 분산이 생기도록 했습니다.
 """
 
 import os
 import sys
 import json
 import time
+import datetime
+import random
+import csv
 import traci
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -34,11 +48,16 @@ from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
+from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer  # 추가
+
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 SUMO_CFG = os.path.join(ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
 META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
+DEMAND_LOG_PATH = os.path.join(ROOT, "data", "raw", "simulation_demand_log.csv")
+RL_MODEL_PATH = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")  # 추가
+
 
 
 # measure_wait_time.py 내부
@@ -71,16 +90,31 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         sim_start_hour=meta.get("sim_start_hour", 0),
     )
 
-    # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
-    pax_manager = PassengerTimeoutManager(
-        wait_timeout_sec=meta.get("passenger_wait_timeout", 900)
+    # taxi_dispatch_algorithm이 "hungarian" 또는 "rl_reposition"일 때 매칭은 항상
+    # HungarianDispatcher가 담당함 (rl_reposition은 매칭 위에 재배치만 얹는 구조이므로)
+    dispatch_algo = meta.get("taxi_dispatch_algorithm")
+    hungarian_dispatcher = (
+        HungarianDispatcher() if dispatch_algo in ("hungarian", "rl_reposition") else None
     )
 
-    # taxi_dispatch_algorithm이 "hungarian"일 때만 활성화됨. 그 외(greedy 등)에는 None이라
-    # 아래 루프에서 아무 일도 안 하고 SUMO 내장 알고리즘이 그대로 배차를 담당함.
-    hungarian_dispatcher = (
-        HungarianDispatcher() if meta.get("taxi_dispatch_algorithm") == "hungarian" else None
+    # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
+    # dispatcher를 넘겨주면, 이미 Hungarian이 예약을 배정한 승객의 강제제거를 한 스텝
+    # 미뤄서 SUMO 내부 상태 충돌("Connection closed by SUMO")을 방지함 (passenger_manager.py 참고)
+    pax_manager = PassengerTimeoutManager(
+        wait_timeout_sec=meta.get("passenger_wait_timeout", 900),
+        dispatcher=hungarian_dispatcher,
     )
+
+    # rl_reposition일 때만 RL 재배치 매니저를 추가로 켬. 학습된 모델 파일이 없으면
+    # 경고만 찍고 None으로 둬서(=재배치 없이 hungarian만 도는 상태) 워커가 조용히 죽지 않게 함
+    rl_maintainer = None
+    if dispatch_algo == "rl_reposition":
+        if os.path.exists(RL_MODEL_PATH):
+            rl_maintainer = RLRepositionMaintainer(RL_MODEL_PATH, meta)
+            print(f"[안내] RL 재배치 정책을 불러왔습니다: {RL_MODEL_PATH}")
+        else:
+            print(f"[경고] {RL_MODEL_PATH}가 없어 RL 재배치 없이 Hungarian 매칭만 수행합니다. "
+                  f"먼저 module4_dispatch/rl_train.py를 실행하세요.")
 
     sim_end_hour = meta.get("sim_end_hour")
     sim_start_hour = meta.get("sim_start_hour", 0)
@@ -110,6 +144,11 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         sim_end_seconds = 24 * 3600
     max_steps = max(max_steps, int(sim_end_seconds) + 100)
 
+    # ---- 학습용 수요 로그 준비 ----
+    demand_log_rows = []  # (pickup_datetime_iso, latitude, longitude) 누적 버퍼
+    # 실행마다 날짜를 과거 90일 내에서 랜덤 배정 -> 여러 번 돌릴수록 요일 다양성 확보
+    run_date = datetime.date.today() - datetime.timedelta(days=random.randint(0, 90))
+
     traci.start([sumo_binary, "-c", _sumo_cfg])
 
     step = 0
@@ -122,13 +161,28 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             pax_manager.maintain(now)  # 대기시간 초과 승객 소멸 처리
             if hungarian_dispatcher:
                 hungarian_dispatcher.maintain(now)  # 헝가리안 실시간 배차 (taxi_dispatch_algorithm="hungarian"일 때만)
-            spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids)  # 학교/회사/음식점 실시간 생성·소멸
+            if rl_maintainer:
+                rl_maintainer.maintain(now, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour)  # 추가
+            spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids)
+            
 
             # 이번 스텝에 새로 등장한 person 기록
             for pid in traci.person.getIDList():
                 if pid not in seen_persons:
                     seen_persons.add(pid)
                     depart_time[pid] = now
+
+                    # 학습 데이터용: 등장 시점의 위치를 위경도로 변환해 기록
+                    try:
+                        x, y = traci.person.getPosition(pid)
+                        lon, lat = traci.simulation.convertGeo(x, y)
+                        current_hour = sim_start_hour + (now / 3600.0)
+                        pickup_dt = datetime.datetime.combine(
+                            run_date, datetime.time(0, 0)
+                        ) + datetime.timedelta(hours=current_hour)
+                        demand_log_rows.append((pickup_dt.isoformat(), lat, lon))
+                    except Exception:
+                        pass
 
                 if pid not in in_taxi:
                     vid = traci.person.getVehicle(pid) if pid in traci.person.getIDList() else ""
@@ -167,6 +221,17 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     adjusted_waits = list(waits)
     for _ in range(n_timeout_removed):
         adjusted_waits.append(max_penalty_sec)
+
+    # ---- 학습용 수요 로그 저장 (for 루프 밖, 시뮬레이션 1회당 한 번만) ----
+    if demand_log_rows:
+        os.makedirs(os.path.dirname(DEMAND_LOG_PATH), exist_ok=True)
+        file_exists = os.path.exists(DEMAND_LOG_PATH)
+        with open(DEMAND_LOG_PATH, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["pickup_datetime", "latitude", "longitude"])
+            writer.writerows(demand_log_rows)
+        print(f"[안내] 학습용 수요 로그 {len(demand_log_rows)}건을 {DEMAND_LOG_PATH}에 남겼습니다.")
 
     result = {
         "n_total_passengers": n_total,
@@ -241,6 +306,7 @@ def compare_strategies():
 
     return results
 
+
 def set_dispatch_algorithm_in_config(algo: str):
     """config.json의 taxi_dispatch_algorithm 값을 바꿔치기"""
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -279,7 +345,6 @@ def compare_dispatch_algorithms(algo_a: str = "greedy", algo_b: str = "hungarian
     return results
 
 
-
 if __name__ == "__main__":
     mode = sys.argv[1] if len(sys.argv) > 1 else "current"
 
@@ -290,15 +355,10 @@ if __name__ == "__main__":
         rebuild_env()
         result = run_and_measure()
         print_result(mode, result)
-
-
-    
     elif mode == "dispatch_compare":
         algo_a = sys.argv[2] if len(sys.argv) > 2 else "greedy"
         algo_b = sys.argv[3] if len(sys.argv) > 3 else "hungarian"
         compare_dispatch_algorithms(algo_a, algo_b)
-
-        
     else:
         # config.json에 이미 설정된 전략 그대로, 재생성 없이 현재 rou.xml/sumocfg로 측정만
         result = run_and_measure()

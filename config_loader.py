@@ -61,7 +61,7 @@ DEFAULT_CONFIG = {
     "xgb_n_estimators": 100, "xgb_max_depth": 6, "xgb_learning_rate": 0.1,
     "test_size": 0.2,
     "cnn_hidden_dim": 64, "cnn_num_layers": 2, "cnn_kernel_size": 3,
-    "cnn_epochs": 10, "cnn_batch_size": 32, "cnn_lr": 0.0005,
+    "cnn_epochs": 30, "cnn_batch_size": 16, "cnn_lr": 0.001,
     # Module 4
     "base_fare": 4800, "min_multiplier": 1.0, "max_multiplier": 3.0,
     "surge_coefficient": 0.4,
@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
     "mock_available_taxis_min": 1, "mock_available_taxis_max": 20,
     "mock_taxi_count": 20, "mock_passenger_count": 20,
     # Synthetic training/demo data (kept explicit so it is no longer hidden)
-    "demo_data_rows": 1000, "demo_data_minutes": 3000,
+    "demo_data_rows": 1000, "demo_data_minutes": 500,
     "demo_data_start": "2026-08-28 18:00:00",
     "xgb_random_state": 42, "train_random_state": 42,
 }

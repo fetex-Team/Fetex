@@ -37,6 +37,13 @@ class HungarianDispatcher:
         # 이미 배정을 "시도"한 예약 id를 기록해서 같은 예약에 매 스텝 중복 dispatchTaxi 호출하는 것 방지.
         # (SUMO가 배정 후에도 한동안 getTaxiReservations에 남겨둘 수 있어 안전장치로 둠)
         self.dispatched_reservations = set()
+        # 이미 택시가 배정된 승객의 person_id 집합. passenger_manager.py가 타임아웃 처리할 때,
+        # 이미 예약이 걸린 승객을 traci.person.remove()로 강제 제거하면 SUMO 내부의 택시
+        # 예약/스케줄 상태가 깨져서 (Connection closed by SUMO) 크래시로 이어질 수 있음 --
+        # 그래서 이 집합에 들어있는 승객만 "물리적 제거는 미루고 논리적으로만 소멸 처리"하도록
+        # passenger_manager.py 쪽에서 참조함. 아직 배정 안 된 승객(여기 없는 pid)은 그대로
+        # 안전하게 물리적으로 제거해도 됨 -- 대기시간 지표를 불필요하게 왜곡시키지 않기 위함.
+        self.dispatched_person_ids = set()
         # dispatchTaxi 실패(연속) 시 그 예약을 포기하고 다음 스텝에 다시 시도할 수 있게
         # 별도로 걸러내진 않음 — SUMO가 상태를 관리하므로 실패해도 다음 스텝에 재시도됨.
 
@@ -98,6 +105,7 @@ class HungarianDispatcher:
                 try:
                     traci.vehicle.dispatchTaxi(vid, [res.id])
                     self.dispatched_reservations.add(res.id)
+                    self.dispatched_person_ids.update(res.persons)  # 이 승객들은 이제 예약이 걸린 상태
                     # 👈 배정 성공할 때마다 콘솔에 찍히는 디버그 로그 추가
                     #print(f"[Hungarian] {vid} -> 예약 {res.id} 배정 (누적 {len(self.dispatched_reservations)}건)")
                 except traci.exceptions.TraCIException:
