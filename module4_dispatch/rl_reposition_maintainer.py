@@ -25,7 +25,10 @@ test_matching_comparison.py / multi_factor_compare.py의 taxi_dispatch_algorithm
 "rl_reposition"을 새 옵션으로 추가하면 기존 비교 스크립트 그대로 재사용 가능.
 """
 import traci
-from stable_baselines3 import PPO
+try:
+    from stable_baselines3 import PPO
+except ImportError:
+    PPO = None
 
 from poi_extractor import CATEGORIES as ZONE_CATEGORIES
 
@@ -34,6 +37,8 @@ DECISION_INTERVAL_SEC = 60.0
 
 class RLRepositionMaintainer:
     def __init__(self, model_path: str, meta: dict):
+        if PPO is None:
+            raise ImportError("RL 재배치 정책을 실행하려면 'pip install stable-baselines3' 설치가 필요합니다.")
         self.model = PPO.load(model_path)
         self.zones = meta["zones"]
         self._last_decision_time = -DECISION_INTERVAL_SEC
