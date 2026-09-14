@@ -30,7 +30,7 @@ CONFIG_PATH = os.path.join(ROOT, "config.json")
 
 # build_env.py와 동일한 규칙: "hungarian"은 SUMO 내장 알고리즘이 아니라
 # traci 콜백으로 직접 배정하는 모드이므로 SUMO 쪽엔 "traci"로 알려줘야 함
-DISPATCH_SUMO_VALUE = {"hungarian": "traci"}
+DISPATCH_SUMO_VALUE = {"hungarian": "traci", "rl_reposition": "traci"}
 
 
 def _sumo_dispatch_value(algo: str) -> str:
@@ -102,8 +102,12 @@ def launch_workers(combos: list) -> list:
 
         config_dir_name = f"sumo_config_combo{idx}"
         if os.name == "nt":
+            # [수정] config_gui.py의 _run()과 동일한 cmd /k 재파싱 버그 회피.
+            # call 을 앞에 붙여 " 로 시작하지 않게 만들어 cmd의 특수 따옴표 처리를 건너뜀.
+            inner_cmd = subprocess.list2cmdline([sys.executable, worker_path, config_dir_name, label, result_path])
+            full_cmd = f'cmd /k call {inner_cmd}'
             subprocess.Popen(
-                ["cmd", "/k", sys.executable, worker_path, config_dir_name, label, result_path],
+                full_cmd,
                 cwd=ROOT, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE
             )
         else:

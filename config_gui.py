@@ -12,7 +12,7 @@ STRATEGIES=["patrol","prepositioned"]
 # A/B 비교하기 다이얼로그에서 팩터로 고를 수 있는 항목들 (key -> (라벨, 선택 가능한 값 목록))
 FACTOR_OPTIONS={
 "taxi_strategy":("택시 전략",STRATEGIES),
-"taxi_dispatch_algorithm":("배차 알고리즘",["greedy","routeExtension","traci","hungarian"]),
+"taxi_dispatch_algorithm":("배차 알고리즘",["greedy","routeExtension","traci","hungarian","rl_reposition"]),
 }
 
 # key, label, min, max, decimals, integer
@@ -35,7 +35,7 @@ NUMERIC_GROUPS={
 "공통/실험":[("demo_data_rows","학습 데모 데이터 행 수",100,100000,0,1),("demo_data_minutes","추론 데모 데이터 길이",10,100000,0,1),("xgb_random_state","XGB random state",0,2147483647,0,1),("train_random_state","학습 random state",0,2147483647,0,1)]}
 
 BOOLS=[("use_real_map","실제 OSM 지도 사용"),("dispatch_use_euclidean","Module 4 테스트 거리: 유클리드 사용"),("suppress_sumo_warnings","SUMO 경고 로그 숨기기 (속도 향상)")]
-CHOICES=[("taxi_strategy","택시 전략",STRATEGIES),("taxi_dispatch_algorithm","SUMO taxi dispatch algorithm",["greedy","routeExtension","traci","hungarian"]),("taxi_idle_algorithm","SUMO taxi idle algorithm",["randomCircling","stopOnRoad","taxiStop"])]
+CHOICES=[("taxi_strategy","택시 전략",STRATEGIES),("taxi_dispatch_algorithm","SUMO taxi dispatch algorithm",["greedy","routeExtension","traci","hungarian","rl_reposition"]),("taxi_idle_algorithm","SUMO taxi idle algorithm",["randomCircling","stopOnRoad","taxiStop"])]
 
 class ConfigGUI:
  def __init__(self,root):
@@ -112,14 +112,66 @@ class ConfigGUI:
    if blocking:return subprocess.run([sys.executable,path,*args],cwd=ROOT,env=self._env(),check=True)
    if os.name=="nt":
     # 새 콘솔에서 실행 후 끝나도 창이 자동으로 안 닫히게 cmd /k로 감쌈 (결과 다 보고 사용자가 직접 X 눌러야 닫힘)
-    cmd_args=["cmd","/k",sys.executable,path,*args]
-    subprocess.Popen(cmd_args,cwd=ROOT,env=self._env(),creationflags=subprocess.CREATE_NEW_CONSOLE);return True
+    # [수정] cmd.exe는 /k 뒤 문자열이 큰따옴표로 "시작"할 때만 자체 따옴표-개수 세기
+    # 특수 처리를 하는데, 이때 따옴표가 정확히 2개가 아니면(python.exe 경로 공백 +
+    # JSON 인자의 따옴표 등) 깨져서 "'C:\Program'은(는)..." 오류가 남.
+    # 맨 앞에 call 을 붙여 " 로 시작하지 않게 만들면 이 특수 처리 자체를 건너뛰어 안전함.
+    inner_cmd=subprocess.list2cmdline([sys.executable,path,*args])
+    full_cmd=f'cmd /k call {inner_cmd}'
+    subprocess.Popen(full_cmd,cwd=ROOT,env=self._env(),creationflags=subprocess.CREATE_NEW_CONSOLE);return True
    subprocess.Popen([sys.executable,path,*args],cwd=ROOT,env=self._env());return True
   except Exception as e:messagebox.showerror("실행 오류",str(e));return False
  def run_main(self):
   self.save_config_only();
   if self._run(os.path.join("module1_simulation","build_env.py"),blocking=True):self._run("main.py")
- def run_training(self):self.save_config_only();self._run("train.py")
+
+ def run_training(self):
+    self.save_config_only()
+
+    try:
+        # 1. 기존 학습 데이터 전처리/통합
+        self.status.config(text="1/3 train.py 실행 중...")
+        self.root.update()
+
+        self._run("train.py", blocking=True)
+
+        # 2. 카테고리별 수요 예측 모델 학습
+        self.status.config(text="2/3 category demand 모델 학습 중...")
+        self.root.update()
+
+        self._run(
+            os.path.join("module3_prediction", "train_category_demand.py"),
+            blocking=True
+        )
+
+        # 3. 강화학습
+        self.status.config(text="3/3 강화학습 실행 중...")
+        self.root.update()
+
+        self._run(
+            os.path.join("module4_dispatch", "rl_train.py"),
+            blocking=True
+        )
+
+        self.status.config(text="전체 학습 완료")
+        messagebox.showinfo(
+            "학습 완료",
+            "전체 학습이 완료되었습니다.\n\n"
+            "생성 파일:\n"
+            "• category_demand_models.pkl\n"
+            "• rl_reposition_model.zip"
+        )
+
+    except subprocess.CalledProcessError as e:
+        self.status.config(text="학습 중 오류 발생")
+        messagebox.showerror(
+            "학습 오류",
+            f"학습 과정에서 오류가 발생했습니다.\n\n"
+            f"실패한 단계의 종료 코드: {e.returncode}"
+        )
+    except Exception as e:
+        self.status.config(text="학습 중 오류 발생")
+        messagebox.showerror("학습 오류", str(e))
  def open_ab_compare_dialog(self):
   win=tk.Toplevel(self.root)
   win.title("A/B 비교하기")
