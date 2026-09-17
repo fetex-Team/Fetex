@@ -43,7 +43,13 @@ import random
 import csv
 import traci
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.abspath(__file__))
+if ROOT not in sys.path:
+    sys.path.insert(0, ROOT)
+for _sub in ("module1_simulation", "module2_preprocessing", "module3_prediction", "module4_dispatch", "tools", "scripts"):
+    _sub_path = os.path.join(ROOT, _sub)
+    if os.path.exists(_sub_path) and _sub_path not in sys.path:
+        sys.path.insert(0, _sub_path)
 from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
@@ -195,13 +201,6 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             if sim_end_seconds is not None and now >= sim_end_seconds:
                 break
 
-            active_persons = traci.person.getIDList()
-            if step > 10 and len(active_persons) == 0:
-                empty_count += 1
-                if empty_count >= 5:
-                    break
-            else:
-                empty_count = 0
             step += 1
     finally:
         traci.close()
@@ -300,7 +299,7 @@ def compare_strategies():
         better = "prepositioned" if diff > 0 else "patrol"
         print(f" - patrol 평균 대기(타임아웃 포함): {a_metric}초")
         print(f" - prepositioned 평균 대기(타임아웃 포함): {b_metric}초")
-        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) — '{better}' 전략이 더 나음")
+        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) - '{better}' 전략이 더 나음")
     else:
         print(" - 두 전략 중 하나 이상에서 측정 실패 (탑승자 없음). 승객/시간대 설정을 확인하세요.")
 
@@ -338,7 +337,7 @@ def compare_dispatch_algorithms(algo_a: str = "greedy", algo_b: str = "hungarian
         better = algo_b if diff > 0 else algo_a
         print(f" - {algo_a} 평균 대기(타임아웃 포함): {a_metric}초")
         print(f" - {algo_b} 평균 대기(타임아웃 포함): {b_metric}초")
-        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) — '{better}' 알고리즘이 더 나음")
+        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) - '{better}' 알고리즘이 더 나음")
     else:
         print(" - 둘 중 하나 이상에서 측정 실패. 시간대/승객 설정을 확인하세요.")
 

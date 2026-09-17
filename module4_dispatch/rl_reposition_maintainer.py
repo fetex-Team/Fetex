@@ -24,7 +24,17 @@ HungarianDispatcher가 "maintain(now)"로 매 스텝 불리는 것과 동일한 
 test_matching_comparison.py / multi_factor_compare.py의 taxi_dispatch_algorithm 값에
 "rl_reposition"을 새 옵션으로 추가하면 기존 비교 스크립트 그대로 재사용 가능.
 """
+import os
+import sys
 import traci
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+_MOD2 = os.path.join(_ROOT, "module2_preprocessing")
+if os.path.exists(_MOD2) and _MOD2 not in sys.path:
+    sys.path.insert(0, _MOD2)
+
 try:
     from stable_baselines3 import PPO
 except ImportError:

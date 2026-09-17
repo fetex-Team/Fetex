@@ -6,6 +6,10 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+for _sub in ("module1_simulation", "module2_preprocessing", "module3_prediction", "module4_dispatch", "tools", "scripts"):
+    _sub_path = os.path.join(ROOT, _sub)
+    if os.path.exists(_sub_path) and _sub_path not in sys.path:
+        sys.path.insert(0, _sub_path)
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 
 DEFAULT_CONFIG = {

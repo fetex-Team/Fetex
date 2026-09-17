@@ -2,7 +2,7 @@
   "region": "강남역",
   "freq": "5min",
   "passenger_seed": null,
-  "taxi_strategy": "patrol",
+  "taxi_strategy": "prepositioned",
   "use_real_map": true,
   "dispatch_use_euclidean": true,
   "suppress_sumo_warnings": false,

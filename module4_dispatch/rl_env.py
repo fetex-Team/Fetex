@@ -26,6 +26,10 @@ import traci
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
+for _sub in ("module1_simulation", "module2_preprocessing", "module4_dispatch"):
+    _sub_path = os.path.join(PROJECT_ROOT, _sub)
+    if os.path.exists(_sub_path) and _sub_path not in sys.path:
+        sys.path.insert(0, _sub_path)
 
 import gymnasium as gym
 from gymnasium import spaces
