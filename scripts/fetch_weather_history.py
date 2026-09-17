@@ -4,6 +4,7 @@
 사용: python scripts/fetch_weather_history.py [시작일 YYYY-MM-DD] [종료일]   (지역은 config.json의 region)
   생략 시: config.json의 region 중심 좌표, sim_date 기준 앞뒤 7일.
 출력: data/external/weather_<지역>_<시작>_<종료>.csv  (time, temperature, precipitation, wind_speed)
+시각은 config.json timezone(기본 Asia/Seoul) 현지 시각 — 호출 로그와 같은 기준이어야 merge_asof가 맞는다.
 
 ※ 네트워크가 되는 맥에서 실행. 실패 시 예외 대신 안내만 출력 (파이프라인은 fallback으로 계속 동작).
 """
@@ -20,7 +21,7 @@ URL = "https://archive-api.open-meteo.com/v1/archive"
 def fetch(lat, lon, start, end):
     q = urllib.parse.urlencode({
         "latitude": lat, "longitude": lon, "start_date": start, "end_date": end,
-        "hourly": "temperature_2m,precipitation,wind_speed_10m", "timezone": "Asia/Seoul",
+        "hourly": "temperature_2m,precipitation,wind_speed_10m", "timezone": CFG.get("timezone", "Asia/Seoul"),
     })
     req = urllib.request.Request(f"{URL}?{q}", headers={"User-Agent": "fetex-module2/1.0"})
     with urllib.request.urlopen(req, timeout=20) as r:
