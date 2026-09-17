@@ -277,14 +277,23 @@ def test_strict_external():
     check("T7 병합 후 파생 3개 존재·결측 없음", set(WEATHER_DERIVED_COLS) <= set(m.columns) and m[WEATHER_DERIVED_COLS].notna().all().all())
     a = m[m.h3_index == "A"].set_index("time_bucket")
     check("T7 5분 칸 backward: 12:30의 precip_3h_sum = 12시 값", math.isclose(a.loc["2026-09-07 12:30", "precip_3h_sum"], 3.5))
-    # 휴일: 2026-10-03(토, 개천절) → is_public_holiday=1, is_holiday=1 / 10-02(금) → before_off / 10-05(월) → after_off
+    # 휴일 (실제 달력): 2026-10-03(토, 개천절) → is_public_holiday=1. 실제 holidays 패키지는 대체공휴일 10/5(월)까지
+    # 포함하므로 (mock 달력은 미포함) 전후일·연휴 길이 로직은 달력을 명시해 달력 버전과 무관하게 검사한다.
     t = pd.DataFrame({"time_bucket": pd.to_datetime(["2026-10-01 09:00", "2026-10-02 09:00", "2026-10-03 09:00", "2026-10-04 09:00", "2026-10-05 09:00", "2026-10-06 09:00"])})
     f = add_time_features(t)
     check("T7 is_public_holiday: 개천절 1, 일요일 0", f.loc[2, "is_public_holiday"] == 1 and f.loc[3, "is_public_holiday"] == 0)
     check("T7 is_day_before_off: 10/2(금)=1, 10/1(목)=0", f.loc[1, "is_day_before_off"] == 1 and f.loc[0, "is_day_before_off"] == 0)
-    check("T7 is_day_after_off: 10/5(월)=1, 10/6(화)=0", f.loc[4, "is_day_after_off"] == 1 and f.loc[5, "is_day_after_off"] == 0)
-    check("T7 off_streak_len: 10/3~4 연휴 2, 평일 0", f.loc[2, "off_streak_len"] == 2 and f.loc[3, "off_streak_len"] == 2 and f.loc[0, "off_streak_len"] == 0)
+    check("T7 off_streak_len ≥ 2 (10/3~4), 평일 0", f.loc[2, "off_streak_len"] >= 2 and f.loc[3, "off_streak_len"] == f.loc[2, "off_streak_len"] and f.loc[0, "off_streak_len"] == 0)
     check("T7 쉬는 날 자체는 before/after 0", f.loc[2, "is_day_before_off"] == 0 and f.loc[3, "is_day_after_off"] == 0)
+    # 대체공휴일 없는 달력 (개천절만): 10/5(월) = 연휴 다음날, 연휴 2일
+    f2 = add_time_features(t, holiday_dates={datetime.date(2026, 10, 3)})
+    check("T7 [달력 명시] is_day_after_off: 10/5(월)=1, 10/6(화)=0", f2.loc[4, "is_day_after_off"] == 1 and f2.loc[5, "is_day_after_off"] == 0)
+    check("T7 [달력 명시] off_streak_len: 10/3~4 연휴 2", f2.loc[2, "off_streak_len"] == 2 and f2.loc[3, "off_streak_len"] == 2 and f2.loc[4, "off_streak_len"] == 0)
+    # 대체공휴일 있는 달력 (개천절 + 10/5 대체): 10/5는 쉬는 날 → 연휴 3일, 다음날은 10/6
+    f3 = add_time_features(t, holiday_dates={datetime.date(2026, 10, 3), datetime.date(2026, 10, 5)})
+    check("T7 [대체공휴일] 10/5 is_public_holiday=1, after_off=0, 10/6 after_off=1",
+          f3.loc[4, "is_public_holiday"] == 1 and f3.loc[4, "is_day_after_off"] == 0 and f3.loc[5, "is_day_after_off"] == 1)
+    check("T7 [대체공휴일] off_streak_len: 10/3~5 연휴 3", (f3.loc[2:4, "off_streak_len"] == 3).all() and f3.loc[1, "is_day_before_off"] == 1)
     check("T7 달력 검증: 연도 미포함 → ValueError", _raises(validate_calendar, {datetime.date(2020, 1, 1)}, t["time_bucket"]))
     check("T7 TIME_FEATURE_COLS 19개 전부 생성", set(TIME_FEATURE_COLS) <= set(f.columns) and len(TIME_FEATURE_COLS) == 19)
     # 어제 동일 시간대

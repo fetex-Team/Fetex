@@ -23,7 +23,7 @@
 - `same_time_yesterday` + `has_yesterday`: 1일 전(288칸) 같은 칸 수요. 지난주(2,016칸)보다 가까워 최근 수준 변화를 반영.
 - `TimeSeriesPreprocessor.required_history_buckets`: 모든 피처가 값을 갖는 데 필요한 이력 창(= 1주 + 3칸). **서빙이 이보다 짧으면 same_time_* 가 항상 0이 되어 학습 분포와 어긋난다** (아래 3절).
 
-피처 수 34 → **43**. 테스트 `tests/test_module2.py` 82개 PASS (T7 26개 신규).
+피처 수 34 → **43**. 테스트 `tests/test_module2.py` 85개 PASS (T7 29개 신규, 대체공휴일 달력 포함).
 
 ## 2. 예측 정확도 — 8주 합성 데이터 ablation
 

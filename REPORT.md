@@ -34,7 +34,7 @@
 ### 2.6 외부 데이터(날씨·달력) 병합과 품질 기준
 - 날씨 결합: 관측 표(시간별 또는 5분) → 5분 칸에 `merge_asof(backward, tolerance 3h)` — 그 시각 이전 최신 관측만 사용(누수 없음). ≤3h 공백 선형보간 + `weather_interpolated`, 그 밖 `weather_missing` 플래그(원천이 제공하는 변수만 판정), 파일 없으면 상수 fallback + 경고.
 - 품질 기준(Data Spec 5장, 위반 시 ValueError로 중단): 기온 −40~50℃·강수 0~200mm·풍속 0~75m/s, 관측 간격 경계 정렬, 학습 경로 결측률 ≤ 5%(`weather_missing_max_ratio`), 공휴일 달력이 데이터 연도를 덮을 것, (time_bucket, h3_index) 유일, demand ≥ 0, 5분 경계 정렬, tz 단일.
-- 파생 피처: 날씨 `precip_3h_sum`·`rain_streak_h`·`temp_anomaly_24h`(과거 방향), 달력 `is_public_holiday`·`is_day_before_off`·`is_day_after_off`·`off_streak_len`, 수요 `same_time_yesterday`. 모델 입력 피처 34 → **43개**. 검증: `tests/test_module2.py` 82개.
+- 파생 피처: 날씨 `precip_3h_sum`·`rain_streak_h`·`temp_anomaly_24h`(과거 방향), 달력 `is_public_holiday`·`is_day_before_off`·`is_day_after_off`·`off_streak_len`, 수요 `same_time_yesterday`. 모델 입력 피처 34 → **43개**. 검증: `tests/test_module2.py` 85개(실제 `holidays` 달력·대체공휴일 포함 검사).
 
 ### 2.7 날씨·휴일이 수요에 미치는 영향 (`05_weather_rain.png`, `06_weather_temp.png`, `07_rain_day.png`)
 같은 셀·같은 시간대 평균을 1로 둔 호출 비율:
