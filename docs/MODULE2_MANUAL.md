@@ -41,7 +41,7 @@
 | (선택) `origin_zone`, `dest_category`, `wait_sec`, `status` | 시뮬 로그일 때만 존재. Module 2는 없어도 동작해야 함 |
 
 **데이터 소스 2종**
-- (A) SUMO 시뮬 로그: `실행_로그생성_학습.command` → `measure_wait_time.py`가 `sim_log_recorder.py`로 생성. 파이프라인 검증·배차(M4) 연동용.
+- (A) SUMO 시뮬 로그: `python module1_simulation/build_env.py` → `python measure_wait_time.py`가 `data/sim_logs/`에 생성. 파이프라인 검증·배차(M4) 연동용.
 - (B) 공개 데이터(명세 제약 7 허용): 뉴욕 옐로택시 등. 다일·다요일·날씨 상관 EDA용. **팀 결정 필요** — 결정 전까지 코드는 (A)(B) 모두 같은 스키마로 받도록 만든다.
 
 **최소 완료 조건**
@@ -184,6 +184,7 @@ pip install holidays statsmodels jupyter        # 최초 1회
 python tests/test_module2.py                    # T1~T4 검증
 python scripts/fetch_weather_history.py         # T4 날씨 수집 (네트워크)
 python -m module2_preprocessing.pipeline --logs "data/sim_logs/*.csv" --out data/processed/features.csv
-bash 실행_EDA.command                            # T5 노트북 실행 + H3/POI 그림
+python eda/h3_resolution_compare.py && python eda/poi_zone_map.py   # T5 H3/POI 그림
+jupyter nbconvert --to notebook --execute --inplace notebooks/01_EDA_and_Spatial.ipynb   # T5 노트북 실행
 python train.py                                 # M3 연동 확인
 ```

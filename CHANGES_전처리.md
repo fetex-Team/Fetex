@@ -42,10 +42,10 @@
 - H3 res 8 → 셀 7개, 학습 데이터 42행. res 9 이상 필요
 - train.py 세그폴트(macOS torch+xgboost OpenMP 충돌) → KMP_DUPLICATE_LIB_OK / OMP_NUM_THREADS=1 / xgb n_jobs=1로 해결
 - evaluate.py MAPE가 수요 0 칸에서 폭발(359,284%) → 0 제외 또는 sMAPE 필요 (평가 담당 공유)
-- 실행: `실행_로그생성_학습.command`(시뮬+학습) / `실행_학습만.command`(학습만)
+- 실행: `python module1_simulation/build_env.py && python measure_wait_time.py`(시뮬) → `python scripts/train_dispatch_model.py`(학습)
 
 ## 2026-09-10 H3 resolution 결정: 8 → 9
-- 비교 스크립트: `eda/h3_resolution_compare.py` (실행: `실행_EDA_H3비교.command`), 결과: `data/eda/h3_resolution_summary.csv`, `h3_resolution_compare.png`
+- 비교 스크립트: `eda/h3_resolution_compare.py` (실행: `python eda/h3_resolution_compare.py`), 결과: `data/eda/h3_resolution_summary.csv`, `h3_resolution_compare.png`
 - res 7: 셀 3개, 최다 셀 86% → 공간 예측 불가 / res 8: 셀 7개, 최다 셀 35%, 학습 42행 → too coarse
 - res 10: 셀 70개, 0인 칸 37%, 중앙값 1건/10분, lag-1 r=0.17 → too fine(노이즈)
 - res 9: 셀 22개(변 201m), 0인 칸 20%, 학습 132행, 출근 핫스팟 5~6셀 식별됨 → 채택
@@ -53,7 +53,7 @@
 - ※ 공유 config 변경이므로 팀 공지 필요. 최종 로그(시뮬 시간 확정 후) 나오면 표만 다시 뽑아 확인
 
 ## 2026-09-10 POI zone 검증 결과
-- 스크립트: `eda/poi_zone_map.py` (실행: `실행_EDA_POI지도.command`) → `data/eda/poi_zone_map.html`(Leaflet, 카테고리 레이어 토글), `poi_zone_map.png`, `poi_zone_summary.csv`
+- 스크립트: `eda/poi_zone_map.py` (실행: `python eda/poi_zone_map.py`) → `data/eda/poi_zone_map.html`(Leaflet, 카테고리 레이어 토글), `poi_zone_map.png`, `poi_zone_summary.csv`
 - OSM POI → edge: 학교 5→4, 주택 70→28, 회사 123→51, 음식점 525→157, 지하철 17→16, 버스 46→28
 - 매핑 반경 40/80/120/200m 모두 edge 수 동일 → 반경은 원인 아님, 80m 유지. 80m 밖 누락 POI는 주택 5개뿐
 - 겹침: zone edge 190/404 중 2개 이상 카테고리 63개, 4개 카테고리 5개(강남대로). 원인은 큰길 하나에 POI가 몰리는 것 + zone 내 edge 균등 랜덤 선택
@@ -72,4 +72,4 @@
 - tests/test_module2.py (신규): 최소 완료 조건 42개 테스트 (h3 없는 환경은 mock)
 - eda/eda_utils.py + notebooks/01_EDA_and_Spatial.ipynb (신규): 개요/시간/공간/POI/ADF/ACF/ablation/외부상관 8섹션
 - README Module 2 섹션, data/README.md, REPORT.md EDA 초안, requirements(holidays/statsmodels/jupyter)
-- 실행: 실행_전처리테스트.command(테스트+벤치+CLI), 실행_EDA.command(그림+노트북 실행)
+- 실행: `python tests/test_module2.py`(테스트), `python -m module2_preprocessing.spatial_indexing --bench 100000`(벤치), `python -m module2_preprocessing.pipeline`(CLI), EDA는 위 두 스크립트 + `jupyter nbconvert --execute notebooks/01_EDA_and_Spatial.ipynb`
