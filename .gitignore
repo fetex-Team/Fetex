@@ -23,3 +23,6 @@ data/eda/*.html
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# --- 8주 합성 데이터 (11MB, 시드 42로 재생성 가능) ---
+data/generated_8w/
