@@ -6,8 +6,7 @@
   season(1봄 2여름 3가을 4겨울), time_slot(문자열), time_slot_code(정수),
   hour_sin, hour_cos, dow_sin, dow_cos  ← 순환 인코딩: 23시와 0시가 "가깝다"는 걸 모델에 알려줌 (딥러닝용)
 
-공휴일: `holidays` 패키지 달력 사용. 국가는 config.json의 holiday_country(기본 "KR"; NYC 실데이터는 "US").
-      패키지가 없으면 경고 후 주말만 휴일로 간주.
+공휴일: `holidays` 패키지의 한국(KR) 달력 사용. 패키지가 없으면 경고 후 주말만 휴일로 간주.
 time_slot 경계는 시뮬 규칙(config: school/company/lunch/evening 시간창)과 맞춰 해석이 가능하게 함.
 """
 import sys
@@ -17,7 +16,6 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from config_loader import CFG
 
 try:
     import holidays as _holidays
@@ -39,27 +37,13 @@ def _slot_of_hour(h: int) -> str:
     return "late_night"
 
 
-def public_holidays(years, country: str = None) -> set:
-    """해당 연도들의 공휴일 날짜 집합. country 생략 시 config holiday_country(기본 KR).
-    holidays 패키지가 없으면 빈 집합 + 경고 (is_holiday는 주말만 1)."""
-    country = (country or CFG.get("holiday_country", "KR")).upper()
+def korean_holidays(years) -> set:
+    """해당 연도들의 한국 공휴일 날짜 집합. holidays 패키지가 없으면 빈 집합 + 경고."""
     if _holidays is None:
         warnings.warn("holidays 패키지가 없어 공휴일을 반영하지 못합니다 (pip install holidays). is_holiday는 주말만 1.")
         return set()
-    try:
-        cal = _holidays.country_holidays(country, years=list(years))
-    except (AttributeError, NotImplementedError):   # 구버전 holidays: country_holidays 없음
-        cls = getattr(_holidays, country, None)
-        if cls is None:
-            warnings.warn(f"holidays 패키지에 '{country}' 달력이 없습니다. is_holiday는 주말만 1.")
-            return set()
-        cal = cls(years=list(years))
-    return set(cal.keys())
-
-
-def korean_holidays(years) -> set:
-    """하위 호환용 — public_holidays(years, "KR")."""
-    return public_holidays(years, "KR")
+    kr = _holidays.KR(years=list(years))
+    return set(kr.keys())
 
 
 def add_time_features(df: pd.DataFrame, ts_col: str = "time_bucket", holiday_dates: set = None) -> pd.DataFrame:
@@ -75,7 +59,7 @@ def add_time_features(df: pd.DataFrame, ts_col: str = "time_bucket", holiday_dat
     df["is_weekend"] = (df["dayofweek"] >= 5).astype(int)
 
     if holiday_dates is None:
-        holiday_dates = public_holidays(sorted(t.dt.year.unique()))
+        holiday_dates = korean_holidays(sorted(t.dt.year.unique()))
     dates = t.dt.date
     df["is_holiday"] = (dates.isin(holiday_dates) | (df["is_weekend"] == 1)).astype(int)
 

@@ -40,8 +40,8 @@ def _buckets_per(freq: str, minutes: int) -> int:
 # ---------- 유효범위·유일성 검사 (Data Spec 5장) ----------
 def to_naive_kst(ts: pd.Series, name: str = "시각", tz: str = None) -> pd.Series:
     """시각 컬럼을 tz 없는 '대상 지역 현지 시각' datetime으로 통일한다.
-    기준 시간대는 config.json의 timezone (기본 Asia/Seoul = KST; NYC 실데이터는 America/New_York).
-    - 문자열/naive datetime: 그대로 현지 시각으로 간주 (TLC 자료도 현지 시각 naive)
+    기준 시간대는 config.json의 timezone (기본 Asia/Seoul = KST).
+    - 문자열/naive datetime: 그대로 현지 시각으로 간주
     - tz-aware(단일 tz): 기준 시간대로 변환 후 tz 제거
     - 파싱 실패(NaT)·tz 혼재: ValueError (잘못된 시각으로 학습 진행 금지)
     """

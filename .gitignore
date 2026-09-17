@@ -23,6 +23,3 @@ data/eda/*.html
 Thumbs.db
 desktop.ini
 .DS_Store
-
-# --- 실데이터(NYC TLC) 변환 산출물: csv는 대용량이라 제외, 제외 건수 json은 보관 ---
-data/real/**/*.csv
