@@ -13,6 +13,7 @@
 [수정 이력] 2026-09-10 윤세빈
 - 기존: 호출 있던 칸만 행 생성(lag가 '직전 호출 칸'을 가리킴), rolling이 셀 경계를 넘어 계산됨, 단일 타겟
 - 수정: 위 설계 원칙 반영 + 다중 시점 타겟 + 지난주 동일 시간대 + 시간 피처 모듈 분리(time_features.py)
+[수정 이력] 2026-09-17 윤세빈 — 피처 강화: same_time_yesterday/has_yesterday(일 주기), required_history_buckets(서빙 이력 창 기준)
 [수정 이력] 2026-09-17 윤세빈 — Data Specification v1.0 5장(품질 기준) 반영
 - 유효범위: 수요·강수 ≥ 0, 시각은 tz 없는 현지 시각 단일 기준(config timezone, 기본 KST), time_bucket은 freq 경계 정렬 → 위반 시 ValueError로 즉시 중단
 - 유일성: (time_bucket, h3_index) 중복 → ValueError
@@ -102,7 +103,14 @@ class TimeSeriesPreprocessor:
         self.rolling_long = rolling_long if rolling_long is not None else CFG["rolling_long"]
         self.horizons = horizons if horizons is not None else CFG.get("forecast_horizons", 6)
         self.buckets_1h = _buckets_per(self.freq, 60)
+        self.buckets_1d = _buckets_per(self.freq, 24 * 60)
         self.buckets_1w = _buckets_per(self.freq, 7 * 24 * 60)
+
+    @property
+    def required_history_buckets(self) -> int:
+        """모든 시계열 피처가 실제 값을 갖는 데 필요한 과거 칸 수 (온라인 추론 시 이력 창 크기).
+        지난주 동일칸(1w)이 가장 길다. 서빙이 이보다 짧은 창을 쓰면 same_time_*가 항상 0이 되어 학습 분포와 어긋난다."""
+        return max(self.max_lag, self.buckets_1h, self.buckets_1d, self.buckets_1w) + 3
 
     # ---------- 1) 집계 ----------
     def aggregate_demands(self, df: pd.DataFrame, timestamp_col: str = 'pickup_datetime',
@@ -151,6 +159,11 @@ class TimeSeriesPreprocessor:
         d['has_last_week'] = d['same_time_last_week'].notna().astype(int)
         d['same_time_last_week'] = d['same_time_last_week'].fillna(0)
         feat_cols += ['same_time_last_week', 'has_last_week']
+        # (c2) 어제 동일 시간대 (1일 전 같은 칸) — 일 주기. 1주 전보다 가까워 최근 수준 변화를 더 잘 반영
+        d['same_time_yesterday'] = g.shift(self.buckets_1d)
+        d['has_yesterday'] = d['same_time_yesterday'].notna().astype(int)
+        d['same_time_yesterday'] = d['same_time_yesterday'].fillna(0)
+        feat_cols += ['same_time_yesterday', 'has_yesterday']
 
         # (d) 추세: 직전 칸 - 그 전 칸
         d['diff_1'] = g.shift(1) - g.shift(2); feat_cols.append('diff_1')
@@ -168,7 +181,7 @@ class TimeSeriesPreprocessor:
 
         if verbose:
             print(f"시계열 파생변수 생성: lag {self.max_lag}개, rolling {self.rolling_short}/{self.rolling_long}/1h({self.buckets_1h}칸), "
-                  f"지난주 동일칸({self.buckets_1w}칸 전), 시간 피처 {len(TIME_FEATURE_COLS)}개, 타겟 t+1~t+{self.horizons}")
+                  f"어제/지난주 동일칸({self.buckets_1d}/{self.buckets_1w}칸 전), 시간 피처 {len(TIME_FEATURE_COLS)}개, 타겟 t+1~t+{self.horizons}")
         if dropna:
             before = len(d)
             need = [f'lag_{self.max_lag}', 'rolling_mean_1h', 'diff_1'] + target_cols

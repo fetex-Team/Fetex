@@ -231,6 +231,74 @@ def test_quality():
     check("T5 좌표 결측 3건 제거 + 건수 기록", len(logs) == len(df) - 3 and logs.attrs["dropped_missing_coords"] == {"demand_log_x.csv": 3})
 
 
+
+# ============ T7 날씨·휴일 기준 강화 + 정확도용 피처 ============
+def test_strict_external():
+    from module2_preprocessing.external_data_merge import WEATHER_DERIVED_COLS, add_weather_derived
+    from module2_preprocessing.time_features import validate_calendar
+    import datetime
+    base = pd.Timestamp("2026-09-07 00:00")
+    buckets = pd.date_range(base, base + pd.Timedelta(hours=47, minutes=55), freq="5min")
+    panel = pd.DataFrame({"time_bucket": list(buckets) * 2, "h3_index": ["A"] * len(buckets) + ["B"] * len(buckets), "demand": 1})
+    hours = pd.date_range(base, base + pd.Timedelta(hours=47), freq="1h")
+    rain = np.zeros(len(hours)); rain[10:14] = [0.5, 2.0, 1.0, 0.2]      # 10~13시 4시간 연속 비
+    w = pd.DataFrame({"time": hours, "temperature": 20 + 5 * np.sin(np.arange(len(hours)) / 24 * 2 * np.pi),
+                      "precipitation": rain, "wind_speed": 1.0})
+    # 유효범위
+    for col, val in (("temperature", 80.0), ("precipitation", 500.0), ("wind_speed", -1.0)):
+        bad = w.copy(); bad.loc[3, col] = val
+        check(f"T7 {col}={val} 물리 범위 밖 → ValueError", _raises(merge_external_data, panel, weather=bad, verbose=False))
+    # 시간축
+    off = w.copy(); off.loc[5, "time"] = off.loc[5, "time"] + pd.Timedelta(minutes=20)
+    check("T7 관측 간격(1h) 경계에 맞지 않는 시각 → ValueError", _raises(merge_external_data, panel, weather=off, verbose=False))
+    # 5분 간격 관측(합성 external.csv)은 간격을 추정해 그대로 사용 — 각 5분 칸이 자기 관측을 받는다
+    five = pd.DataFrame({"time": pd.date_range(base, base + pd.Timedelta(hours=47, minutes=55), freq="5min")})
+    five["temperature"] = 20.0; five["precipitation"] = 0.0; five["wind_speed"] = 1.0
+    five.loc[five["time"] == pd.Timestamp("2026-09-07 09:35"), "precipitation"] = 3.0
+    m5 = merge_external_data(panel, weather=five, verbose=False)
+    a5 = m5[m5.h3_index == "A"].set_index("time_bucket")
+    check("T7 5분 관측: 09:35 칸만 강수 3.0, 09:30·09:40은 0", a5.loc["2026-09-07 09:35", "precipitation"] == 3.0 and a5.loc["2026-09-07 09:30", "precipitation"] == 0 and a5.loc["2026-09-07 09:40", "precipitation"] == 0)
+    check("T7 5분 관측 파생: precip_3h_sum 창 36칸 (12:30에도 3.0 포함, 12:40엔 제외)", a5.loc["2026-09-07 12:30", "precip_3h_sum"] == 3.0 and a5.loc["2026-09-07 12:40", "precip_3h_sum"] == 0)
+    check("T7 5분 관측 파생: rain_streak_h는 시간 단위(1칸 = 1/12h)", math.isclose(a5.loc["2026-09-07 09:35", "rain_streak_h"], 1 / 12))
+    dup = pd.concat([w, w.iloc[[7]].assign(temperature=99.0 - 80)], ignore_index=True)   # 같은 시각 두 번 → 첫 관측만
+    m = merge_external_data(panel, weather=dup, verbose=False)
+    check("T7 중복 관측 시각은 첫 관측만 사용", math.isclose(m.loc[m.time_bucket == hours[7], "temperature"].iloc[0], w.loc[7, "temperature"]))
+    # 커버리지: 날씨가 수요 기간의 앞 절반만 덮음 → 결측률 ~50% > 5% → ValueError (학습 경로), None이면 통과
+    short = w.iloc[:20]
+    check("T7 결측률 > 상한 → ValueError", _raises(merge_external_data, panel, weather=short, verbose=False, max_missing_ratio=0.05))
+    check("T7 상한 None(서빙)이면 통과 + 플래그", (merge_external_data(panel, weather=short, verbose=False)["weather_missing"] == 1).any())
+    # 파생 피처: 과거 방향만
+    d = add_weather_derived(w)
+    check("T7 precip_3h_sum: 12시 = 10·11·12시 합(3.5)", math.isclose(d.loc[12, "precip_3h_sum"], 3.5))
+    check("T7 precip_3h_sum: 9시 = 0 (미래 10시 비 미포함)", d.loc[9, "precip_3h_sum"] == 0)
+    check("T7 rain_streak_h: 10→1, 13→4, 14→0", d.loc[10, "rain_streak_h"] == 1 and d.loc[13, "rain_streak_h"] == 4 and d.loc[14, "rain_streak_h"] == 0)
+    check("T7 temp_anomaly_24h: 직전 24h 평균 대비", math.isclose(d.loc[30, "temp_anomaly_24h"], w.loc[30, "temperature"] - w.loc[7:30, "temperature"].mean()))
+    m = merge_external_data(panel, weather=w, verbose=False)
+    check("T7 병합 후 파생 3개 존재·결측 없음", set(WEATHER_DERIVED_COLS) <= set(m.columns) and m[WEATHER_DERIVED_COLS].notna().all().all())
+    a = m[m.h3_index == "A"].set_index("time_bucket")
+    check("T7 5분 칸 backward: 12:30의 precip_3h_sum = 12시 값", math.isclose(a.loc["2026-09-07 12:30", "precip_3h_sum"], 3.5))
+    # 휴일: 2026-10-03(토, 개천절) → is_public_holiday=1, is_holiday=1 / 10-02(금) → before_off / 10-05(월) → after_off
+    t = pd.DataFrame({"time_bucket": pd.to_datetime(["2026-10-01 09:00", "2026-10-02 09:00", "2026-10-03 09:00", "2026-10-04 09:00", "2026-10-05 09:00", "2026-10-06 09:00"])})
+    f = add_time_features(t)
+    check("T7 is_public_holiday: 개천절 1, 일요일 0", f.loc[2, "is_public_holiday"] == 1 and f.loc[3, "is_public_holiday"] == 0)
+    check("T7 is_day_before_off: 10/2(금)=1, 10/1(목)=0", f.loc[1, "is_day_before_off"] == 1 and f.loc[0, "is_day_before_off"] == 0)
+    check("T7 is_day_after_off: 10/5(월)=1, 10/6(화)=0", f.loc[4, "is_day_after_off"] == 1 and f.loc[5, "is_day_after_off"] == 0)
+    check("T7 off_streak_len: 10/3~4 연휴 2, 평일 0", f.loc[2, "off_streak_len"] == 2 and f.loc[3, "off_streak_len"] == 2 and f.loc[0, "off_streak_len"] == 0)
+    check("T7 쉬는 날 자체는 before/after 0", f.loc[2, "is_day_before_off"] == 0 and f.loc[3, "is_day_after_off"] == 0)
+    check("T7 달력 검증: 연도 미포함 → ValueError", _raises(validate_calendar, {datetime.date(2020, 1, 1)}, t["time_bucket"]))
+    check("T7 TIME_FEATURE_COLS 19개 전부 생성", set(TIME_FEATURE_COLS) <= set(f.columns) and len(TIME_FEATURE_COLS) == 19)
+    # 어제 동일 시간대
+    prep = TimeSeriesPreprocessor(freq="5min", max_lag=2, rolling_short=2, rolling_long=3, horizons=6)
+    ramp = panel.copy(); ramp["demand"] = np.tile(np.arange(len(buckets)), 2)
+    feat = prep.create_features(ramp, dropna=False, verbose=False)
+    fa = feat[feat.h3_index == "A"].sort_values("time_bucket").reset_index(drop=True)
+    check("T7 same_time_yesterday = 288칸 전 값, 첫날은 0 + 플래그 0", fa.loc[300, "same_time_yesterday"] == 12 and fa.loc[300, "has_yesterday"] == 1
+          and fa.loc[100, "same_time_yesterday"] == 0 and fa.loc[100, "has_yesterday"] == 0)
+    check("T7 required_history_buckets ≥ 1주(2016칸)", prep.required_history_buckets >= 2016)
+    fcols = feature_columns(feat)
+    check("T7 피처 목록에 yesterday 2개 포함, 타깃 없음", {"same_time_yesterday", "has_yesterday"} <= set(fcols) and not any(c.startswith("y_h") for c in fcols))
+
+
 # ============ T6 파이프라인 ============
 def test_pipeline(tmp="/tmp/m2_test"):
     os.makedirs(tmp, exist_ok=True)
@@ -253,7 +321,7 @@ def test_pipeline(tmp="/tmp/m2_test"):
 if __name__ == "__main__":
     if MOCKED:
         print(f"[안내] 대체 구현 사용: {', '.join(MOCKED)} — 맥 venv에서는 실제 라이브러리로 실행됨\n")
-    for t in (test_spatial, test_time_features, test_time_series, test_external, test_quality, test_pipeline):
+    for t in (test_spatial, test_time_features, test_time_series, test_external, test_quality, test_strict_external, test_pipeline):
         try:
             t()
         except Exception as e:
