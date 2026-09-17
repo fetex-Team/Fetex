@@ -108,7 +108,9 @@ class ForecastDispatcher:
             return
         self.last_tick = tick
         predictions = self.predict(now)
-        idle = sorted(traci.vehicle.getTaxiFleet(0))
+        # 예약 정차가 있거나 승객이 탑승한 차량은 재배치하지 않는다.
+        idle = sorted(vid for vid in traci.vehicle.getTaxiFleet(0)
+                      if not traci.vehicle.getPersonIDList(vid) and not traci.vehicle.getStops(vid, 0))
         positions = {vid: self.meta['edge_cells'].get(traci.vehicle.getRoadID(vid)) for vid in idle}
         self.committed = {vid: cell for vid, cell in self.committed.items() if vid in positions and positions[vid] != cell}
         supply = Counter(cell for cell in positions.values() if cell is not None)

@@ -38,6 +38,7 @@ class PassengerTimeoutManager:
         self.dispatcher = dispatcher
         self.depart_time = {}       # person_id -> depart 시각(초)
         self.removed_pids = set()   # 타임아웃으로 소멸 처리된 person_id
+        self.threshold_exceeded_at = {}
         self.removed_at = {}        # person_id -> 소멸(타임아웃 확정) 시각(초), 대기시간 재구성용
         self._pending_removal = set()  # 예약 걸려있어서 제거를 미루고 있는 person_id
 
@@ -47,52 +48,26 @@ class PassengerTimeoutManager:
         return pid in self.dispatcher.dispatched_person_ids
 
     def maintain(self, now_seconds: float):
-        # 지난 스텝에 예약 때문에 제거를 미뤄뒀던 승객들 - 예약이 풀렸으면(택시가 타거나,
-        # 예약이 만료돼서 dispatched_person_ids에서 빠졌으면) 이제 안전하게 제거
-        still_pending = set()
-        for pid in self._pending_removal:
+        # 탑승 확인을 예약/제거 판단보다 먼저 수행한다.
+        active = set(traci.person.getIDList())
+        self._pending_removal.intersection_update(active)
+        for pid in sorted(active):
+            self.depart_time.setdefault(pid, now_seconds)
             if pid in self.removed_pids:
                 continue
-            if self._is_reserved(pid):
-                still_pending.add(pid)  # 아직 예약 살아있음 - 이번 스텝도 보류
-                continue
             try:
-                if pid in traci.person.getIDList():
-                    traci.person.remove(pid)
+                if traci.person.getVehicle(pid):
+                    self._pending_removal.discard(pid)
+                    continue
+                if now_seconds - self.depart_time[pid] < self.wait_timeout_sec:
+                    continue
+                self.threshold_exceeded_at.setdefault(pid, now_seconds)
+                if self._is_reserved(pid):
+                    self._pending_removal.add(pid)
+                    continue
+                traci.person.remove(pid)
             except traci.exceptions.TraCIException:
-                pass
+                continue  # 실제 제거 실패를 타임아웃 성공으로 집계하지 않는다.
+            self._pending_removal.discard(pid)
             self.removed_pids.add(pid)
             self.removed_at[pid] = now_seconds
-        self._pending_removal = still_pending
-
-        for pid in traci.person.getIDList():
-            if pid not in self.depart_time:
-                self.depart_time[pid] = now_seconds
-                continue
-
-            if pid in self.removed_pids or pid in self._pending_removal:
-                continue
-
-            # 이미 택시에 탄 사람은 건드리지 않음
-            try:
-                vid = traci.person.getVehicle(pid)
-            except traci.exceptions.TraCIException:
-                continue
-            if vid:
-                continue
-
-            waited = now_seconds - self.depart_time[pid]
-            if waited >= self.wait_timeout_sec:
-                if self._is_reserved(pid):
-                    # 예약이 걸린 상태 - 지금 지우면 SUMO 내부 상태가 깨질 수 있어 다음
-                    # 스텝으로 제거를 미룸. 집계상으로는 이번 시각 그대로 타임아웃 확정.
-                    self._pending_removal.add(pid)
-                    self.removed_at[pid] = now_seconds
-                    continue
-
-                try:
-                    traci.person.remove(pid)
-                except traci.exceptions.TraCIException:
-                    pass
-                self.removed_pids.add(pid)
-                self.removed_at[pid] = now_seconds

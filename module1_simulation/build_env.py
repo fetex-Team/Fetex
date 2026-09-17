@@ -3,6 +3,9 @@ import sys
 import subprocess
 import xml.etree.ElementTree as ET
 import random
+import shutil
+import json
+from pathlib import Path
 import numpy as np
 import sumolib
 
@@ -133,8 +136,15 @@ def create_network_and_routes():
     net_file = os.path.join(config_dir, "grid.net.xml")
     raw_osm_path = None
 
-    if CFG.get("use_real_map"):
-        _apply_region_coords(CFG, CFG["region"])
+    shared = CFG.get("shared_map_dir")
+    shared_meta = None
+    if shared:
+        shared = Path(shared)
+        shared_meta = json.loads((shared / "runtime_meta.json").read_text(encoding="utf-8"))
+        shutil.copy2(shared / "grid.net.xml", net_file)
+    elif CFG.get("use_real_map"):
+        if CFG.get("resolve_external_data", True):
+            _apply_region_coords(CFG, CFG["region"])
         from real_map_fetch import build_real_map_network
         print(f"[안내] 실제 지도 모드 — '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
         net_file, raw_osm_path = build_real_map_network(
@@ -143,7 +153,7 @@ def create_network_and_routes():
     else:
         print(f"{CFG['grid_x']}x{CFG['grid_y']} 블럭 도로망 생성 중... (블록 길이 {CFG['grid_length']}m)")
         subprocess.run([
-            'netgenerate', '--grid',
+            sumolib.checkBinary('netgenerate'), '--grid',
             '--grid.x-number', str(CFG['grid_x'] + 1), '--grid.y-number', str(CFG['grid_y'] + 1),
             '--grid.length', str(CFG['grid_length']),
             '--sidewalks.guess', 'true',
@@ -162,7 +172,7 @@ def create_network_and_routes():
 
     if len(edges) < 2:
         raise ValueError("택시가 왕복 가능한 도로가 부족합니다.")
-    zones = get_zones(CFG, net, raw_osm_path=raw_osm_path)
+    zones = shared_meta["zones"] if shared_meta else get_zones(CFG, net, raw_osm_path=raw_osm_path)
     # zones에도 SCC 필터를 동일하게 적용 — 고립된 edge가 목적지로 뽑히면
     # 아무리 재시도해도 도달 불가능해서 "unreachable" 에러가 무한 반복되므로 여기서 걸러냄
     allowed = set(edges)
@@ -210,11 +220,20 @@ def create_network_and_routes():
     # 승객 배치
     trips = (build_passenger_schedule(zones, sim_start_hour, sim_end_hour, CFG['num_passengers'],
                                       seed=passenger_seed, net=net) if CFG.get("passenger_mode") == "legacy" else [])
+    if CFG.get("fixed_passenger_departures") is not None:
+        # 제출용 최소 구성에서는 확률 추첨 없이 지정된 인원을 생성한다.
+        trips = [(float(t), *_pick_connected(net, edges, edges)) for t in CFG["fixed_passenger_departures"]]
+        if any(not 0 <= t < (sim_end_hour - sim_start_hour) * 3600 for t, _, _ in trips):
+            raise ValueError("고정 승객 출발 시각은 시뮬레이션 구간 안에 있어야 합니다.")
     for pax_id, (depart, start_edge, end_edge) in enumerate(trips):
         person = ET.SubElement(routes, "person", id=f"passenger_{pax_id}", depart=str(depart))
         ET.SubElement(person, "ride", **{"from": start_edge, "to": end_edge, "lines": "taxi"})
 
     rou_file = os.path.join(config_dir, "entities.rou.xml")
+    # SUMO 입력은 depart 순서대로 정렬해야 늦은 엔티티가 누락되지 않는다.
+    types = list(routes.findall("vType"))
+    movable = sorted([e for e in routes if e.tag != "vType"], key=lambda e: float(e.get("depart", 0)))
+    routes[:] = types + movable
     ET.ElementTree(routes).write(rou_file)
 
     # 4. SUMO Config 파일 생성
@@ -248,6 +267,10 @@ def create_network_and_routes():
     cfg_file = os.path.join(config_dir, "simulation.sumocfg")
     ET.ElementTree(cfg).write(cfg_file)
 
+    random_tag = ET.SubElement(cfg, "random_number")
+    ET.SubElement(random_tag, "seed", value=str(CFG.get("passenger_seed") or 0))
+    ET.ElementTree(cfg).write(cfg_file)
+
     # 실제 지도는 투영 좌표를 사용하고, 합성 격자는 지역 bbox에 대응시키는 명시적 좌표 매핑을 쓴다.
     import h3
     min_x, min_y, max_x, max_y = net.getBoundary()
@@ -264,9 +287,11 @@ def create_network_and_routes():
     edge_cells = {eid: h3.latlng_to_cell(*coords, CFG["h3_resolution"]) for eid, coords in edge_latlng.items()}
 
     # 사이드카 메타 파일 저장
-    import json
     meta = {
         "config": dict(CFG),
+        "static_calls": [{"person_id": f"passenger_{i}", "depart": t, "from_edge": a,
+                          "to_edge": b, "demand_type": "fixed" if CFG.get("fixed_passenger_departures") is not None else "residential_schedule"}
+                         for i, (t, a, b) in enumerate(trips)],
         "edge_cells": edge_cells, "edge_latlng": edge_latlng,
         "coordinate_mapping": "OSM projection" if CFG.get("use_real_map") else "synthetic bbox mapping",
         "edges": edges,
@@ -275,7 +300,7 @@ def create_network_and_routes():
         "num_taxis": CFG['num_taxis'],
         "sim_start_hour": sim_start_hour,
         "sim_end_hour": sim_end_hour,
-        "passenger_wait_timeout": CFG.get("passenger_wait_timeout", 900),
+        "passenger_wait_timeout": CFG.get("passenger_wait_timeout", 500),
         "zones": zones,
         "hotspot_edges": [e for cat in ("company", "school", "subway_entrance", "bus_stop", "restaurant")
                            for e in zones.get(cat, [])],

@@ -55,6 +55,14 @@ class HungarianDispatcher:
             return []
         return [r for r in reservations if r.id not in self.dispatched_reservations]
 
+    def refresh_reservations(self):
+        """완료·취소된 예약을 정리하여 타임아웃 제거가 영구 보류되지 않게 한다."""
+        reservations = traci.person.getTaxiReservations(0)
+        live = {r.id for r in reservations}
+        self.dispatched_reservations.intersection_update(live)
+        self.dispatched_person_ids = {p for r in reservations
+                                      if r.id in self.dispatched_reservations for p in r.persons}
+
     def _get_idle_taxis(self):
         """현재 손님도 없고 픽업 중도 아닌 완전히 빈 택시 목록. (0 = TAXI_EMPTY)"""
         try:
@@ -72,6 +80,7 @@ class HungarianDispatcher:
 
     def maintain(self, now_seconds: float = 0):
         try:
+            self.refresh_reservations()
             reservations = self._get_pending_reservations()
             idle_taxis = self._get_idle_taxis()
 

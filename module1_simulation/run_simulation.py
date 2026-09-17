@@ -6,7 +6,7 @@ from measure_wait_time import run_and_measure, print_result, ROOT
 
 
 def run_sumo_gui():
-    result = run_and_measure(sumo_binary='sumo-gui', output_dir=ROOT / 'results/simulation')
+    result = run_and_measure(sumo_binary='sumo-gui', output_dir=Path(ROOT) / 'results/simulation')
     print_result('GUI', result)
     return result
 

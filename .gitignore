@@ -23,3 +23,23 @@ data/eda/*.html
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 런타임 실험의 재생성 가능한 대용량 원시 산출물
+results/runtime_validation/**/sumo/
+results/runtime_validation/invalid_before_fleet_fix/
+results/runtime_validation/**/*.log
+results/runtime_validation/runs/
+results/runtime_validation/grid/
+results/runtime_validation/repeatability/
+# 최소 구성은 검토에 필요한 작은 증거 파일과 대표 화면만 보관한다.
+results/runtime_validation/minimal/*
+!results/runtime_validation/minimal/composition.json
+!results/runtime_validation/minimal/calls.csv
+!results/runtime_validation/minimal/passenger_outcomes.csv
+!results/runtime_validation/minimal/summary.json
+!results/runtime_validation/minimal/gui/
+results/runtime_validation/minimal/gui/*
+!results/runtime_validation/minimal/gui/summary.json
+!results/runtime_validation/minimal/gui/gui_validation.json
+!results/runtime_validation/minimal/gui/sumo_60s.png
+results/runtime_validation/STOP

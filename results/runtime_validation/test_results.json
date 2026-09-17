@@ -1,0 +1,18 @@
+{
+  "command": ".venv/Scripts/python.exe -m pytest tests/test_runtime_validation.py -q",
+  "passed": 25,
+  "failed": 0,
+  "duration_sec": 25.01,
+  "coverage": [
+    "configuration precedence",
+    "schedule boundaries",
+    "lottery saturation",
+    "random-stream independence",
+    "spawn failure cleanup",
+    "actual arrival accounting",
+    "timeout reservation protection",
+    "pending fleet cap",
+    "forecast protection",
+    "70-case matrix"
+  ]
+}

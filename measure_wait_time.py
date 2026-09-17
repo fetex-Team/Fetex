@@ -1,365 +1,289 @@
-"""
-평균 승객 대기시간 측정 + A/B 비교 스크립트.
-
-측정 방법:
-- traci로 시뮬레이션을 스텝마다 진행하면서, 각 person(승객)이
-  "등장(depart) 시각"과 "택시에 탑승한 시각"을 기록.
-- 탑승 시각은 traci.person.getVehicle(person_id)가 빈 문자열("")에서
-  택시 id로 바뀌는 순간으로 판정 (그 전까지는 길가에서 대기 중).
-- 대기시간 = 탑승 시각 - depart 시각.
-- 시뮬레이션 종료(모든 차량/사람 소진) 후 평균/최대 대기시간을 출력.
-
-사용법:
-    python measure_wait_time.py patrol         # config.json의 sim 설정 그대로, 택시 전략만 patrol로 강제
-    python measure_wait_time.py prepositioned  # 택시 전략만 prepositioned로 강제
-    python measure_wait_time.py compare        # 두 전략 각각 build_env.py부터 다시 돌려서 순차 비교
-    python measure_wait_time.py dispatch_compare [algo_a] [algo_b]  # 배차 알고리즘 A vs B 비교
-
-주의: build_env.py가 만든 entities.rou.xml에 이미 반영된 전략을 그대로 재생하려면
-      인자 없이 실행하면 됩니다 (config.json의 taxi_strategy 값 사용).
-
-[헝가리안 배차 연동]
-config.json의 taxi_dispatch_algorithm이 "hungarian"이면, build_env.py가 SUMO 쪽엔
-"traci"로 알려주고 실제 선택값은 runtime_meta.json에 남겨둠. 이 스크립트는 그 값을 읽어
-HungarianDispatcher를 매 스텝 maintain()해서 실제 배차를 수행함 (SUMO 내장 greedy 대신).
-
-[학습용 수요 로그 (신규)]
-run_and_measure()가 호출될 때마다(단독 실행 / parallel_dispatch_worker.py /
-multi_factor_compare.py의 병렬 워커 전부 포함, run_simulation.py의 GUI 실행은 미포함),
-새로 등장하는 승객의 "등장 시각 + 위경도"를 data/raw/simulation_demand_log.csv에
-append합니다. train.py의 prepare_real_sequence_dataset()이 이 CSV를 읽어 실제
-시뮬레이션 기반 수요로 학습하도록 연결되어 있습니다.
-
-날짜는 실행마다 과거 90일 내에서 랜덤 배정되어, 여러 번 돌릴수록 dayofweek/is_weekend
-같은 캘린더 피처에 실제 분산이 생기도록 했습니다.
-"""
-
-import os
-import sys
-import json
-import time
-import datetime
-import random
+"""재현 가능한 SUMO 실행과 승객/차량 분포 관측."""
+import argparse
 import csv
-import traci
+import datetime as dt
+import hashlib
+import json
+import os
+from pathlib import Path
+import statistics
+import subprocess
+import sys
+import time
+import xml.etree.ElementTree as ET
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# CLI 설정은 매니저들의 CFG import보다 먼저 선택한다.
+if __name__ == '__main__' and '--config-path' in sys.argv:
+    os.environ['MOBILITY_CONFIG'] = str(Path(sys.argv[sys.argv.index('--config-path') + 1]).resolve())
+if os.environ.get('MOBILITY_BACKEND') == 'libsumo':
+    import libsumo as traci
+    sys.modules['traci'] = traci
+else:
+    import traci
+import sumolib
+from config_loader import CFG, DEFAULT_CONFIG
 from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
-from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer  # 추가
+from runtime_validation import schedule_status, source_fingerprint
+
+ROOT = Path(__file__).resolve().parent
+CONFIG_PATH = ROOT / 'config.json'
+SUMO_CFG = ROOT / 'module1_simulation/sumo_config/simulation.sumocfg'
+META_PATH = SUMO_CFG.with_name('runtime_meta.json')
 
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(ROOT, "config.json")
-SUMO_CFG = os.path.join(ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
-META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
-DEMAND_LOG_PATH = os.path.join(ROOT, "data", "raw", "simulation_demand_log.csv")
-RL_MODEL_PATH = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")  # 추가
+def write_csv(path, rows, fields):
+    """빈 데이터도 헤더를 남겨 후속 모듈에서 동일하게 읽는다."""
+    with Path(path).open('w', newline='', encoding='utf-8') as f:
+        writer = csv.DictWriter(f, fieldnames=fields, extrasaction='ignore')
+        writer.writeheader()
+        writer.writerows(rows)
 
 
+def summarize(outcomes, timeout):
+    """생성 성공만 분모로 사용하고 종료 검열과 실제 타임아웃을 분리한다."""
+    counts = {k: sum(r['status'] == k for r in outcomes) for k in ('picked_up', 'timeout', 'pending', 'other_loss')}
+    waits = [r['pickup_sec'] - r['depart_sec'] for r in outcomes if r['status'] == 'picked_up']
+    n = len(outcomes)
+    ordered = sorted(waits)
+    p90 = ordered[max(0, __import__('math').ceil(.9 * len(ordered)) - 1)] if ordered else None
+    adjusted = waits + [timeout] * counts['timeout']
+    return {'n_total_passengers': n, 'n_measured': counts['picked_up'], 'n_unpicked': n - counts['picked_up'],
+            'n_timeout_removed': counts['timeout'], 'n_pending_at_end': counts['pending'],
+            'n_other_loss': counts['other_loss'], 'avg_wait_sec': statistics.mean(waits) if waits else None,
+            'median_wait_sec': statistics.median(waits) if waits else None, 'p90_wait_sec': p90,
+            'max_wait_sec': max(waits) if waits else None, 'min_wait_sec': min(waits) if waits else None,
+            'pickup_rate': counts['picked_up'] / n if n else None,
+            'timeout_rate': counts['timeout'] / n if n else None,
+            'pending_rate': counts['pending'] / n if n else None,
+            'true_avg_wait_sec_with_penalty': statistics.mean(adjusted) if adjusted else None,
+            'waits': waits}
 
-# measure_wait_time.py 내부
-# max_steps 기본값을 24시간 전체 스텝(86400초 이상)을 충분히 커버할 수 있도록 확장
-def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
-                     sumo_cfg_path: str = None, meta_path: str = None) -> dict:
-    """
-    시뮬레이션을 headless(sumo, GUI 없음)로 끝까지 돌리면서 승객별 대기시간을 측정.
-    택시는 taxi_manager.TaxiFleetManager가 항상 target_count(=num_taxis)만큼 유지함
-    (도착해서 사라진 택시는 즉시 길 끝에서 재스폰).
-    반환: {"avg_wait": float, "max_wait": float, "n_measured": int, "n_unpicked": int, "waits": [...]}
-    """
-    depart_time = {}     # person_id -> depart 시각(초)
-    pickup_time = {}     # person_id -> 탑승 확인된 시각(초)
-    in_taxi = set()      # 이미 탑승 처리된 person_id (중복 계산 방지)
-    seen_persons = set()
 
-    _meta_path = meta_path or META_PATH
-    _sumo_cfg = sumo_cfg_path or SUMO_CFG
-    with open(_meta_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-
-    manager = TaxiFleetManager(
-        target_count=meta["num_taxis"],
-        boundary_edges=meta["boundary_edges"],
-        all_edges=meta["edges"],
-        strategy=meta["taxi_strategy"],
-        hotspot_edges=meta.get("hotspot_edges"),
-        zones=meta.get("zones"),
-        sim_start_hour=meta.get("sim_start_hour", 0),
-    )
-
-    # taxi_dispatch_algorithm이 "hungarian" 또는 "rl_reposition"일 때 매칭은 항상
-    # HungarianDispatcher가 담당함 (rl_reposition은 매칭 위에 재배치만 얹는 구조이므로)
-    dispatch_algo = meta.get("taxi_dispatch_algorithm")
-    hungarian_dispatcher = (
-        HungarianDispatcher() if dispatch_algo in ("hungarian", "rl_reposition") else None
-    )
-
-    # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
-    # dispatcher를 넘겨주면, 이미 Hungarian이 예약을 배정한 승객의 강제제거를 한 스텝
-    # 미뤄서 SUMO 내부 상태 충돌("Connection closed by SUMO")을 방지함 (passenger_manager.py 참고)
-    pax_manager = PassengerTimeoutManager(
-        wait_timeout_sec=meta.get("passenger_wait_timeout", 900),
-        dispatcher=hungarian_dispatcher,
-    )
-
-    # rl_reposition일 때만 RL 재배치 매니저를 추가로 켬. 학습된 모델 파일이 없으면
-    # 경고만 찍고 None으로 둬서(=재배치 없이 hungarian만 도는 상태) 워커가 조용히 죽지 않게 함
-    rl_maintainer = None
-    if dispatch_algo == "rl_reposition":
-        if os.path.exists(RL_MODEL_PATH):
-            rl_maintainer = RLRepositionMaintainer(RL_MODEL_PATH, meta)
-            print(f"[안내] RL 재배치 정책을 불러왔습니다: {RL_MODEL_PATH}")
-        else:
-            print(f"[경고] {RL_MODEL_PATH}가 없어 RL 재배치 없이 Hungarian 매칭만 수행합니다. "
-                  f"먼저 module4_dispatch/rl_train.py를 실행하세요.")
-
-    sim_end_hour = meta.get("sim_end_hour")
-    sim_start_hour = meta.get("sim_start_hour", 0)
-    if sim_end_hour is None:
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                fallback_cfg = json.load(f)
-            sim_end_hour = fallback_cfg.get("sim_end_hour")
-            if sim_end_hour is not None:
-                print(f"[안내] runtime_meta.json에 sim_end_hour가 없어 config.json에서 읽어왔습니다 ({sim_end_hour}시).")
-        except Exception:
-            sim_end_hour = None
-
-    # 학교/회사/음식점 승객을 실시간으로 생성·소멸(흡수→재스폰)시키는 매니저
-    spawn_manager = PassengerSpawnManager(
-        zones=meta.get("zones", {}),
-        sim_start_hour=sim_start_hour,
-        sim_end_hour=sim_end_hour,
-        school_pop_base=meta.get("school_pop_base", 400),
-        company_pop_base=meta.get("company_pop_base", 100),
-        seed=meta.get("passenger_seed"),
-    )
-
-    sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
-    if sim_end_seconds is None:
-        print("[경고] sim_end_hour를 어디서도 찾지 못해 안전상 24시간 분량으로 자동 종료합니다.")
-        sim_end_seconds = 24 * 3600
-    max_steps = max(max_steps, int(sim_end_seconds) + 100)
-
-    # ---- 학습용 수요 로그 준비 ----
-    demand_log_rows = []  # (pickup_datetime_iso, latitude, longitude) 누적 버퍼
-    # 실행마다 날짜를 과거 90일 내에서 랜덤 배정 -> 여러 번 돌릴수록 요일 다양성 확보
-    run_date = datetime.date.today() - datetime.timedelta(days=random.randint(0, 90))
-
-    traci.start([sumo_binary, "-c", _sumo_cfg])
-
-    step = 0
-    empty_count = 0
+def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, meta_path=None,
+                    output_dir=None, strategy=None, algorithm=None, observer=None, forecast=None):
+    """GUI/headless 공용 루프. 1초 생성 틱과 [시작, 종료) 구간을 사용한다."""
+    meta_path = Path(meta_path or META_PATH)
+    code_hash = source_fingerprint()
+    meta = json.loads(meta_path.read_text(encoding='utf-8'))
+    cfg = {**DEFAULT_CONFIG, **meta.get('config', {})}
+    # 독립 프로세스 실행 외에도 매니저 설정은 메타와 일치시킨다.
+    CFG.clear()
+    CFG.update(cfg)
+    strategy = strategy or meta['taxi_strategy']
+    algorithm = algorithm or meta.get('taxi_dispatch_algorithm', 'greedy')
+    meta.update(taxi_strategy=strategy, taxi_dispatch_algorithm=algorithm)
+    out = Path(output_dir or ROOT / 'results/simulation')
+    out.mkdir(parents=True, exist_ok=True)
+    sumocfg = Path(sumo_cfg_path or meta_path.with_name('simulation.sumocfg'))
+    start_hour, end_hour = meta['sim_start_hour'], meta['sim_end_hour']
+    duration = (end_hour - start_hour) * 3600
+    if duration <= 0 or duration != int(duration):
+        raise ValueError('시뮬레이션 구간은 양의 정수 초여야 합니다.')
+    start = dt.datetime.fromisoformat(cfg.get('scenario_date', '2026-09-18')) + dt.timedelta(hours=start_hour)
+    timeout = meta.get('passenger_wait_timeout', 500)
+    dispatcher = HungarianDispatcher() if algorithm in ('hungarian', 'rl_reposition') else None
+    manager = TaxiFleetManager(meta['num_taxis'], meta['boundary_edges'], meta['edges'], strategy=strategy,
+                               hotspot_edges=meta.get('hotspot_edges'), zones=meta['zones'], sim_start_hour=start_hour)
+    pax = PassengerTimeoutManager(timeout, dispatcher)
+    spawn = PassengerSpawnManager(meta['zones'], start_hour, end_hour, meta.get('school_pop_base'),
+                                   meta.get('company_pop_base'), cfg.get('passenger_seed'), config=cfg)
+    if strategy == 'forecast' and forecast is None:
+        # 모델/이력 미준비를 순찰 실행으로 위장하지 않는다.
+        if not cfg.get('forecast_calls_path'):
+            raise ValueError('forecast에는 forecast_calls_path와 호환 예측 모델이 필요합니다.')
+        import pandas as pd
+        from module4_dispatch.forecast_dispatcher import ForecastDispatcher
+        calls = pd.read_csv(cfg['forecast_calls_path'], parse_dates=['pickup_datetime'])
+        external = pd.read_csv(cfg['forecast_external_path']) if cfg.get('forecast_external_path') else None
+        forecast = ForecastDispatcher(meta, calls, external, pd.Timestamp(start))
+    if algorithm == 'rl_reposition':
+        raise ValueError('이 검증 실행기는 RL 학습/평가를 지원하지 않습니다. hungarian을 사용하세요.')
+    static = meta.get('static_calls')
+    if static is None:
+        static = []
+        for person in ET.parse(sumocfg.with_name('entities.rou.xml')).getroot().findall('person'):
+            ride = person.find('ride')
+            static.append({'person_id': person.get('id'), 'depart': float(person.get('depart')),
+                           'from_edge': ride.get('from'), 'to_edge': ride.get('to'), 'demand_type': 'residential_schedule'})
+    requested, pickup, arrived, last_active = {}, {}, set(), set()
+    records = {}
+    static = sorted(static, key=lambda r: r['depart'])
+    static_index = 0
+    fleet_rows, replay_rows = [], []
+    begin = time.monotonic()
+    command = [sumolib.checkBinary(sumo_binary), '-c', str(sumocfg), '--step-length', '1',
+               '--seed', str(cfg.get('passenger_seed') or 0), '--no-step-log', 'true',
+               '--duration-log.disable', 'true', '--error-log', str(out / 'sumo_errors.log')]
+    command += ['--device.taxi.dispatch-algorithm', 'traci' if algorithm == 'hungarian' else algorithm]
+    if sumo_binary == 'sumo-gui':
+        command += ['--start', '--quit-on-end']
+    traci.start(command)
+    version = traci.getVersion()
+    now = 0
+    teleports = 0
     try:
-        while step < max_steps:
+        while now < duration and now < max_steps:
+            # 0초부터 생성하고 마지막 초에도 한 번만 추첨한다.
+            spawn.maintain(now, pax.removed_pids)
+            new = spawn.new_records
+            while static_index < len(static) and static[static_index]['depart'] < min(now + 1, duration):
+                new.append(static[static_index])
+                static_index += 1
+            for r in new:
+                pid = r['person_id']
+                records[pid] = r
+                requested[pid] = r['depart']
+                pax.depart_time[pid] = r['depart']
+            spawn.new_records = []
             traci.simulationStep()
             now = traci.simulation.getTime()
-            manager.maintain(now)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
-            pax_manager.maintain(now)  # 대기시간 초과 승객 소멸 처리
-            if hungarian_dispatcher:
-                hungarian_dispatcher.maintain(now)  # 헝가리안 실시간 배차 (taxi_dispatch_algorithm="hungarian"일 때만)
-            if rl_maintainer:
-                rl_maintainer.maintain(now, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour)  # 추가
-            spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids)
-            
-
-            # 이번 스텝에 새로 등장한 person 기록
-            for pid in traci.person.getIDList():
-                if pid not in seen_persons:
-                    seen_persons.add(pid)
-                    depart_time[pid] = now
-
-                    # 학습 데이터용: 등장 시점의 위치를 위경도로 변환해 기록
-                    try:
-                        x, y = traci.person.getPosition(pid)
-                        lon, lat = traci.simulation.convertGeo(x, y)
-                        current_hour = sim_start_hour + (now / 3600.0)
-                        pickup_dt = datetime.datetime.combine(
-                            run_date, datetime.time(0, 0)
-                        ) + datetime.timedelta(hours=current_hour)
-                        demand_log_rows.append((pickup_dt.isoformat(), lat, lon))
-                    except Exception:
-                        pass
-
-                if pid not in in_taxi:
-                    vid = traci.person.getVehicle(pid) if pid in traci.person.getIDList() else ""
-                    if vid:  # 빈 문자열이 아니면 = 어떤 택시에 탑승함
-                        pickup_time[pid] = now
-                        in_taxi.add(pid)
-
-            # 설정한 시간대(sim_end_hour)에 도달하면 승객이 남아있어도 강제 종료.
-            # (승객이 0명 될 때까지 무한정 기다리던 예전 문제 수정 — sim_end_hour가 실제로 적용됨)
-            if sim_end_seconds is not None and now >= sim_end_seconds:
-                break
-
-            active_persons = traci.person.getIDList()
-            if step > 10 and len(active_persons) == 0:
-                empty_count += 1
-                if empty_count >= 5:
-                    break
-            else:
-                empty_count = 0
-            step += 1
+            arrived.update(traci.simulation.getArrivedPersonIDList())
+            teleports += traci.simulation.getStartingTeleportNumber()
+            last_active = set(traci.person.getIDList())
+            for pid in sorted(last_active):
+                if pid not in records:
+                    continue
+                if pid not in pickup and traci.person.getVehicle(pid):
+                    pickup[pid] = now
+            if dispatcher:
+                dispatcher.refresh_reservations()
+            pax.maintain(now)
+            if dispatcher:
+                dispatcher.maintain(now)
+            if forecast and now < duration:
+                forecast.maintain(now)
+                manager.protected_ids = set(forecast.committed)
+            if now < duration:
+                manager.maintain(now)
+            if now % 300 == 0 or now == duration or now == 1:
+                cells = sorted(set(meta.get('edge_cells', {}).values()) | {'unmapped'})
+                snapshot = {cell: dict(time_sec=now, h3_index=cell, total_taxis=0, idle_taxis=0,
+                                       occupied_taxis=0, waiting_passengers=0) for cell in cells}
+                idle = set(traci.vehicle.getTaxiFleet(0))
+                for vid in sorted(traci.vehicle.getIDList()):
+                    edge = traci.vehicle.getRoadID(vid)
+                    vtype = traci.vehicle.getTypeID(vid)
+                    x, y = traci.vehicle.getPosition(vid)
+                    replay_rows.append(dict(time_sec=now, object_id=vid, object_type=vtype, edge=edge,
+                                            x=x, y=y, speed=traci.vehicle.getSpeed(vid)))
+                    if vtype != 'taxi_type':
+                        continue
+                    cell = meta.get('edge_cells', {}).get(edge, 'unmapped')
+                    snapshot[cell]['total_taxis'] += 1
+                    snapshot[cell]['idle_taxis'] += int(vid in idle)
+                    snapshot[cell]['occupied_taxis'] += bool(traci.vehicle.getPersonIDList(vid))
+                for pid in sorted(last_active - set(pickup) - pax.removed_pids):
+                    edge = traci.person.getRoadID(pid)
+                    snapshot[meta.get('edge_cells', {}).get(edge, 'unmapped')]['waiting_passengers'] += 1
+                fleet_rows.extend(snapshot.values())
+            if observer:
+                observer.capture(now, requested, pickup, arrived, pax.removed_pids, set(), forecast, teleports)
+            if now % 3600 == 0:
+                print(f'[진행] {now:.0f}/{duration:.0f}s 생성={len(records)} 탑승={len(pickup)}', flush=True)
     finally:
         traci.close()
-
-    waits = []
-    for pid, dtime in depart_time.items():
-        if pid in pickup_time:
-            waits.append(pickup_time[pid] - dtime)
-
-    n_total = len(depart_time)
-    n_measured = len(waits)
-    n_timeout_removed = len(pax_manager.removed_pids)  # 대기시간 초과로 소멸 처리된 승객
-    n_unpicked = n_total - n_measured  # 끝까지 못 탄 승객
-
-    # [수정] 타임아웃된 승객에게 최대 대기시간 페널티를 부여하여 왜곡 방지
-    max_penalty_sec = meta.get("passenger_wait_timeout", 500)
-    adjusted_waits = list(waits)
-    for _ in range(n_timeout_removed):
-        adjusted_waits.append(max_penalty_sec)
-
-    # ---- 학습용 수요 로그 저장 (for 루프 밖, 시뮬레이션 1회당 한 번만) ----
-    if demand_log_rows:
-        os.makedirs(os.path.dirname(DEMAND_LOG_PATH), exist_ok=True)
-        file_exists = os.path.exists(DEMAND_LOG_PATH)
-        with open(DEMAND_LOG_PATH, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(["pickup_datetime", "latitude", "longitude"])
-            writer.writerows(demand_log_rows)
-        print(f"[안내] 학습용 수요 로그 {len(demand_log_rows)}건을 {DEMAND_LOG_PATH}에 남겼습니다.")
-
-    result = {
-        "n_total_passengers": n_total,
-        "n_measured": n_measured,
-        "n_unpicked": n_unpicked,
-        "n_timeout_removed": n_timeout_removed,
-        "avg_wait_sec": round(sum(waits) / len(waits), 1) if waits else None,
-        "true_avg_wait_sec_with_penalty": round(sum(adjusted_waits) / len(adjusted_waits), 1) if adjusted_waits else None,
-        "max_wait_sec": round(max(waits), 1) if waits else None,
-        "min_wait_sec": round(min(waits), 1) if waits else None,
-        "waits": waits,
-    }
+    calls, outcomes = [], []
+    for pid, r in records.items():
+        lat, lng = meta.get('edge_latlng', {}).get(r['from_edge'], [None, None])
+        dlat, dlng = meta.get('edge_latlng', {}).get(r['to_edge'], [None, None])
+        calls.append(dict(person_id=pid, pickup_datetime=(start + dt.timedelta(seconds=r['depart'])).isoformat(),
+                          latitude=lat, longitude=lng, destination_latitude=dlat, destination_longitude=dlng,
+                          from_edge=r['from_edge'], to_edge=r['to_edge'], demand_type=r['demand_type'],
+                          coordinate_mapping=meta.get('coordinate_mapping')))
+        status = 'picked_up' if pid in pickup else 'timeout' if pid in pax.removed_pids else 'pending' if pid in last_active else 'other_loss'
+        outcomes.append(dict(person_id=pid, demand_type=r['demand_type'], depart_sec=r['depart'], pickup_sec=pickup.get(pid),
+                             removed_sec=pax.removed_at.get(pid), threshold_exceeded_sec=pax.threshold_exceeded_at.get(pid),
+                             reserved_pending=pid in pax._pending_removal, status=status))
+    result = summarize(outcomes, timeout)
+    result.update(strategy=strategy, algorithm=algorithm, config=cfg, seed=cfg.get('passenger_seed'),
+                  duration_sec=now, completed_interval=now == duration, sumo_version=version,
+                  source_hash=code_hash, max_loaded_taxis=manager.max_loaded_taxis,
+                  wall_time_sec=time.monotonic() - begin, backend=os.environ.get('MOBILITY_BACKEND', 'traci'),
+                  n_spawn_failed=sum(spawn.failed_counts.values()), n_reserved_pending=len(pax._pending_removal),
+                  n_threshold_exceeded=len(pax.threshold_exceeded_at), spawn_counts=dict(spawn.spawn_counts),
+                  attempts=dict(spawn.attempt_counts), probability_passed=dict(spawn.passed_counts),
+                  spawn_failures=dict(spawn.failed_counts), teleports=teleports,
+                  map_hash=hashlib.sha256(sumocfg.with_name('grid.net.xml').read_bytes()).hexdigest(),
+                  demand_fingerprint=hashlib.sha256(json.dumps(calls, sort_keys=True).encode()).hexdigest(),
+                  schedules=schedule_status(cfg, meta['zones'], spawn),
+                  evening=summarize([r for r in outcomes if 18 <= start_hour + r['depart_sec'] / 3600 < 24], timeout))
+    assert result['n_total_passengers'] == sum(result[k] for k in ('n_measured', 'n_timeout_removed', 'n_pending_at_end', 'n_other_loss'))
+    write_csv(out / 'calls.csv', calls, ['person_id','pickup_datetime','latitude','longitude','destination_latitude','destination_longitude','from_edge','to_edge','demand_type','coordinate_mapping'])
+    write_csv(out / 'passenger_outcomes.csv', outcomes, ['person_id','demand_type','depart_sec','pickup_sec','removed_sec','threshold_exceeded_sec','reserved_pending','status'])
+    write_csv(out / 'fleet_distribution.csv', fleet_rows, ['time_sec','h3_index','total_taxis','idle_taxis','occupied_taxis','waiting_passengers'])
+    write_csv(out / 'object_states.csv', replay_rows, ['time_sec','object_id','object_type','edge','x','y','speed'])
+    (out / 'spawn_failures.json').write_text(json.dumps(spawn.failures, ensure_ascii=False, indent=2), encoding='utf-8')
+    (out / 'summary.json').write_text(json.dumps(result, ensure_ascii=False, indent=2, allow_nan=False), encoding='utf-8')
+    if forecast:
+        write_csv(out / 'forecast.csv', forecast.records, list(forecast.records[0]) if forecast.records else ['time_sec'])
+        write_csv(out / 'reposition_moves.csv', forecast.moves, list(forecast.moves[0]) if forecast.moves else ['time_sec'])
+    if observer:
+        observer.finish(result)
     return result
 
 
-def set_strategy_in_config(strategy: str):
-    """config.json의 taxi_strategy 값을 바꿔치기 (build_env.py가 재실행될 때 반영됨)"""
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    cfg["taxi_strategy"] = strategy
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+def print_result(label, result):
+    print(f"[{label}] 생성={result['n_total_passengers']} 탑승={result['n_measured']} "
+          f"타임아웃={result['n_timeout_removed']} 평균대기={result['avg_wait_sec']}")
 
 
-def rebuild_env():
-    """build_env.py를 다시 실행해서 현재 config.json 기준으로 도로망/승객/택시를 재생성"""
-    import subprocess
-    build_env_path = os.path.join(ROOT, "module1_simulation", "build_env.py")
-    subprocess.run([sys.executable, build_env_path], check=True, cwd=ROOT)
+def isolated_run(config, destination, sumo_binary='sumo'):
+    """빌드와 측정은 별도 프로세스에서 같은 설정 스냅샷을 읽는다."""
+    destination = Path(destination).resolve()
+    destination.mkdir(parents=True, exist_ok=True)
+    path = destination / 'config.json'
+    path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
+    env = {**os.environ, 'MOBILITY_CONFIG': str(path), 'PYTHONIOENCODING': 'utf-8'}
+    with (destination / 'run.log').open('w', encoding='utf-8') as log:
+        for command in ([sys.executable, str(ROOT / 'module1_simulation/build_env.py'), '--config-path', str(path), '--config-dir', str(destination / 'sumo')],
+                        [sys.executable, str(Path(__file__)), '_worker', '--config-path', str(path), '--output-dir', str(destination), '--sumo-binary', sumo_binary]):
+            subprocess.run(command, env=env, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
+    return json.loads((destination / 'summary.json').read_text(encoding='utf-8'))
 
 
-def print_result(label: str, result: dict):
-    print(f"\n===== [{label}] 결과 =====")
-    print(f" - 전체 승객 수: {result['n_total_passengers']}")
-    print(f" - 탑승 성공: {result['n_measured']}명 / 끝까지 못 탄 승객: {result['n_unpicked']}명 "
-          f"(그중 대기시간 초과로 소멸: {result.get('n_timeout_removed', 0)}명)")
-    if result["avg_wait_sec"] is not None:
-        print(f" - 평균 대기시간(탑승자만): {result['avg_wait_sec']}초 (약 {result['avg_wait_sec']/60:.1f}분)")
-        print(f" - 최소/최대 대기시간: {result['min_wait_sec']}초 / {result['max_wait_sec']}초")
-    if result.get("true_avg_wait_sec_with_penalty") is not None:
-        v = result["true_avg_wait_sec_with_penalty"]
-        print(f" - 평균 대기시간(타임아웃 페널티 포함, 체감치): {v}초 (약 {v/60:.1f}분)")
-    else:
-        print(" - 탑승한 승객이 없어 대기시간을 계산할 수 없습니다.")
-
-
-def compare_strategies():
-    """patrol vs prepositioned 두 전략을 순차 실행해서 비교"""
+def compare_strategies(config=None, output_dir=None, seeds=(42, 43, 44, 45, 46)):
+    cfg = dict(config or CFG)
     results = {}
-    for strategy in ("patrol", "prepositioned"):
-        print(f"\n########## 전략 '{strategy}' 시뮬레이션 준비 중 ##########")
-        set_strategy_in_config(strategy)
-        rebuild_env()
-        result = run_and_measure()
-        results[strategy] = result
-        print_result(strategy, result)
-
-    print("\n===== [최종 비교] patrol vs prepositioned =====")
-    a, b = results["patrol"], results["prepositioned"]
-    # 타임아웃 페널티 포함 지표로 비교 -- 배차 실패(타임아웃)가 많은 쪽이
-    # 픽업만 기준으로는 오히려 좋게 보이는 착시를 막기 위함
-    a_metric, b_metric = a.get("true_avg_wait_sec_with_penalty"), b.get("true_avg_wait_sec_with_penalty")
-    if a_metric is not None and b_metric is not None:
-        diff = a_metric - b_metric
-        pct = (diff / a_metric * 100) if a_metric else 0
-        better = "prepositioned" if diff > 0 else "patrol"
-        print(f" - patrol 평균 대기(타임아웃 포함): {a_metric}초")
-        print(f" - prepositioned 평균 대기(타임아웃 포함): {b_metric}초")
-        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) — '{better}' 전략이 더 나음")
-    else:
-        print(" - 두 전략 중 하나 이상에서 측정 실패 (탑승자 없음). 승객/시간대 설정을 확인하세요.")
-
+    for seed in seeds:
+        for strategy in ('patrol', 'prepositioned'):
+            results[f'{seed}/{strategy}'] = isolated_run({**cfg, 'passenger_seed': seed, 'taxi_strategy': strategy},
+                Path(output_dir or ROOT / 'results/runtime_validation/compare') / str(seed) / strategy)
     return results
 
 
-def set_dispatch_algorithm_in_config(algo: str):
-    """config.json의 taxi_dispatch_algorithm 값을 바꿔치기"""
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    cfg["taxi_dispatch_algorithm"] = algo
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+def compare_dispatch_algorithms(algo_a='greedy', algo_b='hungarian', output_dir=None, seeds=(42,)):
+    """기존 배차 비교 명령도 원본 설정을 변경하지 않고 실행한다."""
+    return {f'{seed}/{algo}': isolated_run({**CFG, 'passenger_seed': seed, 'taxi_dispatch_algorithm': algo},
+            Path(output_dir or ROOT / 'results/dispatch_comparison') / str(seed) / algo)
+            for seed in seeds for algo in (algo_a, algo_b)}
 
 
-def compare_dispatch_algorithms(algo_a: str = "greedy", algo_b: str = "hungarian"):
-    """두 배차 알고리즘(A vs B)을 순차 실행해서 평균 대기시간 비교"""
-    results = {}
-    for algo in (algo_a, algo_b):
-        print(f"\n########## 배차 알고리즘 '{algo}' 시뮬레이션 준비 중 ##########")
-        set_dispatch_algorithm_in_config(algo)
-        rebuild_env()
-        result = run_and_measure()
-        results[algo] = result
-        print_result(algo, result)
-
-    print(f"\n===== [최종 비교] {algo_a} vs {algo_b} =====")
-    a, b = results[algo_a], results[algo_b]
-    # 타임아웃 페널티 포함 지표로 비교 -- 아까 실제 테스트(greedy 56.3% 개선처럼 보였다가
-    # 타임아웃 포함하면 14.5%로 줄어든 것)에서 확인된 착시를 여기서도 막기 위함
-    a_metric, b_metric = a.get("true_avg_wait_sec_with_penalty"), b.get("true_avg_wait_sec_with_penalty")
-    if a_metric is not None and b_metric is not None:
-        diff = a_metric - b_metric
-        pct = (diff / a_metric * 100) if a_metric else 0
-        better = algo_b if diff > 0 else algo_a
-        print(f" - {algo_a} 평균 대기(타임아웃 포함): {a_metric}초")
-        print(f" - {algo_b} 평균 대기(타임아웃 포함): {b_metric}초")
-        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) — '{better}' 알고리즘이 더 나음")
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('mode', nargs='?', default='current', choices=['current','_worker','compare','dispatch_compare','patrol','prepositioned'])
+    parser.add_argument('algorithms', nargs='*', choices=['greedy','hungarian','routeExtension'])
+    parser.add_argument('--config-path')
+    parser.add_argument('--output-dir', type=Path, default=ROOT / 'results/simulation')
+    parser.add_argument('--seeds', type=int, nargs='+', default=[42,43,44,45,46])
+    parser.add_argument('--sumo-binary', default='sumo')
+    args = parser.parse_args()
+    if args.mode == 'compare':
+        compare_strategies(CFG, args.output_dir, args.seeds)
+    elif args.mode == 'dispatch_compare':
+        compare_dispatch_algorithms(*(args.algorithms or ['greedy','hungarian']), output_dir=args.output_dir, seeds=args.seeds)
+    elif args.mode == '_worker':
+        print_result('worker', run_and_measure(sumo_binary=args.sumo_binary, meta_path=args.output_dir / 'sumo/runtime_meta.json', output_dir=args.output_dir))
+    elif args.mode in ('patrol', 'prepositioned') or args.config_path:
+        cfg = {**CFG, 'passenger_seed': args.seeds[0]}
+        if args.mode in ('patrol','prepositioned'):
+            cfg['taxi_strategy'] = args.mode
+        print_result(args.mode, isolated_run(cfg, args.output_dir, args.sumo_binary))
     else:
-        print(" - 둘 중 하나 이상에서 측정 실패. 시간대/승객 설정을 확인하세요.")
-
-    return results
+        print_result('current', run_and_measure(sumo_binary=args.sumo_binary, output_dir=args.output_dir))
 
 
-if __name__ == "__main__":
-    mode = sys.argv[1] if len(sys.argv) > 1 else "current"
-
-    if mode == "compare":
-        compare_strategies()
-    elif mode in ("patrol", "prepositioned"):
-        set_strategy_in_config(mode)
-        rebuild_env()
-        result = run_and_measure()
-        print_result(mode, result)
-    elif mode == "dispatch_compare":
-        algo_a = sys.argv[2] if len(sys.argv) > 2 else "greedy"
-        algo_b = sys.argv[3] if len(sys.argv) > 3 else "hungarian"
-        compare_dispatch_algorithms(algo_a, algo_b)
-    else:
-        # config.json에 이미 설정된 전략 그대로, 재생성 없이 현재 rou.xml/sumocfg로 측정만
-        result = run_and_measure()
-        print_result("current config", result)
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,290 @@
+{
+  "runs_passed": 70,
+  "raw_outcomes_checked": 70,
+  "population_checks": 48,
+  "single_map": true,
+  "source_hash": "7a8338856cae24c7c6793d45f6b7a3bc14b0b01251c2300a2c2393c45d8a4c74",
+  "gui_headless_parity": true,
+  "runs": [
+    {
+      "run": "strategy_06_24_patrol_42",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_patrol_43",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_patrol_44",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_patrol_45",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_patrol_46",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_prepositioned_42",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_prepositioned_43",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_prepositioned_44",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_prepositioned_45",
+      "passed": true
+    },
+    {
+      "run": "strategy_06_24_prepositioned_46",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_patrol_42",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_patrol_43",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_patrol_44",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_patrol_45",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_patrol_46",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_prepositioned_42",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_prepositioned_43",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_prepositioned_44",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_prepositioned_45",
+      "passed": true
+    },
+    {
+      "run": "strategy_07_10_prepositioned_46",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_patrol_42",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_patrol_43",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_patrol_44",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_patrol_45",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_patrol_46",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_prepositioned_42",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_prepositioned_43",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_prepositioned_44",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_prepositioned_45",
+      "passed": true
+    },
+    {
+      "run": "strategy_09_11_prepositioned_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_patrol_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_patrol_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_patrol_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_patrol_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_patrol_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_prepositioned_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_prepositioned_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_prepositioned_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_prepositioned_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_200_prepositioned_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_patrol_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_patrol_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_patrol_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_patrol_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_patrol_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_prepositioned_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_prepositioned_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_prepositioned_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_prepositioned_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_350_prepositioned_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_patrol_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_patrol_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_patrol_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_patrol_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_patrol_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_prepositioned_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_prepositioned_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_prepositioned_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_prepositioned_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_700_prepositioned_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_patrol_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_patrol_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_patrol_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_patrol_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_patrol_46",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_prepositioned_42",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_prepositioned_43",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_prepositioned_44",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_prepositioned_45",
+      "passed": true
+    },
+    {
+      "run": "timeout_900_prepositioned_46",
+      "passed": true
+    }
+  ]
+}

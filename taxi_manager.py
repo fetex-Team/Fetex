@@ -24,6 +24,10 @@ class TaxiFleetManager:
                  hotspot_edges: list = None, zones: dict = None,
                  sim_start_hour: float = 0, remaining_edges_threshold: int = None, **kwargs):
         self.target_count = target_count
+        # 승객 추첨과 별도 난수 흐름을 사용한다.
+        self.rng = random.Random(CFG.get("passenger_seed"))
+        self.protected_ids = set()
+        self.max_loaded_taxis = 0
         self.boundary_edges = boundary_edges or all_edges  # 재생성 시 사용할 검증된 출발점
         self.all_edges = all_edges
         self.vtype = vtype
@@ -79,12 +83,12 @@ class TaxiFleetManager:
     def _pick_target_edge(self, now_seconds: float, current_edge: str) -> str:
         if self.strategy == "prepositioned":
             primary_pool, secondary_pool = self._current_hotspot_pools(now_seconds)
-            pool = primary_pool if random.random() < self.primary_prob else secondary_pool
+            pool = primary_pool if self.rng.random() < self.primary_prob else secondary_pool
         else:
             pool = self.all_edges
 
         for _ in range(self.target_pick_attempts):
-            candidate = random.choice(pool)
+            candidate = self.rng.choice(pool)
             if candidate == current_edge:
                 continue
             # 후보 edge 자체가 내부(intersection) edge면 경로탐색 대상이 아니므로 스킵
@@ -122,7 +126,7 @@ class TaxiFleetManager:
         self._respawn_counter += 1
         new_vid = f"{self.respawn_prefix}_{self._respawn_counter}"
         route_id = f"route_{new_vid}"
-        start_edge = random.choice(self.boundary_edges)
+        start_edge = self.rng.choice(self.boundary_edges)
 
         try:
             traci.route.add(route_id, [start_edge])
@@ -143,15 +147,20 @@ class TaxiFleetManager:
             # 고립 edge(fail_counts 5회), 정지위치 배정 실패로 인한 자연 도착 처리,
             # teleport 등 원인이 무엇이든 결과(대수 유지)만은 항상 보장하기 위함.
             # ------------------------------------------------------------
-            taxi_count = sum(
-                1 for vid in current_ids if traci.vehicle.getTypeID(vid) == self.vtype
-            )
+            # 도로 진입 대기/텔레포트 중인 차량도 보유 대수에 포함한다.
+            loaded_ids = set(traci.vehicle.getLoadedIDList())
+            taxi_count = sum(1 for vid in loaded_ids if traci.vehicle.getTypeID(vid) == self.vtype)
+            self.max_loaded_taxis = max(self.max_loaded_taxis, taxi_count)
+            if taxi_count > self.target_count:
+                raise RuntimeError(f"택시 보유 대수 초과: {taxi_count} > {self.target_count}")
             shortage = self.target_count - taxi_count
             for _ in range(max(0, shortage)):
                 self._spawn_new_taxi()
 
-            for vid in current_ids:
+            for vid in sorted(current_ids):
                 if traci.vehicle.getTypeID(vid) != self.vtype:
+                    continue
+                if vid in self.protected_ids:
                     continue
 
                 if traci.vehicle.getPersonIDList(vid):

@@ -1,0 +1,14 @@
+# SUMO 런타임 검증에 필요한 최소 의존성 (Python 3.12)
+eclipse-sumo==1.27.1
+traci==1.27.1
+sumolib==1.27.1
+libsumo==1.27.1
+numpy==2.5.3
+scipy==1.18.1
+h3==4.5.0
+networkx==3.6.1
+pyproj==3.8.0
+pandas==3.0.5
+pytest==9.1.1
+matplotlib==3.11.2
+joblib==1.6.0

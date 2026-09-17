@@ -14,6 +14,11 @@ DEFAULT_CONFIG = {
     "sim_start_hour": 8, "sim_end_hour": 10,
     "passenger_wait_timeout": 500,
     "passenger_seed": None,
+    # 검증 실행은 날짜와 외부 관측을 고정하여 재현한다.
+    "scenario_date": "2026-09-18",
+    "resolve_external_data": True,
+    "dynamic_passengers": True,
+    "passenger_mode": "dynamic",
     "taxi_strategy": "patrol",
     "depart_jitter_sec": 300.0,
     "sumo_time_to_teleport": 300,
@@ -83,19 +88,35 @@ REGION_PRESETS = {
 }
 
 def load_config(config_path=None):
-    path = config_path or CONFIG_PATH
+    path = config_path or os.environ.get("MOBILITY_CONFIG") or CONFIG_PATH
+    explicit = bool(config_path or os.environ.get("MOBILITY_CONFIG"))
     user_cfg = {}
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f: user_cfg = json.load(f)
             print("[안내] config.json에서 설정값을 불러왔습니다.")
         except (json.JSONDecodeError, OSError) as e:
+            if explicit:
+                raise ValueError(f"지정된 설정을 읽지 못했습니다: {path}") from e
             print(f"[경고] config.json을 읽지 못해 기본값을 사용합니다: {e}")
     else:
+        if explicit:
+            raise FileNotFoundError(path)
         print("[안내] config.json이 없어 기본값을 사용합니다.")
     merged = {**DEFAULT_CONFIG, **user_cfg}
-    _apply_region_coords(merged, merged.get("region", "홍대입구"))
-    _apply_live_weather(merged, merged.get("region", "홍대입구"))
+    if not 0 <= merged['sim_start_hour'] < merged['sim_end_hour'] <= 24:
+        raise ValueError('시간 범위는 0 <= 시작 < 종료 <= 24여야 합니다.')
+    for key in ('num_passengers', 'num_taxis', 'school_pop_base', 'company_pop_base', 'restaurant_pop_base'):
+        if merged[key] < 0:
+            raise ValueError(f'{key}는 음수일 수 없습니다.')
+    if merged['passenger_wait_timeout'] <= 0:
+        raise ValueError('passenger_wait_timeout은 양수여야 합니다.')
+    if merged.get("resolve_external_data", True):
+        _apply_region_coords(merged, merged.get("region", "홍대입구"))
+        _apply_live_weather(merged, merged.get("region", "홍대입구"))
+    else:
+        preset = REGION_PRESETS.get(merged.get("region"), {})
+        merged = {**preset, **merged}
     return merged
 
 def _apply_region_coords(merged, region):
