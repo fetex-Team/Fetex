@@ -9,8 +9,8 @@ import pandas as pd
 import h3
 from config_loader import CFG, DEFAULT_CONFIG, REGION_PRESETS
 from data.generate import generate_data
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, make_supervised, chronological_split
-from module2_preprocessing.external_data_merge import merge_external_data
+from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, time_based_split, feature_columns, target_columns
+from module2_preprocessing.external_data_merge import merge_external_data, EXTERNAL_FEATURE_COLS
 from module4_dispatch.surge_pricing import SurgePricingEngine
 from module4_dispatch.forecast_dispatcher import allocate_targets
 from evaluate import calculate_metrics
@@ -26,40 +26,65 @@ def sample_meta():
             'sim_start_hour': 0, 'sim_end_hour': 1, 'passenger_wait_timeout': 500}
 
 
+def _weather_table(external):
+    """합성 외부 관측(time_bucket×h3_index) → 시각별 날씨 표. forecast_dispatcher와 같은 변환."""
+    from module4_dispatch.forecast_dispatcher import _external_to_weather
+    return _external_to_weather(external)
+
+
 def check_preprocessing():
+    # [2026-09-17 윤세빈] Module 2 현행 API(feat/3-preprocessing 계열)에 맞춰 재작성.
+    #   구 API(make_supervised/chronological_split/aggregate_demands(cells=))는 develop에 없음.
     meta = sample_meta(); CFG.update(meta['config']); cells = list(meta['edge_cells'].values())
     calls = pd.DataFrame({'pickup_datetime': pd.to_datetime(['2026-08-01 00:00', '2026-08-01 00:10']), 'h3_index': [cells[0]] * 2})
     prep = TimeSeriesPreprocessor()
-    panel = prep.aggregate_demands(calls, cells=cells, start='2026-08-01', end='2026-08-01 00:15')
-    assert panel.loc[panel.h3_index == cells[0], 'demand'].tolist() == [1, 0, 1]
+    assert prep.freq == '5min', f'config freq가 5min이 아닙니다: {prep.freq}'
+    panel = prep.aggregate_demands(calls, all_cells=cells, start='2026-08-01', end='2026-08-01 00:15')
+    assert panel.loc[panel.h3_index == cells[0], 'demand'].tolist() == [1, 0, 1, 0]
     assert panel.loc[panel.h3_index == cells[1], 'demand'].sum() == 0
+    assert not panel.duplicated(['time_bucket', 'h3_index']).any()
     # 두 지역을 완전히 다른 상수로 채워 이동평균이 지역 경계를 섞지 않는지 검사한다.
     times = pd.date_range('2026-08-01', periods=200, freq='5min')
     panel = pd.DataFrame([(t, c, float(i * 10)) for t in times for i, c in enumerate(cells)], columns=['time_bucket', 'h3_index', 'demand'])
     external = panel[['time_bucket', 'h3_index']].copy()
     for col in ('temperature', 'precipitation', 'traffic_index', 'event_flag', 'is_holiday'): external[col] = 1.
     external.loc[external.time_bucket == times[0], 'temperature'] = np.nan
-    merged = merge_external_data(panel, external)
-    assert (merged.loc[merged.time_bucket == times[0], 'temperature'] == 0).all()
-    assert (merged.loc[merged.time_bucket == times[0], 'temperature_missing'] == 1).all()
-    features = prep.create_features(merged)
-    frame, names, targets = make_supervised(features)
-    assert frame[targets].shape[1] == 6
+    # 인과 결합: 시각 t에는 t 이전 최신 관측만 붙는다 (첫 시각은 관측이 없으므로 결측 플래그)
+    merged = merge_external_data(panel, weather=_weather_table(external), time_col='time_bucket', verbose=False)
+    assert merged.loc[merged.time_bucket == times[0], 'temperature'].isna().all()
+    assert (merged.loc[merged.time_bucket == times[0], 'weather_missing'] == 1).all()
+    assert (merged.loc[merged.time_bucket >= times[12], 'weather_missing'] == 0).all()
+    frame = prep.create_features(merged, verbose=False)
+    names = feature_columns(frame) + [c for c in EXTERNAL_FEATURE_COLS if c in frame.columns]
+    targets = target_columns(frame)
+    assert len(targets) == 6 and targets == [f'y_h{h}' for h in range(1, 7)]
+    assert not any(c.startswith('y_h') or c == 'demand' for c in names)
     for cell, group in frame.groupby('h3_index'):
-        assert np.allclose(group['rolling_mean_6'], group.demand)
-    train, val, test = chronological_split(frame)
-    assert train.time_bucket.max() + pd.Timedelta(minutes=30) < val.time_bucket.min()
-    assert val.time_bucket.max() + pd.Timedelta(minutes=30) < test.time_bucket.min()
+        assert np.allclose(group['rolling_mean_6'], group.demand)       # 상수 계열: 셀 경계 섞임 없음
+        assert np.allclose(group['rolling_mean_1h'], group.demand)
+    train, val, test, cuts = time_based_split(frame, test_size=0.2, val_size=0.2)
+    assert train.time_bucket.max() < val.time_bucket.min() <= val.time_bucket.max() < test.time_bucket.min()
+    assert set(test.h3_index) == set(cells), '시간칸 기준 분할이면 모든 셀이 test에 있어야 한다'
     # 타깃은 현재값 복사가 아니라 정확히 5분 간격의 미래값이어야 한다.
     ramp = panel.copy(); ramp['demand'] = np.repeat(np.arange(len(times)), len(cells))
-    ramp_frame, _, target_cols = make_supervised(prep.create_features(merge_external_data(ramp, external)))
-    np.testing.assert_array_equal(ramp_frame[target_cols].iloc[0].to_numpy(), ramp_frame.demand.iloc[0] + np.arange(1, 7))
-    from train import sequence_arrays
-    x, y, rows = sequence_arrays(train, names, targets, 12)
-    assert x.shape[1] == 12 and y.shape[1] == 6
-    assert len(rows) == len(x)
-    assert calculate_metrics(np.zeros(3), np.ones(3))['MAPE (%)'] is None
-    print('PASS: zero grid, causal external join, grouped rolling, six targets, temporal split, real sequences, zero MAPE')
+    ramp_frame = prep.create_features(merge_external_data(ramp, weather=_weather_table(external), time_col='time_bucket', verbose=False), verbose=False)
+    ramp_frame = ramp_frame.sort_values(['time_bucket', 'h3_index']).reset_index(drop=True)
+    np.testing.assert_array_equal(ramp_frame[targets].iloc[0].to_numpy(), ramp_frame.demand.iloc[0] + np.arange(1, 7))
+    # 유효범위·유일성 위반은 ValueError로 중단되어야 한다 (Data Spec 5장)
+    for bad in (panel.assign(demand=panel.demand.where(panel.index != 0, -1)),
+                pd.concat([panel, panel.head(1)], ignore_index=True),
+                panel.assign(time_bucket=panel.time_bucket.where(panel.index != 0, times[0] + pd.Timedelta(minutes=2)))):
+        try:
+            prep.create_features(bad, verbose=False); raise AssertionError('잘못된 패널이 통과했습니다')
+        except ValueError: pass
+    print('PASS: zero grid, uniqueness, causal external join, grouped rolling, six targets, temporal split, validation errors')
+
+
+def check_metrics():
+    # Data Spec 4장: MAPE는 실제값이 양수인 구간에서만. 전부 0이면 None (0 나누기 금지).
+    m = calculate_metrics(np.zeros(3), np.ones(3))
+    assert m['MAPE (%)'] is None, f"MAPE가 None이 아닙니다: {m['MAPE (%)']} (evaluate.py가 Data Spec 4장 기준이 아님)"
+    print('PASS: zero-demand MAPE is None')
 
 
 def check_replay():
@@ -130,13 +155,14 @@ def check_forecast_causality():
     meta = sample_meta(); CFG.update(meta['config'])
     calls, external = generate_data(meta, '2026-08-30', 2)
     prep = TimeSeriesPreprocessor()
-    panel = prep.aggregate_demands(calls, cells=set(meta['edge_cells'].values()), start='2026-08-30', end='2026-09-01')
-    _, features, _ = make_supervised(prep.create_features(merge_external_data(panel, external)))
+    panel = prep.aggregate_demands(calls, all_cells=sorted(set(meta['edge_cells'].values())), start='2026-08-30', end='2026-09-01')
+    frame = prep.create_features(merge_external_data(panel, weather=_weather_table(external), time_col='time_bucket', verbose=False), verbose=False)
+    features = feature_columns(frame) + [c for c in EXTERNAL_FEATURE_COLS if c in frame.columns]
     class Model:
         def predict(self, frame):
-            return np.repeat(frame[['observed_demand']].to_numpy(), 6, axis=1)
+            return np.repeat(frame[['lag_1']].to_numpy(), 6, axis=1)
     artifact = {'version': 2, 'cells': sorted(meta['edge_cells'].values()), 'data_until': '2026-08-30',
-                'model': Model(), 'feature_cols': features,
+                'model': Model(), 'feature_cols': features, 'target_cols': [f'y_h{h}' for h in range(1, 7)],
                 **{k: CFG[k] for k in ('max_lag', 'rolling_short', 'rolling_long')}}
     start = pd.Timestamp('2026-08-31 17:00')
     with patch.object(module.joblib, 'load', return_value=artifact):
@@ -170,7 +196,7 @@ def check_sumo():
 if __name__ == '__main__':
     saved = CFG.copy()
     try:
-        check_preprocessing(); check_replay(); check_pricing(); check_pickup_protection(); check_empty_interval(); check_forecast_causality()
+        check_preprocessing(); check_metrics(); check_replay(); check_pricing(); check_pickup_protection(); check_empty_interval(); check_forecast_causality()
     finally:
         CFG.clear(); CFG.update(saved)
 

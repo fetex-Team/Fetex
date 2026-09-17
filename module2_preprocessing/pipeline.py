@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from config_loader import CFG
 from module2_preprocessing.spatial_indexing import SpatialIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, feature_columns, target_columns
+from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, feature_columns, target_columns, to_naive_kst
 from module2_preprocessing.external_data_merge import merge_external_data, EXTERNAL_FEATURE_COLS
 
 REQUIRED = ["pickup_datetime", "latitude", "longitude"]
@@ -41,18 +41,31 @@ def load_logs(paths) -> pd.DataFrame:
         files += sorted(glob.glob(p)) if any(ch in p for ch in "*?[") else [p]
     if not files:
         raise FileNotFoundError(f"로그 파일 없음: {paths}")
-    parts = []
+    parts, dropped = [], {}
     for f in files:
         d = pd.read_csv(f, usecols=lambda c: c in REQUIRED + ["request_sec"])
         missing = [c for c in REQUIRED if c not in d.columns]
         if missing:
             raise ValueError(f"{f}: 필수 컬럼 없음 {missing}")
+        # [검증] 타입: 위경도는 수치, 시각은 datetime(KST, tz 없음). 파싱 불가·tz 혼재는 ValueError.
+        for c in ("latitude", "longitude"):
+            d[c] = pd.to_numeric(d[c], errors="coerce")
+        d["pickup_datetime"] = to_naive_kst(d["pickup_datetime"], f"{os.path.basename(f)}:pickup_datetime")
+        # [검증] 결측 좌표 행 제거 + 건수 기록 (Data Spec 5장 완전성: 제거 건수·사유를 실행 로그로 남김)
+        n_before = len(d)
         d = d.dropna(subset=["latitude", "longitude"])
-        d["pickup_datetime"] = pd.to_datetime(d["pickup_datetime"])
+        n_drop = n_before - len(d)
+        if n_drop:
+            dropped[os.path.basename(f)] = n_drop
+            print(f"[검증] {os.path.basename(f)}: 좌표 결측 {n_drop:,}건 제거 (사유: latitude/longitude NaN 또는 비수치)")
         d["_source"] = os.path.basename(f)
         parts.append(d)
     df = pd.concat(parts, ignore_index=True)
-    print(f"[로그] {len(files)}개 파일, {len(df):,}건, {df['pickup_datetime'].min()} ~ {df['pickup_datetime'].max()}")
+    if df.empty:
+        raise ValueError("유효한 호출 로그 행이 없습니다 (좌표 결측 제거 후 0건).")
+    print(f"[로그] {len(files)}개 파일, {len(df):,}건, {df['pickup_datetime'].min()} ~ {df['pickup_datetime'].max()}"
+          + (f" (좌표 결측 제거 합계 {sum(dropped.values()):,}건)" if dropped else " (좌표 결측 0건)"))
+    df.attrs["dropped_missing_coords"] = dropped
     return df
 
 

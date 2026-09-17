@@ -10,7 +10,12 @@
 결측치 처리 정책 (명세 R4)
 1) 날씨 파일 안의 짧은 공백(≤ interpolate_limit 시간): 시간 축 선형 보간 → weather_interpolated=1
 2) 긴 공백 / tolerance 밖: NaN 유지 → weather_missing=1  (모델은 이 플래그로 "모름"을 학습)
+   ※ weather_missing은 "원천이 제공하는 변수"의 관측 공백만 뜻한다. 원천 자체가 어떤 변수를 아예 주지 않으면
+     (예: 합성 external.csv에는 wind_speed가 없음) 그 변수는 판정에서 제외한다 — 그래야 플래그가 전 행 1로
+     고정되지 않고 실제 공백을 구분한다. 제공되지 않은 변수는 NaN으로 남고 학습 시 fillna(0) 규칙을 따른다.
 3) 날씨 파일 자체가 없음: config의 현재 기온으로 상수 채움 + weather_source='fallback' (학습 시 경고)
+4) 유효범위: precipitation < 0 이면 ValueError (Data Spec 5장 — 잘못된 값으로 학습 진행 금지)
+is_rain = precipitation > 0 (Data Spec 3장).
 ※ 기존 코드의 np.random 날씨 생성은 삭제 — 랜덤값은 수요와 무관해 모델에 노이즈만 추가하고 EDA 결과를 왜곡함.
 
 공휴일(외부 달력 데이터)은 time_features.add_time_features가 붙인다 (holidays 패키지 KR).
@@ -47,17 +52,38 @@ def load_weather(path: str) -> pd.DataFrame:
     for c in WEATHER_COLS:
         if c not in w.columns:
             w[c] = np.nan
-    return w[["time"] + WEATHER_COLS].sort_values("time").drop_duplicates("time").reset_index(drop=True)
+    w = w[["time"] + WEATHER_COLS].sort_values("time").drop_duplicates("time").reset_index(drop=True)
+    _check_ranges(w, os.path.basename(path))
+    return w
 
 
-def _fill_short_gaps(w: pd.DataFrame, interpolate_limit_hours: int) -> pd.DataFrame:
-    """관측 자체에 빠진 시각이 있으면 시간 격자로 펼친 뒤 짧은 공백만 보간."""
+def _check_ranges(w: pd.DataFrame, source: str = "weather") -> None:
+    """유효범위 검사: 강수량은 0 이상. 위반 시 ValueError (잘못된 값으로 학습 진행 금지)."""
+    if "precipitation" in w.columns:
+        rain = pd.to_numeric(w["precipitation"], errors="coerce")
+        n_neg = int((rain < 0).sum())
+        if n_neg:
+            raise ValueError(f"{source}: precipitation < 0 인 관측이 {n_neg}건 있습니다.")
+
+
+def provided_weather_cols(weather: pd.DataFrame) -> list:
+    """원천이 실제로 제공하는 날씨 변수 (전부 NaN인 컬럼은 '미제공'으로 보고 제외)."""
+    return [c for c in WEATHER_COLS if c in weather.columns and weather[c].notna().any()]
+
+
+def _fill_short_gaps(w: pd.DataFrame, interpolate_limit_hours: int, cols: list = None) -> pd.DataFrame:
+    """관측 자체에 빠진 시각이 있으면 시간 격자로 펼친 뒤 짧은 공백만 보간.
+    cols: 원천이 제공하는 변수만 (미제공 변수는 보간·플래그 판정에서 제외)."""
+    cols = list(cols) if cols is not None else list(WEATHER_COLS)
     full = pd.date_range(w["time"].min(), w["time"].max(), freq="1h")
     w = w.set_index("time").reindex(full)
     w.index.name = "time"
-    was_nan = w[WEATHER_COLS].isna().any(axis=1)
-    w[WEATHER_COLS] = w[WEATHER_COLS].interpolate(method="linear", limit=interpolate_limit_hours, limit_area="inside")
-    w["weather_interpolated"] = (was_nan & w[WEATHER_COLS].notna().all(axis=1)).astype(int)
+    was_nan = w[cols].isna().any(axis=1) if cols else pd.Series(False, index=w.index)
+    if cols:
+        w[cols] = w[cols].interpolate(method="linear", limit=interpolate_limit_hours, limit_area="inside")
+        w["weather_interpolated"] = (was_nan & w[cols].notna().all(axis=1)).astype(int)
+    else:
+        w["weather_interpolated"] = 0
     return w.reset_index()
 
 
@@ -94,20 +120,30 @@ def merge_external_data(df: pd.DataFrame, weather: pd.DataFrame = None, weather_
         df["weather_missing"] = 1
         df["weather_source"] = "fallback"
     else:
-        w = _fill_short_gaps(weather, interpolate_limit_hours)
+        weather = weather.copy()
+        weather["time"] = pd.to_datetime(weather["time"])
+        for c in WEATHER_COLS:
+            if c not in weather.columns:
+                weather[c] = np.nan
+        _check_ranges(weather, "weather")
+        provided = provided_weather_cols(weather)
+        not_provided = [c for c in WEATHER_COLS if c not in provided]
+        w = _fill_short_gaps(weather, interpolate_limit_hours, cols=provided)
         df["_row_order"] = np.arange(len(df))
         merged = pd.merge_asof(df.sort_values(time_col), w.sort_values("time"),
                                left_on=time_col, right_on="time", direction="backward",
                                tolerance=pd.Timedelta(hours=max_gap_hours))
         df = merged.sort_values("_row_order").drop(columns=["time", "_row_order"]).reset_index(drop=True)
-        df["weather_missing"] = df[WEATHER_COLS].isna().any(axis=1).astype(int)
+        # 결측 플래그는 '제공되는 변수'의 공백만 본다 (미제공 변수 때문에 전 행 1로 고정되는 것을 막음)
+        df["weather_missing"] = (df[provided].isna().any(axis=1) if provided else pd.Series(True, index=df.index)).astype(int)
         df["weather_interpolated"] = df["weather_interpolated"].fillna(0).astype(int)
         df["weather_source"] = "observed"
         if verbose:
             miss = df["weather_missing"].mean() * 100
-            print(f"[외부 데이터] 병합 완료: 결측 {miss:.1f}% (tolerance {max_gap_hours}h), 보간 {df['weather_interpolated'].sum()}행")
+            extra = f", 원천 미제공 변수 {not_provided}(NaN 유지)" if not_provided else ""
+            print(f"[외부 데이터] 병합 완료: 결측 {miss:.1f}% (tolerance {max_gap_hours}h), 보간 {df['weather_interpolated'].sum()}행{extra}")
 
-    df["is_rain"] = (df["precipitation"].fillna(0) >= 0.1).astype(int)
+    df["is_rain"] = (df["precipitation"].fillna(0) > 0).astype(int)
     return df
 
 

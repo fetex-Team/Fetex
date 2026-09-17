@@ -170,6 +170,67 @@ def test_external():
     check("T4 랜덤 날씨 생성 코드 없음", not any("np.random" in l for l in code_lines))
 
 
+# ============ T5 품질 기준 (Data Spec 5장: 유일성·완전성·유효범위) ============
+def _raises(fn, *a, **k):
+    try:
+        fn(*a, **k)
+        return False
+    except ValueError:
+        return True
+
+
+def test_quality():
+    from module2_preprocessing.time_series_prep import validate_panel, to_naive_kst
+    cells = ["A", "B"]
+    times = pd.date_range("2026-09-07 09:00", periods=30, freq="5min")
+    good = pd.DataFrame([(t, c, 1) for t in times for c in cells], columns=["time_bucket", "h3_index", "demand"])
+    check("T5 정상 패널 통과", not _raises(validate_panel, good, "5min"))
+    # 유일성
+    dup = pd.concat([good, good.head(1)], ignore_index=True)
+    check("T5 (time_bucket, h3_index) 중복 → ValueError", _raises(validate_panel, dup, "5min"))
+    # 유효범위: 수요·강수 ≥ 0, 결측 불가
+    neg = good.copy(); neg.loc[0, "demand"] = -1
+    check("T5 demand < 0 → ValueError", _raises(validate_panel, neg, "5min"))
+    nan = good.copy(); nan.loc[0, "demand"] = np.nan
+    check("T5 demand 결측 → ValueError", _raises(validate_panel, nan, "5min"))
+    rain = good.copy(); rain["precipitation"] = 0.0; rain.loc[3, "precipitation"] = -0.5
+    check("T5 precipitation < 0 → ValueError", _raises(validate_panel, rain, "5min"))
+    # 5분 경계 정렬
+    off = good.copy(); off.loc[0, "time_bucket"] = pd.Timestamp("2026-09-07 09:02")
+    check("T5 5분 경계 미정렬 → ValueError", _raises(validate_panel, off, "5min"))
+    # 시각 기준: tz 없는 KST 단일. tz-aware 단일 tz는 KST로 변환, 혼재·파싱 실패는 에러
+    utc = pd.Series(pd.to_datetime(["2026-09-07 00:00"]).tz_localize("UTC"))
+    check("T5 tz-aware(UTC) → KST naive 변환", to_naive_kst(utc).iloc[0] == pd.Timestamp("2026-09-07 09:00"))
+    check("T5 파싱 불가 시각 → ValueError", _raises(to_naive_kst, pd.Series(["2026-09-07 09:00", "not-a-date"])))
+    mixed = pd.Series([pd.Timestamp("2026-09-07 09:00", tz="UTC"), pd.Timestamp("2026-09-07 09:00", tz="Asia/Seoul")], dtype=object)
+    check("T5 tz 혼재 → ValueError", _raises(to_naive_kst, mixed))
+    # create_features 입구에서 검사가 실제로 실행되는지
+    prep = TimeSeriesPreprocessor(freq="5min", max_lag=2, rolling_short=2, rolling_long=3, horizons=6)
+    check("T5 create_features가 중복 패널을 거부", _raises(prep.create_features, dup, verbose=False))
+    # 날씨 원천 유효범위
+    w = pd.DataFrame({"time": pd.to_datetime(["2026-09-07 09:00", "2026-09-07 10:00"]),
+                      "temperature": [20.0, 21.0], "precipitation": [0.0, -1.0], "wind_speed": [1.0, 1.0]})
+    check("T5 날씨 강수 < 0 → ValueError", _raises(merge_external_data, good, weather=w, verbose=False))
+    # 원천 미제공 변수(wind_speed 전부 NaN)는 weather_missing 판정에서 제외
+    w2 = pd.DataFrame({"time": pd.date_range("2026-09-07 09:00", periods=4, freq="1h"),
+                       "temperature": [20.0, 21.0, 22.0, 23.0], "precipitation": [0.0, 0.0, 0.0, 0.0]})
+    m = merge_external_data(good, weather=w2, verbose=False)
+    check("T5 wind_speed 미제공 → weather_missing 전부 0 (제공 변수만 판정)", (m["weather_missing"] == 0).all() and m["wind_speed"].isna().all())
+    w3 = w2.drop(index=1)   # 10시 관측 공백 → 제공 변수 보간 + 플래그
+    m3 = merge_external_data(good, weather=w3, verbose=False)
+    r = m3[(m3.h3_index == "A") & (m3.time_bucket == "2026-09-07 10:30")].iloc[0]
+    check("T5 미제공 변수가 있어도 제공 변수 공백은 보간 + weather_interpolated=1", math.isclose(r["temperature"], 21.0) and r["weather_interpolated"] == 1)
+    # 완전성: 결측 좌표 제거 건수 기록
+    import tempfile
+    tmp = tempfile.mkdtemp()
+    df, A, B, base = _toy_log()
+    df.loc[df.index[:3], "latitude"] = np.nan
+    p = os.path.join(tmp, "demand_log_x.csv"); df.to_csv(p, index=False)
+    from module2_preprocessing.pipeline import load_logs
+    logs = load_logs([p])
+    check("T5 좌표 결측 3건 제거 + 건수 기록", len(logs) == len(df) - 3 and logs.attrs["dropped_missing_coords"] == {"demand_log_x.csv": 3})
+
+
 # ============ T6 파이프라인 ============
 def test_pipeline(tmp="/tmp/m2_test"):
     os.makedirs(tmp, exist_ok=True)
@@ -192,7 +253,7 @@ def test_pipeline(tmp="/tmp/m2_test"):
 if __name__ == "__main__":
     if MOCKED:
         print(f"[안내] 대체 구현 사용: {', '.join(MOCKED)} — 맥 venv에서는 실제 라이브러리로 실행됨\n")
-    for t in (test_spatial, test_time_features, test_time_series, test_external, test_pipeline):
+    for t in (test_spatial, test_time_features, test_time_series, test_external, test_quality, test_pipeline):
         try:
             t()
         except Exception as e:
