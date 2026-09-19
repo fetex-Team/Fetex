@@ -8,7 +8,7 @@
 | `sim_logs/` | 시뮬레이션 | SUMO 호출 로그 (1행 = 승객 1명 = 호출 1건) | 시뮬레이션 실행 시 자동 저장 |
 | `external/` | 실측 | 시간별 날씨 (기온·강수·풍속) | `python scripts/fetch_weather_history.py [시작일] [종료일]` |
 | `processed/` | 파생 | Module 2 출력: (H3 셀 × 5분) 피처 테이블, 타겟 y_h1..y_h6 | `python -m module2_preprocessing.pipeline` |
-| `eda/` | 파생 | EDA 결과 (H3 res 비교, POI zone 지도, 요약표) | `bash 실행_EDA.command` |
+| `eda/` | 파생 | EDA 결과 (H3 res 비교, POI zone 지도, 요약표) | `python eda/h3_resolution_compare.py`, `python eda/poi_zone_map.py` |
 
 Module 2 파이프라인의 필수 입력 컬럼은 `pickup_datetime, latitude, longitude` 세 개다.
 `generated/calls.csv`, `sim_logs/demand_log_*.csv`, 시뮬레이션 결과 `results/*/calls.csv`,

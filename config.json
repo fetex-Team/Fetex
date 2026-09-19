@@ -1,6 +1,6 @@
 {
   "region": "강남역",
-  "freq": "10min",
+  "freq": "5min",
   "passenger_seed": null,
   "taxi_strategy": "patrol",
   "use_real_map": true,

@@ -43,3 +43,6 @@ results/runtime_validation/minimal/gui/*
 !results/runtime_validation/minimal/gui/gui_validation.json
 !results/runtime_validation/minimal/gui/sumo_60s.png
 results/runtime_validation/STOP
+
+# --- 8주 합성 데이터 (11MB, 시드 42로 재생성 가능) ---
+data/generated_8w/
