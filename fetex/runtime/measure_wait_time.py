@@ -209,6 +209,7 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
     version = traci.getVersion()
     now = 0
     teleports = 0
+    completed = False
     try:
         while now < duration and now < max_steps:
             # 0초부터 생성하고 마지막 초에도 한 번만 추첨한다.
@@ -285,8 +286,24 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
                 observer.capture(now, requested, pickup, arrived, pax.removed_pids, set(), forecast, teleports)
             if now % 3600 == 0:
                 print(f'[진행] {now:.0f}/{duration:.0f}s 생성={len(records)} 탑승={len(pickup)}', flush=True)
+        completed = now == duration
     finally:
-        traci.close()
+        if sumo_binary == 'sumo-gui' and completed:
+            # traci.close()는 SUMO에 명시적인 종료 요청을 보내 GUI에
+            # "TraCI requested termination" 대화상자를 띄운다. 기존 GUI처럼
+            # 마지막 장면을 유지하고, 사용자가 창을 닫았을 때만 실행을 마친다.
+            print('[GUI] 시뮬레이션이 완료되었습니다. 창을 직접 닫으면 결과를 저장합니다.', flush=True)
+            try:
+                while True:
+                    time.sleep(0.25)
+                    traci.simulation.getTime()
+            except Exception:
+                pass
+        else:
+            try:
+                traci.close()
+            except Exception:
+                pass
     calls, outcomes = [], []
     for pid, r in records.items():
         lat, lng = meta.get('edge_latlng', {}).get(r['from_edge'], [None, None])
