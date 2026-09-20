@@ -67,7 +67,7 @@ def make_model(kind: str):
 
 def external_to_hourly_weather_csv(external_csv: str) -> str:
     """합성 외부 관측(time_bucket×h3_index, 5분) → 시각별 날씨 표(셀 평균, 5분 간격 유지). forecast_dispatcher._external_to_weather와 같은 축약.
-    (train_dispatch_model.external_to_weather_csv와 같은 역할이지만 xgboost 없이도 돌도록 여기 둔다.)"""
+    (train_dispatch_model.external_to_weather와 같은 역할이지만 xgboost 없이도 돌도록 여기 둔다.)"""
     ext = pd.read_csv(external_csv)
     ext["time_bucket"] = pd.to_datetime(ext["time_bucket"])
     w = ext.groupby("time_bucket", as_index=False)[["temperature", "precipitation"]].mean().rename(columns={"time_bucket": "time"})

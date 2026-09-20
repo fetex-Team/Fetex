@@ -1,6 +1,5 @@
 """python tests_logic.py: 핵심 회귀 검사. SUMO 서버 없이 실제 함수와 제한된 입출력 대역으로 실행."""
 import json
-import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -14,6 +13,9 @@ from module2_preprocessing.external_data_merge import merge_external_data, EXTER
 from module4_dispatch.surge_pricing import SurgePricingEngine
 from module4_dispatch.forecast_dispatcher import allocate_targets
 from evaluate import calculate_metrics
+
+
+TEST_ARTIFACTS = Path(__file__).resolve().parent / ".test-artifacts"
 
 
 def sample_meta():
@@ -111,14 +113,16 @@ def check_pricing():
 
 def check_pickup_protection():
     import taxi_manager
-    vehicle = SimpleNamespace(getIDList=lambda: ['pickup'], getTaxiFleet=lambda mode: [] if mode == 0 else ['pickup'],
-                              getTypeID=lambda vid: 'taxi_type')
+    vehicle = SimpleNamespace(getIDList=lambda: ['pickup'], getLoadedIDList=lambda: ['pickup'],
+                              getTaxiFleet=lambda mode: [] if mode == 0 else ['pickup'],
+                              getTypeID=lambda vid: 'taxi_type', getPersonIDList=lambda vid: ['passenger'])
     fake = SimpleNamespace(vehicle=vehicle, simulation=SimpleNamespace(getPendingVehicles=lambda: []), exceptions=SimpleNamespace(TraCIException=RuntimeError))
     with patch.object(taxi_manager, 'traci', fake):
         manager = taxi_manager.TaxiFleetManager(1, ['a'], ['a', 'b'])
         manager._pick_target_edge = lambda *args: (_ for _ in ()).throw(AssertionError('pickup taxi was repositioned'))
         manager.maintain(10)
     vehicle.getIDList = lambda: []
+    vehicle.getLoadedIDList = lambda: []
     vehicle.getTaxiFleet = lambda mode: []
     fake.simulation.getPendingVehicles = lambda: ['pending_taxi']
     with patch.object(taxi_manager, 'traci', fake):
@@ -130,21 +134,29 @@ def check_pickup_protection():
 
 def check_empty_interval():
     import measure_wait_time as measure
-    meta = sample_meta(); clock = [0]
+    meta = sample_meta(); meta['static_calls'] = []
+    meta['config'].update(dynamic_passengers=False, num_passengers=0)
+    clock = [0]
     def step(): clock[0] += 1
-    fake = SimpleNamespace(start=lambda args: None, close=lambda: None, simulationStep=step,
+    fake = SimpleNamespace(start=lambda args: None, close=lambda: None, getVersion=lambda: ('test',), simulationStep=step,
         simulation=SimpleNamespace(getTime=lambda: clock[0], getArrivedPersonIDList=lambda: [], getStartingTeleportNumber=lambda: 0),
-        person=SimpleNamespace(getIDList=lambda: []), vehicle=SimpleNamespace(getTaxiFleet=lambda mode: []))
+        person=SimpleNamespace(getIDList=lambda: []),
+        vehicle=SimpleNamespace(getTaxiFleet=lambda mode: [], getIDList=lambda: []))
     class Manager:
-        def __init__(self, *args, **kwargs): self.removed_pids = set(); self.depart_time = {}
+        def __init__(self, *args, **kwargs):
+            self.removed_pids = set(); self.depart_time = {}; self.max_loaded_taxis = 0
+            self._pending_removal = set(); self.threshold_exceeded_at = {}; self.removed_at = {}
+            self.new_records = []; self.spawn_counts = {}; self.attempt_counts = {}
+            self.passed_counts = {}; self.failed_counts = {}; self.failures = []
         def maintain(self, *args, **kwargs): pass
-    calls, weather = generate_data(meta, '2026-08-31', 1)
-    with tempfile.TemporaryDirectory() as directory:
-        path = Path(directory) / 'meta.json'; path.write_text(json.dumps(meta))
-        with patch.object(measure, 'traci', fake), patch.object(measure, 'TaxiFleetManager', Manager), \
-             patch.object(measure, 'PassengerTimeoutManager', Manager), \
-             patch.object(measure, 'generate_data', return_value=(calls.iloc[:0], weather)):
-            result = measure.run_and_measure(meta_path=path, max_steps=60)
+    directory = TEST_ARTIFACTS / 'empty_interval'
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / 'meta.json'; path.write_text(json.dumps(meta))
+    (directory / 'grid.net.xml').write_text('<net/>')
+    with patch.object(measure, 'traci', fake), patch.object(measure, 'TaxiFleetManager', Manager), \
+         patch.object(measure, 'PassengerTimeoutManager', Manager), \
+         patch.object(measure, 'PassengerSpawnManager', Manager):
+        result = measure.run_and_measure(meta_path=path, max_steps=60)
     assert result['duration_sec'] == 60 and not result['completed_interval']
     assert result['n_total_passengers'] == 0 and result['avg_wait_sec'] is None
     print('PASS: empty demand does not end simulation at 16 seconds; partial run is marked incomplete')

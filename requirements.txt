@@ -5,6 +5,8 @@ geopandas
 h3
 pygeohash
 shapely
+holidays
+joblib
 
 # Deep Learning & ML (Module 3)
 torch
@@ -13,6 +15,7 @@ torchaudio
 xgboost
 lightgbm
 scikit-learn
+scipy
 prophet
 
 # Mobility Simulation (Module 1)

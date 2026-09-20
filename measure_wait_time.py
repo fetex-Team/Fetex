@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import xml.etree.ElementTree as ET
+from collections import Counter
 
 # CLI 설정은 매니저들의 CFG import보다 먼저 선택한다.
 if __name__ == '__main__' and '--config-path' in sys.argv:
@@ -21,6 +22,7 @@ if os.environ.get('MOBILITY_BACKEND') == 'libsumo':
 else:
     import traci
 import sumolib
+import pandas as pd
 from config_loader import CFG, DEFAULT_CONFIG
 from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
@@ -62,6 +64,77 @@ def summarize(outcomes, timeout):
             'waits': waits}
 
 
+def _project_path(value):
+    """설정 파일 안의 상대 경로를 저장소 기준으로 해석한다."""
+    path = Path(value)
+    return path if path.is_absolute() else ROOT / path
+
+
+class ReplayPassengerSource:
+    """동일한 호출 스트림을 예측 입력과 SUMO 실제 승객으로 함께 사용한다.
+
+    ``forecast_calls_path``만 읽고 별도 난수 승객을 생성하면 예측과 평가 대상 수요가
+    달라진다. replay source는 각 호출 시각에 실제 SUMO person을 추가하므로 patrol과
+    forecast가 완전히 같은 호출 지문에서 비교된다.
+    """
+    def __init__(self, path, start, duration, valid_edges):
+        df = pd.read_csv(path, parse_dates=["pickup_datetime"])
+        required = {"pickup_datetime", "from_edge", "to_edge"}
+        missing = required - set(df.columns)
+        if missing:
+            raise ValueError(f"replay_calls_path에 필요한 컬럼이 없습니다: {sorted(missing)}")
+        df = df.copy()
+        df["pickup_datetime"] = pd.to_datetime(df["pickup_datetime"], errors="raise")
+        df["depart"] = (df["pickup_datetime"] - pd.Timestamp(start)).dt.total_seconds()
+        df = df[(df["depart"] >= 0) & (df["depart"] < duration)].sort_values(
+            ["depart", "pickup_datetime"], kind="stable"
+        )
+        allowed = set(valid_edges)
+        invalid = df[~df["from_edge"].isin(allowed) | ~df["to_edge"].isin(allowed)]
+        if not invalid.empty:
+            raise ValueError(f"replay_calls_path에 현재 지도에 없는 edge가 {len(invalid)}건 있습니다.")
+        ids = df["request_id"] if "request_id" in df else pd.Series(range(len(df)), index=df.index)
+        df["person_id"] = [f"replay_{value}" for value in ids.astype(str)]
+        if df["person_id"].duplicated().any():
+            raise ValueError("replay_calls_path의 request_id가 중복됩니다.")
+        self.rows = df.to_dict("records")
+        self.index = 0
+        self.new_records = []
+        self.records = {}
+        self.spawn_counts = Counter()
+        self.attempt_counts = Counter()
+        self.passed_counts = Counter()
+        self.failed_counts = Counter()
+        self.failures = []
+
+    def maintain(self, now_seconds, _timeout_removed_pids=None):
+        self.new_records = []
+        while self.index < len(self.rows) and self.rows[self.index]["depart"] < now_seconds + 1:
+            row = self.rows[self.index]
+            self.index += 1
+            kind = "replay"
+            self.attempt_counts[kind] += 1
+            self.passed_counts[kind] += 1
+            record = {"person_id": row["person_id"], "depart": float(row["depart"]),
+                      "from_edge": row["from_edge"], "to_edge": row["to_edge"],
+                      "demand_type": row.get("demand_type", kind)}
+            try:
+                traci.person.add(record["person_id"], record["from_edge"], pos=0, depart=now_seconds)
+                traci.person.appendDrivingStage(record["person_id"], record["to_edge"], lines="taxi")
+            except traci.exceptions.TraCIException as exc:
+                self.failed_counts[kind] += 1
+                self.failures.append({"person_id": record["person_id"], "time_sec": now_seconds,
+                                      "kind": kind, "error": str(exc)})
+                try:
+                    traci.person.remove(record["person_id"])
+                except traci.exceptions.TraCIException:
+                    pass
+                continue
+            self.records[record["person_id"]] = record
+            self.new_records.append(record)
+            self.spawn_counts[kind] += 1
+
+
 def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, meta_path=None,
                     output_dir=None, strategy=None, algorithm=None, observer=None, forecast=None):
     """GUI/headless 공용 루프. 1초 생성 틱과 [시작, 종료) 구간을 사용한다."""
@@ -79,8 +152,9 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
     out.mkdir(parents=True, exist_ok=True)
     sumocfg = Path(sumo_cfg_path or meta_path.with_name('simulation.sumocfg'))
     start_hour, end_hour = meta['sim_start_hour'], meta['sim_end_hour']
-    duration = (end_hour - start_hour) * 3600
-    if duration <= 0 or duration != int(duration):
+    raw_duration = (end_hour - start_hour) * 3600
+    duration = int(round(raw_duration))
+    if duration <= 0 or abs(raw_duration - duration) > 1e-6:
         raise ValueError('시뮬레이션 구간은 양의 정수 초여야 합니다.')
     start = dt.datetime.fromisoformat(cfg.get('scenario_date', '2026-09-18')) + dt.timedelta(hours=start_hour)
     timeout = meta.get('passenger_wait_timeout', 500)
@@ -88,20 +162,23 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
     manager = TaxiFleetManager(meta['num_taxis'], meta['boundary_edges'], meta['edges'], strategy=strategy,
                                hotspot_edges=meta.get('hotspot_edges'), zones=meta['zones'], sim_start_hour=start_hour)
     pax = PassengerTimeoutManager(timeout, dispatcher)
-    spawn = PassengerSpawnManager(meta['zones'], start_hour, end_hour, meta.get('school_pop_base'),
-                                   meta.get('company_pop_base'), cfg.get('passenger_seed'), config=cfg)
+    replay_path = cfg.get('replay_calls_path')
+    spawn = (ReplayPassengerSource(_project_path(replay_path), start, duration, meta['edges'])
+             if replay_path else PassengerSpawnManager(
+                 meta['zones'], start_hour, end_hour, meta.get('school_pop_base'),
+                 meta.get('company_pop_base'), cfg.get('passenger_seed'), config=cfg))
     if strategy == 'forecast' and forecast is None:
         # 모델/이력 미준비를 순찰 실행으로 위장하지 않는다.
         if not cfg.get('forecast_calls_path'):
             raise ValueError('forecast에는 forecast_calls_path와 호환 예측 모델이 필요합니다.')
         import pandas as pd
         from module4_dispatch.forecast_dispatcher import ForecastDispatcher
-        calls = pd.read_csv(cfg['forecast_calls_path'], parse_dates=['pickup_datetime'])
-        external = pd.read_csv(cfg['forecast_external_path']) if cfg.get('forecast_external_path') else None
+        calls = pd.read_csv(_project_path(cfg['forecast_calls_path']), parse_dates=['pickup_datetime'])
+        external = pd.read_csv(_project_path(cfg['forecast_external_path'])) if cfg.get('forecast_external_path') else None
         forecast = ForecastDispatcher(meta, calls, external, pd.Timestamp(start))
     if algorithm == 'rl_reposition':
         raise ValueError('이 검증 실행기는 RL 학습/평가를 지원하지 않습니다. hungarian을 사용하세요.')
-    static = meta.get('static_calls')
+    static = [] if replay_path else meta.get('static_calls')
     if static is None:
         static = []
         for person in ET.parse(sumocfg.with_name('entities.rou.xml')).getroot().findall('person'):

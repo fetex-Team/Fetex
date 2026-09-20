@@ -52,7 +52,12 @@ def _external_to_weather(external):
 
 class ForecastDispatcher:
     def __init__(self, meta, calls, external, start, enabled=True):
-        artifact = joblib.load(Path(ROOT) / 'saved_models/demand_v2.joblib')
+        model_path = Path(CFG.get('forecast_model_path', Path(ROOT) / 'saved_models/demand_v2.joblib'))
+        if not model_path.is_absolute():
+            model_path = Path(ROOT) / model_path
+        if not model_path.is_file():
+            raise FileNotFoundError(f'예측 모델을 찾을 수 없습니다: {model_path}')
+        artifact = joblib.load(model_path)
         if artifact.get('version') != 2:
             raise ValueError('scripts/train_dispatch_model.py로 새 예측 모델을 학습하세요.')
         self.cells = sorted(set(meta['edge_cells'].values()))
@@ -64,14 +69,20 @@ class ForecastDispatcher:
             raise ValueError('모델과 전처리 설정이 다릅니다. 재학습하세요.')
         if len(artifact.get('target_cols', [])) != 6:
             raise ValueError('재배치에는 t+1~t+6 6개 타겟 모델이 필요합니다 (scripts/train_dispatch_model.py).')
-        self.model, self.features = artifact['model'], artifact['feature_cols']
-        self.meta, self.calls, self.start = meta, calls, start
+        self.model, self.features = artifact['model'], list(artifact['feature_cols'])
+        if not self.features or len(set(self.features)) != len(self.features):
+            raise ValueError('예측 모델의 feature_cols 계약이 비어 있거나 중복됩니다. 재학습하세요.')
+        self.meta, self.calls, self.start = meta, calls.copy(), pd.Timestamp(start)
+        if 'pickup_datetime' not in self.calls:
+            raise ValueError('forecast_calls_path에는 pickup_datetime 컬럼이 필요합니다.')
+        self.calls['pickup_datetime'] = pd.to_datetime(self.calls['pickup_datetime'], errors='raise')
         # 합성 외부 관측이 오면 시간별 날씨 표로 바꿔 학습과 같은 병합 경로를 태운다.
         self.weather = _external_to_weather(external)
         self.prep = TimeSeriesPreprocessor()
         self.engine = SurgePricingEngine()
-        # 피처 계산에 필요한 과거 구간: 1시간 이동평균(12칸) > lag(max_lag) > diff(2칸)
-        self.history_buckets = max(CFG['max_lag'], self.prep.buckets_1h) + 3
+        # 학습 피처와 같은 이력 길이를 항상 공급한다. 75분만 읽으면 어제/지난주
+        # 동일 시각 피처가 0으로 퇴화해 학습-서빙 분포가 달라진다.
+        self.history_buckets = self.prep.required_history_buckets
         self.last_tick = -1; self.enabled = enabled; self.committed = {}
         self.records, self.moves = [], []
         self.cell_edges = {cell: sorted(e for e, c in meta['edge_cells'].items() if c == cell) for cell in self.cells}

@@ -10,7 +10,15 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.test-artifacts/
 .ipynb_checkpoints/
+
+# Unity editor-generated directories (source scripts and README only are tracked)
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Ll]ogs/
+unity/[Oo]bj/
+unity/[Uu]serSettings/
 
 # --- 대용량 데이터 / 산출물 ---
 data/raw/
@@ -46,3 +54,10 @@ results/runtime_validation/STOP
 
 # --- 8주 합성 데이터 (11MB, 시드 42로 재생성 가능) ---
 data/generated_8w/
+
+# forecast_demo 실행이 만드는 재현 가능한 학습/온라인 스트림
+data/generated/train_calls.csv
+data/generated/train_external.csv
+data/generated/stream_calls.csv
+data/generated/stream_external.csv
+data/generated/manifest.json

@@ -14,9 +14,10 @@ DEFAULT_CONFIG = {
     "sim_start_hour": 8, "sim_end_hour": 10,
     "passenger_wait_timeout": 500,
     "passenger_seed": None,
-    # 검증 실행은 날짜와 외부 관측을 고정하여 재현한다.
+    # 검증 실행은 날짜와 외부 관측을 고정하여 재현한다. 외부 조회는 명시적으로
+    # 켜기 전까지 하지 않아, 같은 명령이 네트워크 상태에 따라 달라지지 않게 한다.
     "scenario_date": "2026-09-18",
-    "resolve_external_data": True,
+    "resolve_external_data": False,
     "dynamic_passengers": True,
     "passenger_mode": "dynamic",
     "taxi_strategy": "patrol",
@@ -62,6 +63,10 @@ DEFAULT_CONFIG = {
     # Module 2
     "h3_resolution": 8, "freq": "5min", "max_lag": 6,
     "rolling_short": 3, "rolling_long": 6,
+    "forecast_horizons": 6, "sequence_length": 12,
+    "validation_size": 0.1,
+    "timezone": "Asia/Seoul", "holiday_country": "KR",
+    "weather_missing_max_ratio": 0.05,
     # Module 3
     "xgb_n_estimators": 100, "xgb_max_depth": 6, "xgb_learning_rate": 0.1,
     "test_size": 0.2,
@@ -69,7 +74,7 @@ DEFAULT_CONFIG = {
     "cnn_epochs": 30, "cnn_batch_size": 16, "cnn_lr": 0.001,
     # Module 4
     "base_fare": 4800, "min_multiplier": 1.0, "max_multiplier": 3.0,
-    "surge_coefficient": 0.4,
+    "surge_coefficient": 0.4, "reposition_fraction": 0.5,
     "dispatch_use_euclidean": True,
     "mock_available_taxis_min": 1, "mock_available_taxis_max": 20,
     "mock_taxi_count": 20, "mock_passenger_count": 20,
@@ -104,6 +109,10 @@ def load_config(config_path=None):
             raise FileNotFoundError(path)
         print("[안내] config.json이 없어 기본값을 사용합니다.")
     merged = {**DEFAULT_CONFIG, **user_cfg}
+    # 과거 실험 설정의 sim_date는 scenario_date의 이전 이름이다. 기존 결과를
+    # 재실행할 수 있도록 읽되, 새 코드와 문서는 scenario_date만 사용한다.
+    if "sim_date" in user_cfg and "scenario_date" not in user_cfg:
+        merged["scenario_date"] = user_cfg["sim_date"]
     if not 0 <= merged['sim_start_hour'] < merged['sim_end_hour'] <= 24:
         raise ValueError('시간 범위는 0 <= 시작 < 종료 <= 24여야 합니다.')
     for key in ('num_passengers', 'num_taxis', 'school_pop_base', 'company_pop_base', 'restaurant_pop_base'):

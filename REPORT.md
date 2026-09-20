@@ -1,6 +1,6 @@
-# 통합 분석 보고서 (작성 중)
+# 통합 분석 보고서
 
-담당별 결과를 한 문서로 모은다. 1장은 SUMO 런타임 실행과 측정(2번 송신화), 2장은 시공간 데이터 분석과 전처리(3번 윤세빈)다. 예측 모델 선정·성능과 배차 설계 논리는 추가 예정이다.
+이 문서는 SUMO 런타임, 시공간 전처리, 30분 수요 예측, 동적 배차·인센티브, Unity replay 연결을 하나의 재현 경로로 설명한다. 데이터는 명시적으로 합성 호출·외부 관측이며 실제 카카오 호출·실시간 교통 효과로 일반화하지 않는다.
 
 ## 1. 런타임 검증 — SUMO 실행과 측정 (담당 송신화)
 
@@ -134,4 +134,45 @@
 
 - 나이브 대비 **RMSE −29%**. 타깃의 80%가 0이라 MAE는 "전부 0"이 가장 낮으므로 RMSE·WAPE로 비교한다(모델은 평균을 맞춤).
 - 기여 순서: 달력 > rolling/지난주 > lag > 어제 동일칸(작지만 일관). 휴일 강화·날씨 파생은 2.2·2.7의 데이터 한계로 0 — 생성기 개선 후 재실행하면 이 두 행이 움직여야 정상.
-- 서빙 주의: `forecast_dispatcher`의 이력 창(75분)이 `same_time_*` 피처보다 짧아 서빙에서 항상 0이 됨 → `TimeSeriesPreprocessor.required_history_buckets`(1주+3칸)로 맞출 것.
+- 서빙 이력은 `TimeSeriesPreprocessor.required_history_buckets`(**1주+3칸**)으로 통일했다. 따라서 `same_time_yesterday`·`same_time_last_week`이 온라인 배차기에서 0으로 퇴화하지 않는다.
+
+## 3. Module 3 — 5분 단위 30분 수요 예측
+
+### 3.1 학습·서빙 계약
+
+공식 학습 경로는 `scripts/train_dispatch_model.py`다. `build_feature_table()`로 H3 셀×5분 패널을 만든 뒤, 현재 시점 이후의 `y_h1`~`y_h6`을 동시에 예측하는 `MultiOutputRegressor(XGBoost)`를 학습한다. 행 단위 무작위 분할은 쓰지 않고 시간 경계로 train/validation/test를 나눈다.
+
+저장 모델 `saved_models/demand_v2.joblib`은 모델 가중치 외에도 H3 셀 목록, 43개 피처, 6개 타깃, 실제 학습 종료 시각, 필요 이력 길이, 설정값과 테스트 지표를 보관한다. `ForecastDispatcher`는 지도 셀·전처리 설정·학습 종료 시각이 맞지 않으면 실패하므로, 다른 지도나 미래 데이터로 학습한 모델을 조용히 쓰지 않는다.
+
+### 3.2 포함된 8일 샘플의 재현 결과
+
+`data/generated/calls.csv`(2026-08-23~30, H3 셀 8개)와 동일한 시간 순서 test에서 43개 피처 모델의 결과는 다음과 같다.
+
+| 지표 | 다중 시점 XGBoost | lag-1 persistence |
+|---|---:|---:|
+| RMSE | **0.5095** | 0.6739 |
+| MAE | **0.3113** | 0.3159 |
+| 양수 수요 칸 MAPE | **61.15%** | 78.43% |
+| WAPE | **136.83%** | 138.88% |
+
+수요 0 칸이 80% 안팎인 희소 카운트 자료라 MAE만으로 모델 품질을 단정할 수 없다. MAPE는 실제 수요가 양수인 칸에서만 계산하고, 전체 오차는 WAPE와 함께 본다. horizon·H3 셀·시간대별 세부 결과는 `results/prediction/dispatch_model/`에 남긴다.
+
+### 3.3 한계
+
+기본 8일 샘플은 실행 가능 여부를 보이는 작은 자료다. 금요일 저녁 효과·주간 계절성은 `scripts/generate_training_data.py --days 35 --scenario-date 2026-09-18` 또는 8주 EDA 자료로 재검증해야 한다. `module3_prediction/models.py`의 CNN-LSTM 구조는 비교 실험용으로 남아 있지만, 배차기에 연결하는 기준 모델은 재현성·다중 horizon 계약을 갖춘 XGBoost다.
+
+## 4. Module 4 — 예측 기반 동적 배차와 인센티브
+
+1. 매 5분 완료된 호출만 사용해 각 H3의 향후 6개 수요를 예측한다.
+2. 예측 수요 합과 현재 빈 택시 수로 `demand / supply` 불균형을 계산한다.
+3. 불균형에 비례한 할증을 기본 1.0배~최대 3.0배로 제한한다.
+4. 할증 가중 수요에 따라 제한된 빈 택시를 정수로 배분한다.
+5. 예약·탑승 차량을 제외하고, 실제 SUMO `findRoute` 이동시간이 가장 짧은 택시만 재배치한다.
+
+`replay_calls_path`와 `forecast_calls_path`를 같은 호출 스트림으로 강제했다. 따라서 patrol과 forecast 비교에서 승객 호출 자체가 달라지는 문제를 피한다. `presets/forecast_sample.json`은 포함된 8일 샘플을, `presets/forecast_demo.json`은 35일 생성 자료를 사용한다. 실행 전 `scripts/verify_forecast_contract.py`가 모델·H3 지도·시작 시각·1주 이력·동일 호출 스트림을 검사한다.
+
+이 연결은 “예측 결과가 실제 택시 이동과 대기시간에 영향을 주는가”를 측정할 수 있게 하지만, 한 번의 합성 실험으로 항상 대기시간이 줄었다고 결론 내리지 않는다. 제출 비교는 같은 preset·seed·호출 fingerprint에서 patrol/forecast를 반복 실행하고 평균 대기, P90, 타임아웃, 빈 택시 분포, 재배치 수를 함께 보고한다.
+
+## 5. Unity 3D Asset 표현
+
+`export_unity_replay.py`는 SUMO의 도로·객체 상태와 forecast 결과를 `map.json`, `patrol.json`, `forecast.json`으로 내보낸다. `unity/Assets/Scripts/SumoReplayPlayer.cs`는 제공 Asset의 택시·일반차·AV·장애물 prefab을 이 좌표와 상태에 연결한다. Asset package 자체는 교육 제공물이라 저장소에 재배포하지 않으며, import 순서와 씬 연결 방법은 `unity/README.md`에 기록했다.

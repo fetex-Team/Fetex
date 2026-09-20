@@ -1,0 +1,140 @@
+{
+  "version": 2,
+  "feature_cols": [
+    "lag_1",
+    "lag_2",
+    "lag_3",
+    "lag_4",
+    "lag_5",
+    "lag_6",
+    "rolling_mean_3",
+    "rolling_mean_6",
+    "rolling_mean_1h",
+    "rolling_std_1h",
+    "same_time_last_week",
+    "has_last_week",
+    "same_time_yesterday",
+    "has_yesterday",
+    "diff_1",
+    "year",
+    "month",
+    "day",
+    "hour",
+    "minute",
+    "minute_of_day",
+    "dayofweek",
+    "is_weekend",
+    "is_holiday",
+    "season",
+    "time_slot_code",
+    "hour_sin",
+    "hour_cos",
+    "dow_sin",
+    "dow_cos",
+    "is_public_holiday",
+    "is_day_before_off",
+    "is_day_after_off",
+    "off_streak_len",
+    "temperature",
+    "precipitation",
+    "wind_speed",
+    "is_rain",
+    "weather_missing",
+    "weather_interpolated",
+    "precip_3h_sum",
+    "rain_streak_h",
+    "temp_anomaly_24h"
+  ],
+  "target_cols": [
+    "y_h1",
+    "y_h2",
+    "y_h3",
+    "y_h4",
+    "y_h5",
+    "y_h6"
+  ],
+  "cells": [
+    "8830e1ca05fffff",
+    "8830e1ca07fffff",
+    "8830e1ca21fffff",
+    "8830e1ca23fffff",
+    "8830e1ca29fffff",
+    "8830e1ca2bfffff",
+    "8830e1ca2dfffff",
+    "8830e1ca63fffff"
+  ],
+  "data_until": "2026-08-28 14:10:00",
+  "required_history_buckets": 2019,
+  "metrics": {
+    "overall": {
+      "RMSE": 0.5095,
+      "MAE": 0.3113,
+      "MAPE (%)": 61.1502,
+      "MAPE_valid_count": 3914,
+      "zero_target_count": 18022,
+      "WAPE (%)": 136.8285
+    },
+    "per_horizon": {
+      "y_h1": {
+        "RMSE": 0.5111,
+        "MAE": 0.3143,
+        "MAPE (%)": 59.0175,
+        "MAPE_valid_count": 658,
+        "zero_target_count": 2998,
+        "WAPE (%)": 136.9375
+      },
+      "y_h2": {
+        "RMSE": 0.5132,
+        "MAE": 0.3113,
+        "MAPE (%)": 61.225,
+        "MAPE_valid_count": 655,
+        "zero_target_count": 3001,
+        "WAPE (%)": 136.2993
+      },
+      "y_h3": {
+        "RMSE": 0.5149,
+        "MAE": 0.3157,
+        "MAPE (%)": 61.1874,
+        "MAPE_valid_count": 653,
+        "zero_target_count": 3003,
+        "WAPE (%)": 138.5376
+      },
+      "y_h4": {
+        "RMSE": 0.5064,
+        "MAE": 0.3073,
+        "MAPE (%)": 61.8865,
+        "MAPE_valid_count": 650,
+        "zero_target_count": 3006,
+        "WAPE (%)": 135.5447
+      },
+      "y_h5": {
+        "RMSE": 0.5009,
+        "MAE": 0.3089,
+        "MAPE (%)": 62.1339,
+        "MAPE_valid_count": 650,
+        "zero_target_count": 3006,
+        "WAPE (%)": 136.2393
+      },
+      "y_h6": {
+        "RMSE": 0.5102,
+        "MAE": 0.3101,
+        "MAPE (%)": 61.4774,
+        "MAPE_valid_count": 648,
+        "zero_target_count": 3008,
+        "WAPE (%)": 137.4099
+      }
+    },
+    "split": {
+      "val_cut": "2026-08-28 14:15:00",
+      "test_cut": "2026-08-29 09:15:00"
+    },
+    "rows": {
+      "train": 12784,
+      "validation": 1824,
+      "test": 3656
+    }
+  },
+  "source_logs": [
+    "data\\generated\\calls.csv"
+  ]
+}

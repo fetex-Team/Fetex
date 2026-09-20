@@ -80,7 +80,8 @@ def _time_range(df: pd.DataFrame):
 
 def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizons: int = None,
                         weather_path: str = None, h3_resolution: int = None, dropna: bool = True,
-                        verbose: bool = True, max_missing_ratio: float = None) -> pd.DataFrame:
+                        verbose: bool = True, max_missing_ratio: float = None,
+                        weather: pd.DataFrame = None) -> pd.DataFrame:
     df = load_logs(log_paths)
     start, end = _time_range(df)
 
@@ -93,7 +94,7 @@ def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizo
 
     # 3) 외부 데이터 (5분 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
     # 학습 경로: 날씨 결측률 상한 검사 (Data Spec 5장 5% 미만). config weather_missing_max_ratio 로 조절, None이면 끔
-    agg = merge_external_data(agg, weather_path=weather_path, time_col="time_bucket", verbose=verbose,
+    agg = merge_external_data(agg, weather_path=weather_path, weather=weather, time_col="time_bucket", verbose=verbose,
                               max_missing_ratio=max_missing_ratio if max_missing_ratio is not None else CFG.get("weather_missing_max_ratio", 0.05))
 
     # 4) 피처 + 타겟

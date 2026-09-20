@@ -1,8 +1,15 @@
 """실제 SUMO 상태를 Unity 재생 JSON으로 기록한다. 배차 로직은 공용 실행기를 사용한다."""
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
 import xml.etree.ElementTree as ET
+
+# config_loader는 아래 measure_wait_time import 때 초기화된다. CLI 설정을 먼저
+# 반영해야 Unity 내보내기도 forecast/replay preset을 그대로 사용한다.
+if '--config-path' in sys.argv:
+    os.environ['MOBILITY_CONFIG'] = str(Path(sys.argv[sys.argv.index('--config-path') + 1]).resolve())
 
 import h3
 import sumolib
@@ -122,6 +129,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--meta', type=Path, default=META_PATH)
     parser.add_argument('--output', type=Path, default=ROOT / 'results/unity_replay')
+    parser.add_argument('--config-path', help='예측/replay 설정 preset JSON')
     args = parser.parse_args()
     map_data = export_map(args.meta)
     args.output.mkdir(parents=True, exist_ok=True)
@@ -130,7 +138,7 @@ if __name__ == '__main__':
     for strategy, algorithm in (('patrol', 'greedy'), ('forecast', 'hungarian')):
         recorder = ReplayRecorder(args.output / f'{strategy}.json', map_data)
         result = run_and_measure(meta_path=args.meta, sumo_cfg_path=args.meta.with_name('simulation.sumocfg'),
-                                 strategy=strategy, algorithm=algorithm, recorder=recorder)
+                                 strategy=strategy, algorithm=algorithm, observer=recorder)
         results.append(result)
         print(strategy, result, flush=True)
     assert results[0]['demand_fingerprint'] == results[1]['demand_fingerprint']

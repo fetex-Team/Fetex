@@ -4,7 +4,7 @@
 
 | 폴더 | 계열 | 내용 | 생성 방법 |
 |---|---|---|---|
-| `generated/` | 합성 | 규격화된 합성 호출·외부 관측 (21일치) | `python -m data.generate` |
+| `generated/` | 합성 | 저장소 포함 8일 샘플 호출·외부 관측, 또는 재현 가능한 학습/온라인 스트림 | `python scripts/generate_training_data.py` |
 | `sim_logs/` | 시뮬레이션 | SUMO 호출 로그 (1행 = 승객 1명 = 호출 1건) | 시뮬레이션 실행 시 자동 저장 |
 | `external/` | 실측 | 시간별 날씨 (기온·강수·풍속) | `python scripts/fetch_weather_history.py [시작일] [종료일]` |
 | `processed/` | 파생 | Module 2 출력: (H3 셀 × 5분) 피처 테이블, 타겟 y_h1..y_h6 | `python -m module2_preprocessing.pipeline` |
@@ -26,6 +26,19 @@ Module 2 파이프라인의 필수 입력 컬럼은 `pickup_datetime, latitude, 
 - `is_holiday`: 합성 시나리오의 8월 15일 플래그이며 공식 전체 공휴일 달력이 아니다.
 - 날짜별 독립 난수 발생기를 사용하며 seed 0도 유효하다. 생성 기간을 바꿔도 같은 날짜의 호출은 같다.
 - 학습 생성 자료는 `generated/calls.csv`, `generated/external.csv`로 저장하며 대용량 파일은 Git에서 제외한다.
+
+### forecast 실험용 학습·온라인 스트림
+
+`python scripts/generate_training_data.py --days 35 --scenario-date 2026-09-18`은 기본 샘플을 덮어쓰지 않고 아래 파일을 추가한다.
+
+| 파일 | 범위 | 용도 |
+|---|---|---|
+| `train_calls.csv`, `train_external.csv` | 평가일 전날까지 | 모델 학습·시간 순서 평가 |
+| `stream_calls.csv`, `stream_external.csv` | 평가일 전체 포함 | 온라인 forecast 입력과 동일 replay 승객 생성 |
+| `manifest.json` | 생성 설정·기간·셀 | 재현성 확인 |
+
+이 파일들은 시드와 지도 metadata로 재생성되므로 Git에서 제외한다. 배차 실행은
+`forecast_calls_path`와 `replay_calls_path`가 같은 `stream_calls.csv`를 가리켜야 한다.
 
 실제 자료를 넣을 때는 GPS 유효성·타임존·중복 호출 ID를 먼저 검사하고, 전체 시간×셀 범위를 지정해 0수요를 보존한 뒤 외부 자료를 시간/H3로 결합한다. 미래값으로 결측치를 역방향 보간하지 않는다.
 

@@ -1,5 +1,6 @@
 import sys
 import os
+import numpy as np
 import pandas as pd
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -20,6 +21,8 @@ class SurgePricingEngine:
 
     def calculate_imbalance(self, demand: float, supply: float) -> float:
         """수요 대비 공급 비율 (수급 불균형 지표) 산출"""
+        if not (np.isfinite(demand) and np.isfinite(supply)) or demand < 0 or supply < 0:
+            raise ValueError("수요와 공급은 유한한 0 이상 값이어야 합니다.")
         if supply == 0:
             return float('inf') if demand > 0 else 1.0
         return demand / supply

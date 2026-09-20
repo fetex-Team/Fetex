@@ -58,7 +58,7 @@ GUI 검증은 데스크톱 세션에서 실행하며 TraCI를 사용한다. head
 
 ![최소 구성 SUMO 실제 화면](../results/runtime_validation/minimal/gui/sumo_60s.png)
 
-이 화면은 SUMO 2D 교통 런타임 증거다. 제공된 3D Asset 연동 및 자율주행 판단 알고리즘을 구현했다는 증거가 아니다. 차량 4종은 SUMO의 sedan/hatchback/wagon/van 외형이다.
+이 화면은 SUMO 2D 교통 런타임 증거다. 제공 Unity Asset과의 표현 연결은 `unity/README.md`, `export_unity_replay.py`, `unity/Assets/Scripts/SumoReplayPlayer.cs`에서 별도로 제공한다. 차량 4종은 SUMO의 sedan/hatchback/wagon/van 외형이다.
 
 ## 실험 설계와 지표
 
@@ -95,7 +95,7 @@ GUI 검증은 데스크톱 세션에서 실행하며 TraCI를 사용한다. head
 
 전처리 담당은 `pickup_datetime`, `latitude`, `longitude`를 사용할 수 있다. 이 필드의 pickup은 기존 학습 입력 이름에 맞춘 **호출 시각**이며 실제 탑승 시각은 outcomes의 `pickup_sec`다. 3D 담당은 객체 ID와 x/y(미터), 시뮬레이션 초를 받아 좌표계를 맞춘다. 5분 스냅샷은 분포 확인용이며 부드러운 Animation 재생용 고주파 궤적이 아니다.
 
-예측 배차는 기존 `ForecastDispatcher`의 5분 갱신·H3별 향후 6칸 인터페이스를 유지한다. `strategy='forecast'` 실행에는 `forecast_calls_path`, 호환 `saved_models/demand_v2.joblib`, 이력, H3 영역, 전처리 설정 및 `reposition_fraction`이 필요하다. 현재 모형을 학습하거나 성능 우위를 검증한 것은 아니다. 미준비 상태에서는 명시적으로 실패한다. 모의 예측 테스트는 예약·탑승 차량 제외, 빈 택시 이동, 같은 5분 내 중복 이동 방지와 순찰의 재배치 보호를 확인한다.
+예측 배차는 `ForecastDispatcher`의 5분 갱신·H3별 향후 6칸 인터페이스를 사용한다. `strategy='forecast'` 실행에는 같은 `forecast_calls_path`와 `replay_calls_path`, 호환 `saved_models/demand_v2.joblib`, H3 영역, 전처리 설정 및 `reposition_fraction`이 필요하다. 포함 모델은 43개 피처·6개 타깃의 시간 순서 분할 XGBoost이며, 온라인 이력은 지난주 피처까지 계산되는 1주+3칸을 읽는다. `scripts/verify_forecast_contract.py`가 누수·지도·호출 스트림 계약을 검사하고 미준비 상태에서는 명시적으로 실패한다. 배차 효과의 우위는 `patrol`과 동일 호출 fingerprint를 반복 비교해 검증해야 하며, 기본 모델 정확도는 `results/prediction/dispatch_model/`에 기록한다.
 
 공개 저장소에는 최종 집계 CSV·검증 요약 JSON·그래프와 최소 구성의 호출/승객 결과·대표 GUI 화면을 남긴다. 70회 실행별 설정·요약·차량 분포, 격자망/재현성 실험 상세 출력, 반복 복제 지도와 대용량 로그는 `.gitignore`로 제외하고 로컬에 보관한다. 새로 복제한 저장소에서 전체 결과 검증이나 보고서·차량 분포 그래프 재생성을 하려면 위 실행 명령으로 실험 원시 파일을 먼저 생성해야 한다. 기존 프로젝트 전체 EDA/모델 평가/3D Asset 보고서는 각 담당이 별도로 완성해야 한다.
 

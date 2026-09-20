@@ -10,4 +10,4 @@
 
 `prepositioned`는 고정 시간대 규칙이며 학습 예측이 아니다. `hungarian`은 현재 호출 매칭이고 `forecast`는 빈 택시의 선제 재배치다. 두 기능의 효과를 구분해서 평가한다.
 
-Unity는 향후 이 계산 결과를 표현하는 계층으로 추가한다. 현재 단계에서는 통신 프로토콜이나 Unity 스크립트를 만들지 않는다.
+Unity 표현 계층은 `export_unity_replay.py` → `map.json`/`patrol.json`/`forecast.json` → `unity/Assets/Scripts/SumoReplayPlayer.cs`로 연결한다. Unity에서 제공 Asset prefab을 Inspector에 지정하면 SUMO 좌표·차량 상태·forecast 시점을 재생할 수 있다. Asset import 절차는 `unity/README.md`를 따른다.

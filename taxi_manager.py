@@ -147,9 +147,24 @@ class TaxiFleetManager:
             # 고립 edge(fail_counts 5회), 정지위치 배정 실패로 인한 자연 도착 처리,
             # teleport 등 원인이 무엇이든 결과(대수 유지)만은 항상 보장하기 위함.
             # ------------------------------------------------------------
-            # 도로 진입 대기/텔레포트 중인 차량도 보유 대수에 포함한다.
+            # 도로 위 차량뿐 아니라 아직 출발하지 않은 pending 차량과 텔레포트/로딩
+            # 상태 차량도 보유 대수에 포함한다. pending을 빼면 depart 직전의 택시를
+            # 부족분으로 오인해 새 taxi를 중복 생성할 수 있다.
             loaded_ids = set(traci.vehicle.getLoadedIDList())
-            taxi_count = sum(1 for vid in loaded_ids if traci.vehicle.getTypeID(vid) == self.vtype)
+            try:
+                pending_ids = set(traci.simulation.getPendingVehicles())
+            except traci.exceptions.TraCIException:
+                pending_ids = set()
+            owned_ids = loaded_ids | pending_ids
+            taxi_count = 0
+            for vid in owned_ids:
+                try:
+                    is_taxi = traci.vehicle.getTypeID(vid) == self.vtype
+                except traci.exceptions.TraCIException:
+                    # pending 상태에서는 일부 SUMO 버전이 type 조회를 거부한다. 이때
+                    # build_env.py와 동일한 택시 ID 규칙을 보수적으로 사용한다.
+                    is_taxi = vid.startswith("taxi_") or vid.startswith(self.respawn_prefix + "_")
+                taxi_count += int(is_taxi)
             self.max_loaded_taxis = max(self.max_loaded_taxis, taxi_count)
             if taxi_count > self.target_count:
                 raise RuntimeError(f"택시 보유 대수 초과: {taxi_count} > {self.target_count}")

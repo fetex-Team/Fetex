@@ -49,6 +49,14 @@ from module2_preprocessing.external_data_merge import merge_external_data, WEATH
 from module2_preprocessing.pipeline import build_feature_table
 
 RESULTS = []
+TEST_ARTIFACTS = os.environ.get("FETEX_TEST_TMP", os.path.join(ROOT, ".test-artifacts"))
+
+
+def test_artifact_dir(name):
+    """Windows/macOS/Linux에서 같은 쓰기 가능한 테스트 경로를 사용한다."""
+    path = os.path.join(TEST_ARTIFACTS, name)
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 def check(name, cond, detail=""):
@@ -221,8 +229,7 @@ def test_quality():
     r = m3[(m3.h3_index == "A") & (m3.time_bucket == "2026-09-07 10:30")].iloc[0]
     check("T5 미제공 변수가 있어도 제공 변수 공백은 보간 + weather_interpolated=1", math.isclose(r["temperature"], 21.0) and r["weather_interpolated"] == 1)
     # 완전성: 결측 좌표 제거 건수 기록
-    import tempfile
-    tmp = tempfile.mkdtemp()
+    tmp = test_artifact_dir("quality")
     df, A, B, base = _toy_log()
     df.loc[df.index[:3], "latitude"] = np.nan
     p = os.path.join(tmp, "demand_log_x.csv"); df.to_csv(p, index=False)
@@ -309,8 +316,8 @@ def test_strict_external():
 
 
 # ============ T6 파이프라인 ============
-def test_pipeline(tmp="/tmp/m2_test"):
-    os.makedirs(tmp, exist_ok=True)
+def test_pipeline(tmp=None):
+    tmp = tmp or test_artifact_dir("pipeline")
     df, A, B, base = _toy_log()
     df["request_sec"] = (df["pickup_datetime"] - base).dt.total_seconds()
     p1 = os.path.join(tmp, "demand_log_day1.csv"); df.to_csv(p1, index=False)
