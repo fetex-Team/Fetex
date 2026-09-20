@@ -195,7 +195,11 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
     begin = time.monotonic()
     command = [sumolib.checkBinary(sumo_binary), '-c', str(sumocfg), '--step-length', '1',
                '--seed', str(cfg.get('passenger_seed') or 0), '--no-step-log', 'true',
-               '--duration-log.disable', 'true', '--error-log', str(out / 'sumo_errors.log')]
+               '--duration-log.disable', 'true', '--error-log', str(out / 'sumo_errors.log'),
+               # sumocfg의 end와 같은 틱에서 GUI가 먼저 종료되면 마지막
+               # simulationStep 응답 전에 TraCI 연결이 끊길 수 있다. 계측 루프는
+               # duration까지만 진행하므로 SUMO 종료 시점을 한 틱 뒤로 둔다.
+               '--end', str(int(duration) + 1)]
     command += ['--device.taxi.dispatch-algorithm', 'traci' if algorithm == 'hungarian' else algorithm]
     # GUI 실행은 기존 전용 실행기처럼 창을 자동 종료하지 않는다. 각 스텝에 짧은
     # 지연을 주어 사람이 차량·승객·재배치 동작을 볼 수 있게 한다.
