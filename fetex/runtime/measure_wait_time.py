@@ -210,6 +210,7 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
     now = 0
     teleports = 0
     completed = False
+    gui_closed_early = False
     try:
         while now < duration and now < max_steps:
             # 0초부터 생성하고 마지막 초에도 한 번만 추첨한다.
@@ -287,6 +288,13 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
             if now % 3600 == 0:
                 print(f'[진행] {now:.0f}/{duration:.0f}s 생성={len(records)} 탑승={len(pickup)}', flush=True)
         completed = now == duration
+    except traci.exceptions.FatalTraCIError:
+        if sumo_binary != 'sumo-gui':
+            raise
+        # 사용자가 GUI 창을 닫으면 SUMO가 TraCI 연결을 먼저 끊는다. 이 경우
+        # 이미 수집한 결과를 남기고, 실제 런타임 오류처럼 traceback을 내지 않는다.
+        gui_closed_early = True
+        print(f'[GUI] 창이 시뮬레이션 시간 {now:.0f}s에 닫혔습니다. 현재까지의 결과를 저장합니다.', flush=True)
     finally:
         if sumo_binary == 'sumo-gui' and completed:
             # traci.close()는 SUMO에 명시적인 종료 요청을 보내 GUI에
@@ -318,13 +326,14 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
                              reserved_pending=pid in pax._pending_removal, status=status))
     result = summarize(outcomes, timeout)
     result.update(strategy=strategy, algorithm=algorithm, config=cfg, seed=cfg.get('passenger_seed'),
-                  duration_sec=now, completed_interval=now == duration, sumo_version=version,
+                  duration_sec=now, completed_interval=completed, sumo_version=version,
                   source_hash=code_hash, max_loaded_taxis=manager.max_loaded_taxis,
                   wall_time_sec=time.monotonic() - begin, backend=os.environ.get('MOBILITY_BACKEND', 'traci'),
                   n_spawn_failed=sum(spawn.failed_counts.values()), n_reserved_pending=len(pax._pending_removal),
                   n_threshold_exceeded=len(pax.threshold_exceeded_at), spawn_counts=dict(spawn.spawn_counts),
                   attempts=dict(spawn.attempt_counts), probability_passed=dict(spawn.passed_counts),
                   spawn_failures=dict(spawn.failed_counts), teleports=teleports,
+                  gui_closed_early=gui_closed_early,
                   map_hash=hashlib.sha256(sumocfg.with_name('grid.net.xml').read_bytes()).hexdigest(),
                   demand_fingerprint=hashlib.sha256(json.dumps(calls, sort_keys=True).encode()).hexdigest(),
                   schedules=schedule_status(cfg, meta['zones'], spawn),
