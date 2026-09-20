@@ -16,6 +16,7 @@ create_features가 원래 spatial_col을 인자로 받게 설계돼 있어서 h3
 import glob
 import os
 import sys
+import argparse
 
 import joblib
 import pandas as pd
@@ -42,7 +43,7 @@ LEGACY_DEMAND_LOG_GLOB = os.path.join(LEGACY_DEMAND_LOG_DIR, "simulation_demand_
 
 # 학습 타겟: train.py와 동일하게 y_h1(t+1). Module 2 create_features가 y_h1..y_hH를 만들어 줌.
 TARGET = "y_h1"
-OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl")
+DEFAULT_OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl")
 
 CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]
 
@@ -59,7 +60,7 @@ def _load_all_demand_logs():
     return merged
 
 
-def main():
+def main(out_path=DEFAULT_OUT_PATH):
     df = _load_all_demand_logs()
     if df is None:
         print("[에러] data/sim_logs/demand_log_*.csv 또는 data/raw/simulation_demand_log*.csv "
@@ -105,11 +106,14 @@ def main():
         print(f"[{category}] Train {len(X_train)} / Test {len(X_test)} | RMSE {rmse:.3f}")
         models[category] = model
 
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
     joblib.dump({"models": models, "feature_cols": feature_cols, "target": TARGET,
-                 "category_list": list(models.keys())}, OUT_PATH)
-    print(f"[완료] {OUT_PATH} 에 카테고리별 모델 {len(models)}개 저장")
+                 "category_list": list(models.keys())}, out_path)
+    print(f"[완료] {out_path} 에 카테고리별 모델 {len(models)}개 저장")
 
 
 if __name__ == "__main__":
-    main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--out", default=DEFAULT_OUT_PATH, help="카테고리 모델 저장 경로")
+    args = ap.parse_args()
+    main(args.out)
