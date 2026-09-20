@@ -137,7 +137,8 @@ class ReplayPassengerSource:
 
 
 def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, meta_path=None,
-                    output_dir=None, strategy=None, algorithm=None, observer=None, forecast=None):
+                    output_dir=None, strategy=None, algorithm=None, observer=None, forecast=None,
+                    gui_delay=None):
     """GUI/headless 공용 루프. 1초 생성 틱과 [시작, 종료) 구간을 사용한다."""
     meta_path = Path(meta_path or META_PATH)
     code_hash = source_fingerprint()
@@ -196,8 +197,10 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
                '--seed', str(cfg.get('passenger_seed') or 0), '--no-step-log', 'true',
                '--duration-log.disable', 'true', '--error-log', str(out / 'sumo_errors.log')]
     command += ['--device.taxi.dispatch-algorithm', 'traci' if algorithm == 'hungarian' else algorithm]
-    if sumo_binary == 'sumo-gui':
-        command += ['--start', '--quit-on-end']
+    # GUI 실행은 기존 전용 실행기처럼 창을 자동 종료하지 않는다. 각 스텝에 짧은
+    # 지연을 주어 사람이 차량·승객·재배치 동작을 볼 수 있게 한다.
+    if sumo_binary == 'sumo-gui' and gui_delay is None:
+        gui_delay = 0.01
     traci.start(command)
     version = traci.getVersion()
     now = 0
@@ -218,6 +221,23 @@ def run_and_measure(sumo_binary='sumo', max_steps=100000, sumo_cfg_path=None, me
             spawn.new_records = []
             traci.simulationStep()
             now = traci.simulation.getTime()
+            if sumo_binary == 'sumo-gui':
+                current_hour = start_hour + now / 3600.0
+                hours = int(current_hour) % 24
+                minutes = int((current_hour - int(current_hour)) * 60)
+                seconds = int((((current_hour - int(current_hour)) * 60) - minutes) * 60)
+                try:
+                    view_ids = traci.gui.getIDList()
+                    if view_ids:
+                        traci.gui.setWindowCaption(
+                            view_ids[0],
+                            f'DT Mobility Simulation | Time: {hours:02d}:{minutes:02d}:{seconds:02d}',
+                        )
+                except Exception:
+                    # GUI 표시는 계측 결과에 영향을 주지 않아야 한다.
+                    pass
+                if gui_delay and gui_delay > 0:
+                    time.sleep(gui_delay)
             arrived.update(traci.simulation.getArrivedPersonIDList())
             teleports += traci.simulation.getStartingTeleportNumber()
             last_active = set(traci.person.getIDList())
@@ -347,20 +367,22 @@ def main():
     parser.add_argument('--output-dir', type=Path, default=ROOT / 'results/simulation')
     parser.add_argument('--seeds', type=int, nargs='+', default=[42,43,44,45,46])
     parser.add_argument('--sumo-binary', default='sumo')
+    parser.add_argument('--gui-delay', type=float, default=None,
+                        help='SUMO GUI의 스텝 간 표시 지연(초). GUI 기본값은 0.01초입니다.')
     args = parser.parse_args()
     if args.mode == 'compare':
         compare_strategies(CFG, args.output_dir, args.seeds)
     elif args.mode == 'dispatch_compare':
         compare_dispatch_algorithms(*(args.algorithms or ['greedy','hungarian']), output_dir=args.output_dir, seeds=args.seeds)
     elif args.mode == '_worker':
-        print_result('worker', run_and_measure(sumo_binary=args.sumo_binary, meta_path=args.output_dir / 'sumo/runtime_meta.json', output_dir=args.output_dir))
+        print_result('worker', run_and_measure(sumo_binary=args.sumo_binary, meta_path=args.output_dir / 'sumo/runtime_meta.json', output_dir=args.output_dir, gui_delay=args.gui_delay))
     elif args.mode in ('patrol', 'prepositioned') or args.config_path:
         cfg = {**CFG, 'passenger_seed': args.seeds[0]}
         if args.mode in ('patrol','prepositioned'):
             cfg['taxi_strategy'] = args.mode
         print_result(args.mode, isolated_run(cfg, args.output_dir, args.sumo_binary))
     else:
-        print_result('current', run_and_measure(sumo_binary=args.sumo_binary, output_dir=args.output_dir))
+        print_result('current', run_and_measure(sumo_binary=args.sumo_binary, output_dir=args.output_dir, gui_delay=args.gui_delay))
 
 
 if __name__ == '__main__':

@@ -1,4 +1,6 @@
 """GUI도 headless 실험과 동일한 시뮬레이션 루프를 사용한다."""
+from pathlib import Path
+
 from fetex.runtime.measure_wait_time import ROOT, print_result, run_and_measure
 
 
