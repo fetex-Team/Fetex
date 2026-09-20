@@ -328,17 +328,22 @@ def print_result(label, result):
           f"타임아웃={result['n_timeout_removed']} 평균대기={result['avg_wait_sec']}")
 
 
-def isolated_run(config, destination, sumo_binary='sumo'):
+def isolated_run(config, destination, sumo_binary='sumo', stream_output=False):
     """빌드와 측정은 별도 프로세스에서 같은 설정 스냅샷을 읽는다."""
     destination = Path(destination).resolve()
     destination.mkdir(parents=True, exist_ok=True)
     path = destination / 'config.json'
     path.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding='utf-8')
     env = {**os.environ, 'MOBILITY_CONFIG': str(path), 'PYTHONIOENCODING': 'utf-8'}
-    with (destination / 'run.log').open('w', encoding='utf-8') as log:
-        for command in ([sys.executable, '-m', 'fetex.simulation.build_env', '--config-path', str(path), '--config-dir', str(destination / 'sumo')],
-                        [sys.executable, '-m', 'fetex.runtime.measure_wait_time', '_worker', '--config-path', str(path), '--output-dir', str(destination), '--sumo-binary', sumo_binary]):
-            subprocess.run(command, env=env, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
+    commands = ([sys.executable, '-m', 'fetex.simulation.build_env', '--config-path', str(path), '--config-dir', str(destination / 'sumo')],
+                [sys.executable, '-m', 'fetex.runtime.measure_wait_time', '_worker', '--config-path', str(path), '--output-dir', str(destination), '--sumo-binary', sumo_binary])
+    if stream_output:
+        for command in commands:
+            subprocess.run(command, env=env, cwd=ROOT, check=True)
+    else:
+        with (destination / 'run.log').open('w', encoding='utf-8') as log:
+            for command in commands:
+                subprocess.run(command, env=env, cwd=ROOT, stdout=log, stderr=subprocess.STDOUT, check=True)
     return json.loads((destination / 'summary.json').read_text(encoding='utf-8'))
 
 
