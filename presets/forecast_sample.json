@@ -2,7 +2,7 @@
   "region": "강남역",
   "scenario_date": "2026-08-30",
   "resolve_external_data": false,
-  "shared_map_dir": "module1_simulation/sumo_config",
+  "shared_map_dir": "fetex/simulation/sumo_config",
   "use_real_map": true,
   "freq": "5min",
   "h3_resolution": 8,

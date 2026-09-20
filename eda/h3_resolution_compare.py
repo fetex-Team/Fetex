@@ -18,7 +18,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
-from module2_preprocessing.sim_log_recorder import latest_log_path
+from fetex.preprocessing.sim_log_recorder import latest_log_path
 
 # 한글 폰트 (맥 기본)
 for f in ["AppleGothic", "Apple SD Gothic Neo", "NanumGothic"]:

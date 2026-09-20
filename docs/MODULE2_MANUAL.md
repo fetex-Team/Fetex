@@ -18,7 +18,7 @@
 | R3 | **지난 1시간 평균, 지난주 동일 시간대, 이동평균** 등 시계열 피처 | T3 |
 | R4 | 기상·교통량·이벤트 등 **외부 데이터 결합** + **결측치 처리** | T4 |
 | R5 | Module 3 입력: t까지의 데이터로 **t+1~t+6 (5분 단위)** 예측 → 입력/타겟 시퀀스 정의 | T3 |
-| R6 | 최종 결과물: `module2_preprocessing/` 코드, `notebooks/` EDA 노트북, `data/` 샘플·로드 스크립트 | T5, T6 |
+| R6 | 최종 결과물: `fetex/preprocessing/` 코드, `notebooks/` EDA 노트북, `data/` 샘플·로드 스크립트 | T5, T6 |
 | R7 | REPORT: 시공간 데이터 특성 분석(EDA) 및 시각화 — 시간대/요일/지역별 히트맵 | T5 |
 | Q1 | (평가) 공간 인덱싱 선택 이유, **대용량 처리 효율화** 방식 | T1 |
 | Q2 | (평가) 파생 변수 생성과 **유효성 검증** 방법 | T3, T5 |
@@ -41,7 +41,7 @@
 | (선택) `origin_zone`, `dest_category`, `wait_sec`, `status` | 시뮬 로그일 때만 존재. Module 2는 없어도 동작해야 함 |
 
 **데이터 소스 2종**
-- (A) SUMO 시뮬 로그: `python module1_simulation/build_env.py` → `python measure_wait_time.py`가 `data/sim_logs/`에 생성. 파이프라인 검증·배차(M4) 연동용.
+- (A) SUMO 시뮬 로그: `python -m fetex.simulation.build_env` → `python -m fetex.runtime.measure_wait_time`가 `data/sim_logs/`에 생성. 파이프라인 검증·배차(M4) 연동용.
 - (B) 공개 데이터(명세 제약 7 허용): 뉴욕 옐로택시 등. 다일·다요일·날씨 상관 EDA용. **팀 결정 필요** — 결정 전까지 코드는 (A)(B) 모두 같은 스키마로 받도록 만든다.
 
 **최소 완료 조건**
@@ -62,7 +62,7 @@
 **최소 완료 조건**
 - [ ] `SpatialIndexer.process_dataframe()`이 `h3_index`, `geohash` 두 컬럼을 생성
 - [ ] 같은 입력에 대해 개선 전(`apply`)/후 결과가 동일 (테스트)
-- [ ] `python -m module2_preprocessing.spatial_indexing --bench 100000` 실행 시 처리 시간 출력 (초)
+- [ ] `python -m fetex.preprocessing.spatial_indexing --bench 100000` 실행 시 처리 시간 출력 (초)
 - [ ] H3 res 선택 근거가 코드 주석 + `docs/`에 남아 있음
 
 **확인 방법**: `python tests/test_module2.py` (test_spatial_*) 통과
@@ -148,9 +148,9 @@
 ## T6. 파이프라인 통합 · 테스트 · 문서 (R6, Q4)
 
 **해야 할 것**
-1. `module2_preprocessing/pipeline.py`: 단일 진입점
+1. `fetex/preprocessing/pipeline.py`: 단일 진입점
    `build_feature_table(log_paths, freq, horizons, weather_path) -> DataFrame`
-   CLI: `python -m module2_preprocessing.pipeline --logs data/sim_logs/*.csv --out data/processed/features.csv`
+   CLI: `python -m fetex.preprocessing.pipeline --logs data/sim_logs/*.csv --out data/processed/features.csv`
 2. `train.py`가 `pipeline`을 호출 (전처리 코드 중복 제거)
 3. `tests/test_module2.py`: T1~T4 최소 완료 조건을 그대로 테스트로 (외부 패키지 없는 환경에서도 돌게 mock 지원)
 4. 문서: `README.md` Module 2 실행법 섹션, `data/README.md`, `REPORT.md` EDA 섹션 초안(노트북 결과 요약)
@@ -183,7 +183,7 @@ source ../20250907ver/venv/bin/activate
 pip install holidays statsmodels jupyter        # 최초 1회
 python tests/test_module2.py                    # T1~T4 검증
 python scripts/fetch_weather_history.py         # T4 날씨 수집 (네트워크)
-python -m module2_preprocessing.pipeline --logs "data/sim_logs/*.csv" --out data/processed/features.csv
+python -m fetex.preprocessing.pipeline --logs "data/sim_logs/*.csv" --out data/processed/features.csv
 python eda/h3_resolution_compare.py && python eda/poi_zone_map.py   # T5 H3/POI 그림
 jupyter nbconvert --to notebook --execute --inplace notebooks/01_EDA_and_Spatial.ipynb   # T5 노트북 실행
 python train.py                                 # M3 연동 확인

@@ -27,7 +27,7 @@ from data.generate import generate_data  # noqa: E402
 
 def _meta_path(value: str | None) -> Path:
     return Path(value or os.environ.get(
-        "MOBILITY_SIM_DIR", ROOT / "module1_simulation" / "sumo_config"
+        "MOBILITY_SIM_DIR", ROOT / "fetex" / "simulation" / "sumo_config"
     )) / "runtime_meta.json"
 
 

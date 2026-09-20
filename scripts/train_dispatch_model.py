@@ -35,9 +35,9 @@ from xgboost import XGBRegressor
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from config_loader import CFG                                    # noqa: E402
-from module2_preprocessing.pipeline import build_feature_table   # noqa: E402
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, time_based_split  # noqa: E402
+from fetex.core.config import CFG                                    # noqa: E402
+from fetex.preprocessing.pipeline import build_feature_table   # noqa: E402
+from fetex.preprocessing.time_series_prep import TimeSeriesPreprocessor, time_based_split  # noqa: E402
 from evaluate import calculate_metrics                           # noqa: E402
 
 MODEL_PATH = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
@@ -49,7 +49,7 @@ def external_to_weather(external_csv: str) -> pd.DataFrame:
     forecast_dispatcher._external_to_weather와 같은 축약(시각별 셀 평균)이라
     학습과 시뮬레이션 중 예측이 같은 날씨 값을 보게 된다.
     """
-    from module4_dispatch.forecast_dispatcher import _external_to_weather
+    from fetex.dispatch.forecast_dispatcher import _external_to_weather
     ext = pd.read_csv(external_csv, parse_dates=["time_bucket"])
     w = _external_to_weather(ext)
     if w is None:

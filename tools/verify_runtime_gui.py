@@ -11,7 +11,7 @@ sys.path.insert(0,str(ROOT))
 os.environ['MOBILITY_CONFIG']=str(ROOT/'presets/runtime_minimal.json')
 os.environ.pop('MOBILITY_BACKEND',None)
 import traci
-from measure_wait_time import run_and_measure
+from fetex.runtime.measure_wait_time import run_and_measure
 
 
 class Capture:

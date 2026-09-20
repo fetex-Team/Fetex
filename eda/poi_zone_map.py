@@ -21,14 +21,14 @@ import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.lines import Line2D
-from poi_extractor import parse_osm_pois, CATEGORIES
+from fetex.geospatial.poi_extractor import CATEGORIES, parse_osm_pois
 
 for f in ["AppleGothic", "Apple SD Gothic Neo", "NanumGothic"]:
     if any(f == x.name for x in font_manager.fontManager.ttflist):
         plt.rcParams["font.family"] = f; break
 plt.rcParams["axes.unicode_minus"] = False
 
-CFG_DIR = os.path.join(ROOT, "module1_simulation", "sumo_config")
+CFG_DIR = os.path.join(ROOT, "fetex", "simulation", "sumo_config")
 NET = os.path.join(CFG_DIR, "grid.net.xml"); OSM = os.path.join(CFG_DIR, "region.osm.xml")
 META = os.path.join(CFG_DIR, "runtime_meta.json"); OUT = os.path.join(ROOT, "data", "eda")
 os.makedirs(OUT, exist_ok=True)
@@ -80,7 +80,7 @@ print("\n가장 흔한 조합 Top 8:"); print(combo.head(8).to_string())
 summary.to_csv(os.path.join(OUT, "poi_zone_summary.csv"), index=False, encoding="utf-8-sig")
 
 # 호출 로그가 있으면 edge별 호출 수도 붙임
-from module2_preprocessing.sim_log_recorder import latest_log_path
+from fetex.preprocessing.sim_log_recorder import latest_log_path
 calls = {}
 lp = latest_log_path()
 if lp:

@@ -26,10 +26,10 @@ import numpy as np
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-from config_loader import CFG                                        # noqa: E402
+from fetex.core.config import CFG                                        # noqa: E402
 from evaluate import calculate_metrics                               # noqa: E402
-from module2_preprocessing.pipeline import build_feature_table       # noqa: E402
-from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
+from fetex.preprocessing.pipeline import build_feature_table       # noqa: E402
+from fetex.preprocessing.time_series_prep import time_based_split  # noqa: E402
 
 TARGET = "y_h1"  # train.py의 단일 출력 모델과 같은 타겟
 
@@ -71,7 +71,7 @@ def evaluate_saved_models(log_arg=None):
 
     # 2) CNN-LSTM (torch는 이 시점에만 필요 — XGB만 볼 때 torch 미설치로 죽지 않게 지연 임포트)
     import torch
-    from module3_prediction.models import CNNLSTMModel
+    from fetex.forecasting.models import CNNLSTMModel
     dl_data = torch.load(dl_path, weights_only=False)
     if dl_data.get("feature_cols") != list(feature_cols):
         raise ValueError("cnn_lstm_demand.pt의 feature_cols가 현재 파이프라인과 다릅니다. train.py를 다시 실행하세요.")

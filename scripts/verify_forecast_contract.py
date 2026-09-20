@@ -12,8 +12,8 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from config_loader import CFG  # noqa: E402
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor  # noqa: E402
+from fetex.core.config import CFG  # noqa: E402
+from fetex.preprocessing.time_series_prep import TimeSeriesPreprocessor  # noqa: E402
 
 
 def _path(value):
@@ -22,7 +22,7 @@ def _path(value):
 
 
 def verify(meta_path=None, config_path=None):
-    meta_file = Path(meta_path or ROOT / "module1_simulation" / "sumo_config" / "runtime_meta.json")
+    meta_file = Path(meta_path or ROOT / "fetex" / "simulation" / "sumo_config" / "runtime_meta.json")
     meta = json.loads(meta_file.read_text(encoding="utf-8"))
     override = json.loads(Path(config_path).read_text(encoding="utf-8")) if config_path else {}
     cfg = {**CFG, **meta.get("config", {}), **override}

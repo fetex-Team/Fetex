@@ -126,7 +126,7 @@ Nominatim은 초당 1회 정책이고 코드에도 `time.sleep(1.0)`이 들어 �
 
 ### 참고 — 이 온도가 어디에 쓰이는지
 
-`module2_preprocessing/external_data_merge.py`가 `temp_min~temp_max` 구간에서
+`fetex/preprocessing/external_data_merge.py`가 `temp_min~temp_max` 구간에서
 `np.random.uniform`으로 행마다 온도를 뽑는다. 즉 **폴백이 정상 동작해도
 날씨 피처는 난수**다. 이 부분은 3번(전처리/EDA) 담당 항목이므로
 별도 문서 `docs/weather_coefficient.md`에 실측 기반 대안을 정리해 두었다.
@@ -138,7 +138,7 @@ Nominatim은 초당 1회 정책이고 코드에도 `time.sleep(1.0)`이 들어 �
 ### 방법
 
 `real_map_fetch.py`와 동일한 옵션으로 실제 변환을 수행하고 stderr를 분류했다.
-대상은 `module1_simulation/sumo_config/region.osm.xml` (강남역, 3.4MB).
+대상은 `fetex/simulation/sumo_config/region.osm.xml` (강남역, 3.4MB).
 
 ```
 python tools/analyze_netconvert_warnings.py nc_stderr.txt
@@ -302,14 +302,14 @@ POI 786개 × edge 404개 규모에서는 체감되지 않지만, 지도를 넓�
 python tools/verify_region_fallback.py
 
 # netconvert 경고 분류
-cd module1_simulation/sumo_config
+cd fetex/simulation/sumo_config
 netconvert --osm-files region_filtered.osm.xml -o grid.net.xml \
   --geometry.remove true --ramps.guess true --junctions.join true \
   --remove-edges.isolated true --ramps.no-split true --edges.join true \
   --keep-edges.by-vclass passenger --no-internal-links false \
   --tls.guess true --tls.join true  2> nc_stderr.txt
 cd ../..
-python tools/analyze_netconvert_warnings.py module1_simulation/sumo_config/nc_stderr.txt
+python tools/analyze_netconvert_warnings.py fetex/simulation/sumo_config/nc_stderr.txt
 ```
 
 검증 환경: Eclipse SUMO netconvert 1.27.1 / Python 3.11 / sumolib 1.27.x

@@ -12,11 +12,11 @@
 
 | 모듈 | 구현 위치 | 확인 방법 |
 |---|---|---|
-| 1. Digital Twin | `module1_simulation/`, `measure_wait_time.py` | `presets/runtime_minimal.json`: 3×3 블록, 승객 5, 택시 3, 일반차 4종 각 5, AV 1, 장애물 2 |
-| 2. 시공간 전처리 | `module2_preprocessing/` | H3·Geohash, 5분 패널, 0 수요 보존, lag/rolling/요일·휴일·날씨 피처 |
-| 3. 단기 예측 | `scripts/train_dispatch_model.py`, `module3_prediction/` | 시간 순서 분할, 43개 피처, 다중 출력 `y_h1`~`y_h6`, RMSE/MAE/MAPE/WAPE |
-| 4. 동적 배차 | `module4_dispatch/`, `measure_wait_time.py` | 수급 비율, 상한 3배 할증, 정수 택시 배분, SUMO 실제 도로 이동시간 재배치 |
-| 3D 표현 | `unity/`, `export_unity_replay.py` | 제공 Unity Asset과 replay JSON 연결 — [가이드](unity/README.md) |
+| 1. Digital Twin | `fetex/simulation/`, `fetex/runtime/` | `presets/runtime_minimal.json`: 3×3 블록, 승객 5, 택시 3, 일반차 4종 각 5, AV 1, 장애물 2 |
+| 2. 시공간 전처리 | `fetex/preprocessing/` | H3·Geohash, 5분 패널, 0 수요 보존, lag/rolling/요일·휴일·날씨 피처 |
+| 3. 단기 예측 | `scripts/train_dispatch_model.py`, `fetex/forecasting/` | 시간 순서 분할, 43개 피처, 다중 출력 `y_h1`~`y_h6`, RMSE/MAE/MAPE/WAPE |
+| 4. 동적 배차 | `fetex/dispatch/`, `fetex/runtime/` | 수급 비율, 상한 3배 할증, 정수 택시 배분, SUMO 실제 도로 이동시간 재배치 |
+| 3D 표현 | `unity/`, `fetex/integrations/` | 제공 Unity Asset과 replay JSON 연결 — [가이드](unity/README.md) |
 
 세부 설계는 [파이프라인 문서](docs/pipeline_flow.md), 실행·수치 근거는
 [통합 보고서](REPORT.md), 최소 SUMO 구성은 [런타임 가이드](docs/runtime_validation.md)를 참고한다.
@@ -39,7 +39,7 @@ python -m venv .venv
 
 ```powershell
 .venv/Scripts/python.exe tests/test_module2.py
-.venv/Scripts/python.exe tests_logic.py
+.venv/Scripts/python.exe tests/integration/tests_logic.py
 ```
 
 첫 명령은 공간·시간·외부 데이터·품질 규칙·1주 계절 피처를 포함한 85개 검사를 수행한다.
@@ -49,7 +49,7 @@ forecast 인과성을 점검한다.
 최소 SUMO 시뮬레이션은 다음처럼 실행한다.
 
 ```powershell
-.venv/Scripts/python.exe measure_wait_time.py --config-path presets/runtime_minimal.json --output-dir results/runtime_validation/minimal
+.venv/Scripts/python.exe -m fetex.runtime.measure_wait_time --config-path presets/runtime_minimal.json --output-dir results/runtime_validation/minimal
 ```
 
 ## Module 2–3: 데이터·예측 모델
@@ -76,7 +76,7 @@ forecast 인과성을 점검한다.
 
 ```powershell
 .venv/Scripts/python.exe scripts/verify_forecast_contract.py --config-path presets/forecast_sample.json
-.venv/Scripts/python.exe measure_wait_time.py --config-path presets/forecast_smoke.json --output-dir results/forecast_smoke
+.venv/Scripts/python.exe -m fetex.runtime.measure_wait_time --config-path presets/forecast_smoke.json --output-dir results/forecast_smoke
 ```
 
 예측기는 매 5분에 완료된 호출만 읽고, `TimeSeriesPreprocessor.required_history_buckets`
@@ -91,7 +91,7 @@ forecast 인과성을 점검한다.
 .venv/Scripts/python.exe scripts/generate_training_data.py --days 35 --scenario-date 2026-09-18
 .venv/Scripts/python.exe scripts/train_dispatch_model.py data/generated/train_calls.csv --external data/generated/train_external.csv
 .venv/Scripts/python.exe scripts/verify_forecast_contract.py --config-path presets/forecast_demo.json
-.venv/Scripts/python.exe measure_wait_time.py --config-path presets/forecast_demo.json --output-dir results/forecast_demo
+.venv/Scripts/python.exe -m fetex.runtime.measure_wait_time --config-path presets/forecast_demo.json --output-dir results/forecast_demo
 ```
 
 생성되는 `train_*`, `stream_*` 파일은 재현 가능한 대용량 산출물이라 Git에서 제외한다.
@@ -102,19 +102,27 @@ forecast 인과성을 점검한다.
 
 제공받은 `Kakaomobility.zip`의 Map/Object/Animation Unity package는 저작권·용량 문제로
 저장소에 포함하지 않는다. `unity/Assets/Scripts/SumoReplayPlayer.cs`는
-`export_unity_replay.py`의 `patrol.json`·`forecast.json`을 제공 Asset prefab으로 재생한다.
+`fetex.integrations.unity_replay`의 `patrol.json`·`forecast.json`을 제공 Asset prefab으로 재생한다.
 Asset import와 replay 생성 명령은 [Unity 가이드](unity/README.md)에 있다.
 
 ## 저장소 구조
 
 ```text
-data/                    호출·외부 관측 샘플과 설명
-module1_simulation/      SUMO 지도·차량·승객 Digital Twin
-module2_preprocessing/   H3/Geohash·외부 결합·시계열 피처
-module3_prediction/      예측 모델 정의와 학습/평가 진입점
-module4_dispatch/        Hungarian 매칭·할증·예측 기반 재배치
-scripts/                 데이터 생성, 학습, 평가, 계약 검증
-results/                 재현 가능한 지표·그래프·비교 산출물
-unity/                   제공 Asset용 replay 연결 스크립트와 가이드
-docs/, REPORT.md         설계 근거, 한계, 실행·분석 보고서
+fetex/core/              단일 설정 원본·저장소 경로 계약
+fetex/simulation/        SUMO 지도·차량·승객 Digital Twin
+fetex/runtime/           SUMO 실행·택시·승객·대기시간 계측
+fetex/preprocessing/     H3/Geohash·외부 결합·시계열 피처
+fetex/forecasting/       예측 모델 정의·공용 평가 지표
+fetex/dispatch/          Hungarian 매칭·할증·예측 기반 재배치
+fetex/geospatial/        지역 검색·지도·POI 보조 기능
+fetex/integrations/      Unity replay 내보내기
+scripts/                 데이터 생성, 학습, 평가, 계약 검증 CLI
+tests/                   단위·통합 테스트
+data/, results/          입력 샘플과 재현 가능한 산출물
+unity/, docs/            제공 Asset 연결과 설계·협업 문서
 ```
+
+새 코드는 항상 `fetex.*` 경로를 사용한다. 루트의 `main.py`, `measure_wait_time.py`,
+`train.py`, `evaluate.py`, `config_gui.py`, `export_unity_replay.py`는 기존 개인 실행 습관을
+보존하는 호환 진입점이다. 역할·경계·리뷰 규칙은 [구조 가이드](docs/architecture/project_structure.md)와
+[협업 가이드](CONTRIBUTING.md)에 정리했다.

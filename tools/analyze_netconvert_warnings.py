@@ -11,7 +11,7 @@ netconvert는 같은 유형 경고를 5회까지만 출력하고 마지막에
 실행:
     python tools/analyze_netconvert_warnings.py <netconvert_stderr.txt>
 
-stderr 로그를 만드는 법 (module1_simulation/sumo_config 기준):
+stderr 로그를 만드는 법 (fetex/simulation/sumo_config 기준):
     netconvert --osm-files region_filtered.osm.xml -o grid.net.xml \
       --geometry.remove true --ramps.guess true --junctions.join true \
       --remove-edges.isolated true --ramps.no-split true --edges.join true \

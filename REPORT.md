@@ -159,7 +159,7 @@
 
 ### 3.3 한계
 
-기본 8일 샘플은 실행 가능 여부를 보이는 작은 자료다. 금요일 저녁 효과·주간 계절성은 `scripts/generate_training_data.py --days 35 --scenario-date 2026-09-18` 또는 8주 EDA 자료로 재검증해야 한다. `module3_prediction/models.py`의 CNN-LSTM 구조는 비교 실험용으로 남아 있지만, 배차기에 연결하는 기준 모델은 재현성·다중 horizon 계약을 갖춘 XGBoost다.
+기본 8일 샘플은 실행 가능 여부를 보이는 작은 자료다. 금요일 저녁 효과·주간 계절성은 `scripts/generate_training_data.py --days 35 --scenario-date 2026-09-18` 또는 8주 EDA 자료로 재검증해야 한다. `fetex/forecasting/models.py`의 CNN-LSTM 구조는 비교 실험용으로 남아 있지만, 배차기에 연결하는 기준 모델은 재현성·다중 horizon 계약을 갖춘 XGBoost다.
 
 ## 4. Module 4 — 예측 기반 동적 배차와 인센티브
 
@@ -175,4 +175,4 @@
 
 ## 5. Unity 3D Asset 표현
 
-`export_unity_replay.py`는 SUMO의 도로·객체 상태와 forecast 결과를 `map.json`, `patrol.json`, `forecast.json`으로 내보낸다. `unity/Assets/Scripts/SumoReplayPlayer.cs`는 제공 Asset의 택시·일반차·AV·장애물 prefab을 이 좌표와 상태에 연결한다. Asset package 자체는 교육 제공물이라 저장소에 재배포하지 않으며, import 순서와 씬 연결 방법은 `unity/README.md`에 기록했다.
+`fetex.integrations.unity_replay`는 SUMO의 도로·객체 상태와 forecast 결과를 `map.json`, `patrol.json`, `forecast.json`으로 내보낸다. `unity/Assets/Scripts/SumoReplayPlayer.cs`는 제공 Asset의 택시·일반차·AV·장애물 prefab을 이 좌표와 상태에 연결한다. Asset package 자체는 교육 제공물이라 저장소에 재배포하지 않으며, import 순서와 씬 연결 방법은 `unity/README.md`에 기록했다.

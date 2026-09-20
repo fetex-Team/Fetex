@@ -147,7 +147,7 @@ FEATURE_GROUPS = {
 
 def feature_ablation(feat: pd.DataFrame, target="y_h1", test_size=0.2, seed=42) -> pd.DataFrame:
     """피처 그룹을 누적 추가하며 같은 모델로 학습 → test RMSE/MAE. 그룹 간 차이가 그 그룹의 기여."""
-    from module2_preprocessing.time_series_prep import time_based_split
+    from fetex.preprocessing.time_series_prep import time_based_split
     try:
         from xgboost import XGBRegressor
         Model = lambda: XGBRegressor(n_estimators=200, max_depth=4, learning_rate=0.05, random_state=seed, n_jobs=1, verbosity=0)

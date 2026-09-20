@@ -8,8 +8,8 @@ ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
 os.environ.setdefault('MOBILITY_CONFIG',str(ROOT/'presets/runtime_minimal.json'))
 os.environ.setdefault('MOBILITY_BACKEND','libsumo')
-from measure_wait_time import isolated_run
-from config_loader import DEFAULT_CONFIG
+from fetex.runtime.measure_wait_time import isolated_run
+from fetex.core.config import DEFAULT_CONFIG
 
 
 def main():

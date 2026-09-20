@@ -24,10 +24,10 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import config_loader          # noqa: E402
-import geo_lookup             # noqa: E402
-import weather_lookup         # noqa: E402
-from config_loader import REGION_PRESETS  # noqa: E402
+import fetex.core.config as config_loader          # noqa: E402
+import fetex.geospatial.geo_lookup as geo_lookup             # noqa: E402
+import fetex.geospatial.weather_lookup as weather_lookup         # noqa: E402
+from fetex.core.config import REGION_PRESETS  # noqa: E402
 
 MOCK_COORDS = {"lat_min": 37.0, "lat_max": 37.1,
                "lng_min": 127.0, "lng_max": 127.1, "display_name": "MOCK"}
@@ -43,8 +43,8 @@ def _load(region, geo_ok, weather):
             raise OSError("simulated API failure")
         geo_lookup.lookup_region = _boom
     weather_lookup.get_current_weather = lambda lat, lon: weather
-    sys.modules["geo_lookup"] = geo_lookup
-    sys.modules["weather_lookup"] = weather_lookup
+    sys.modules["fetex.geospatial.geo_lookup"] = geo_lookup
+    sys.modules["fetex.geospatial.weather_lookup"] = weather_lookup
 
     fd, path = tempfile.mkstemp(suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as f:

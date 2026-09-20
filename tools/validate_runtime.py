@@ -24,9 +24,9 @@ def save_csv(path, rows):
 
 def mock_sweeps(out):
     """SUMO 삽입을 성공 처리하여 시간/확률 규칙만 독립 검증한다."""
-    import passenger_spawn_manager as module
-    from config_loader import DEFAULT_CONFIG
-    from runtime_validation import schedule_status
+    import fetex.runtime.passenger_spawn_manager as module
+    from fetex.core.config import DEFAULT_CONFIG
+    from fetex.validation.runtime import schedule_status
     original=module.traci
     module.traci=SimpleNamespace(person=SimpleNamespace(add=lambda *a,**k:None,appendDrivingStage=lambda *a,**k:None,
                                     getIDList=lambda:[],remove=lambda *a:None),
@@ -69,7 +69,7 @@ def mock_sweeps(out):
             print(f'[population] {key}={value}',flush=True)
         save_csv(out/'population_sweep.csv',rows)
         schedules=[]
-        from module1_simulation.build_env import build_passenger_schedule
+        from fetex.simulation.build_env import build_passenger_schedule
         for a,b in [(6,7),(7,8),(8,10),(9,11),(10,11),(18,20),(21,23),(6,24)]:
             cfg={**base,'sim_start_hour':a,'sim_end_hour':b}
             m=module.PassengerSpawnManager(zones,a,b,seed=42,config=cfg)
@@ -97,11 +97,11 @@ def scenarios(base):
 
 
 def experiments(out, limit=None):
-    from measure_wait_time import isolated_run
-    from runtime_validation import source_fingerprint
+    from fetex.runtime.measure_wait_time import isolated_run
+    from fetex.validation.runtime import source_fingerprint
     base=json.loads((ROOT/'config.json').read_text(encoding='utf-8'))
     # 저장된 지도와 구역을 복제하여 온라인 지도 변경 영향을 배제한다.
-    base.update(resolve_external_data=False,shared_map_dir=str(ROOT/'module1_simulation/sumo_config'),
+    base.update(resolve_external_data=False,shared_map_dir=str(ROOT/'fetex/simulation/sumo_config'),
                 passenger_mode='legacy',dynamic_passengers=True,scenario_date='2026-09-18',
                 num_taxis=50,num_passengers=10000,school_pop_base=400,company_pop_base=100,
                 taxi_dispatch_algorithm='hungarian',use_real_map=True)

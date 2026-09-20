@@ -8,13 +8,13 @@ from unittest.mock import Mock
 os.environ.setdefault('MOBILITY_CONFIG', str(Path(__file__).resolve().parents[1] / 'presets/runtime_minimal.json'))
 import pytest
 import traci
-from config_loader import DEFAULT_CONFIG, load_config
-import passenger_spawn_manager as spawn_module
-import passenger_manager as timeout_module
-from passenger_spawn_manager import PassengerSpawnManager
-from passenger_manager import PassengerTimeoutManager
-from measure_wait_time import summarize
-from runtime_validation import schedule_status
+from fetex.core.config import DEFAULT_CONFIG, load_config
+import fetex.runtime.passenger_spawn_manager as spawn_module
+import fetex.runtime.passenger_manager as timeout_module
+from fetex.runtime.passenger_spawn_manager import PassengerSpawnManager
+from fetex.runtime.passenger_manager import PassengerTimeoutManager
+from fetex.runtime.measure_wait_time import summarize
+from fetex.validation.runtime import schedule_status
 
 ZONES = dict(school=['s'], company=['c'], restaurant=['r'], residential=['h'], bus_stop=['b'])
 
@@ -139,7 +139,7 @@ def test_summary_partition_and_no_demand():
 
 
 def test_build_static_boundary(monkeypatch):
-    from module1_simulation import build_env
+    from fetex.simulation import build_env
     monkeypatch.setitem(build_env.CFG,'residential_schedule_scale',.1)
     assert not build_env.build_passenger_schedule(ZONES,6,7,1000,seed=42)
     trips=build_env.build_passenger_schedule(ZONES,7,8,1000,seed=42)
@@ -154,7 +154,7 @@ def test_future_demand_does_not_stop_early(fake):
 
 
 def test_pending_taxi_counts_toward_fleet_cap(monkeypatch):
-    import taxi_manager
+    import fetex.runtime.taxi_manager as taxi_manager
     vehicle=SimpleNamespace(getIDList=lambda:[],getLoadedIDList=lambda:['pending'],getTypeID=lambda vid:'taxi_type')
     api=SimpleNamespace(vehicle=vehicle,exceptions=traci.exceptions)
     monkeypatch.setattr(taxi_manager,'traci',api)
@@ -166,7 +166,7 @@ def test_pending_taxi_counts_toward_fleet_cap(monkeypatch):
 
 
 def test_forecast_protected_taxi_is_not_patrolled(monkeypatch):
-    import taxi_manager
+    import fetex.runtime.taxi_manager as taxi_manager
     vehicle=SimpleNamespace(getIDList=lambda:['taxi'],getLoadedIDList=lambda:['taxi'],getTypeID=lambda vid:'taxi_type')
     monkeypatch.setattr(taxi_manager,'traci',SimpleNamespace(vehicle=vehicle,exceptions=traci.exceptions))
     m=taxi_manager.TaxiFleetManager(1,['a'],['a','b'])
@@ -209,7 +209,7 @@ def test_experiment_matrix_has_70_unique_cases():
 def test_forecast_excludes_reserved_and_occupied(monkeypatch):
     import numpy as np
     import pandas as pd
-    import module4_dispatch.forecast_dispatcher as mod
+    import fetex.dispatch.forecast_dispatcher as mod
     f=mod.ForecastDispatcher.__new__(mod.ForecastDispatcher)
     f.last_tick=-1; f.cells=['a','b']; f.records=[]; f.moves=[]; f.committed={}; f.enabled=True
     f.meta={'edge_cells':{'a0':'a','b0':'b'}}; f.cell_edges={'a':['a0'],'b':['b0']}

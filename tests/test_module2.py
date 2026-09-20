@@ -42,11 +42,11 @@ except ImportError:
 
 import numpy as np
 import pandas as pd
-from module2_preprocessing.spatial_indexing import SpatialIndexer
-from module2_preprocessing.time_features import add_time_features, TIME_FEATURE_COLS
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, time_based_split, feature_columns, target_columns
-from module2_preprocessing.external_data_merge import merge_external_data, WEATHER_COLS
-from module2_preprocessing.pipeline import build_feature_table
+from fetex.preprocessing.spatial_indexing import SpatialIndexer
+from fetex.preprocessing.time_features import TIME_FEATURE_COLS, add_time_features
+from fetex.preprocessing.time_series_prep import TimeSeriesPreprocessor, feature_columns, target_columns, time_based_split
+from fetex.preprocessing.external_data_merge import WEATHER_COLS, merge_external_data
+from fetex.preprocessing.pipeline import build_feature_table
 
 RESULTS = []
 TEST_ARTIFACTS = os.environ.get("FETEX_TEST_TMP", os.path.join(ROOT, ".test-artifacts"))
@@ -173,7 +173,7 @@ def test_external():
     # 파일 없음 → fallback
     m4 = merge_external_data(df, weather=pd.DataFrame(), verbose=False)
     check("T4 날씨 없음 → fallback 상수 + source='fallback'", (m4["weather_source"] == "fallback").all() and m4["temperature"].notna().all())
-    src = open(os.path.join(ROOT, "module2_preprocessing", "external_data_merge.py"), encoding="utf-8").read()
+    src = open(os.path.join(ROOT, "fetex", "preprocessing", "external_data_merge.py"), encoding="utf-8").read()
     code_lines = [l for l in src.splitlines() if not l.strip().startswith(("#", "※")) and '"""' not in l]
     check("T4 랜덤 날씨 생성 코드 없음", not any("np.random" in l for l in code_lines))
 
@@ -188,7 +188,7 @@ def _raises(fn, *a, **k):
 
 
 def test_quality():
-    from module2_preprocessing.time_series_prep import validate_panel, to_naive_kst
+    from fetex.preprocessing.time_series_prep import to_naive_kst, validate_panel
     cells = ["A", "B"]
     times = pd.date_range("2026-09-07 09:00", periods=30, freq="5min")
     good = pd.DataFrame([(t, c, 1) for t in times for c in cells], columns=["time_bucket", "h3_index", "demand"])
@@ -233,7 +233,7 @@ def test_quality():
     df, A, B, base = _toy_log()
     df.loc[df.index[:3], "latitude"] = np.nan
     p = os.path.join(tmp, "demand_log_x.csv"); df.to_csv(p, index=False)
-    from module2_preprocessing.pipeline import load_logs
+    from fetex.preprocessing.pipeline import load_logs
     logs = load_logs([p])
     check("T5 좌표 결측 3건 제거 + 건수 기록", len(logs) == len(df) - 3 and logs.attrs["dropped_missing_coords"] == {"demand_log_x.csv": 3})
 
@@ -241,8 +241,8 @@ def test_quality():
 
 # ============ T7 날씨·휴일 기준 강화 + 정확도용 피처 ============
 def test_strict_external():
-    from module2_preprocessing.external_data_merge import WEATHER_DERIVED_COLS, add_weather_derived
-    from module2_preprocessing.time_features import validate_calendar
+    from fetex.preprocessing.external_data_merge import WEATHER_DERIVED_COLS, add_weather_derived
+    from fetex.preprocessing.time_features import validate_calendar
     import datetime
     base = pd.Timestamp("2026-09-07 00:00")
     buckets = pd.date_range(base, base + pd.Timedelta(hours=47, minutes=55), freq="5min")

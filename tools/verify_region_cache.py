@@ -19,7 +19,7 @@ Nominatim을 다시 호출하던 문제가 있었다.
 import json, os, sys, shutil, socket, threading, time
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-import geo_lookup
+import fetex.geospatial.geo_lookup as geo_lookup
 
 # 인터넷 없는 상황을 확실히 만들기 위해 응답 없는 서버로 돌림
 srv=socket.socket(); srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR,1)

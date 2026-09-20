@@ -21,11 +21,11 @@ import pandas as pd
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-from config_loader import CFG  # noqa: E402
-from module2_preprocessing.pipeline import build_feature_table  # noqa: E402
-from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
-from module2_preprocessing.time_features import TIME_FEATURE_COLS  # noqa: E402
-from module2_preprocessing.external_data_merge import WEATHER_DERIVED_COLS  # noqa: E402
+from fetex.core.config import CFG  # noqa: E402
+from fetex.preprocessing.pipeline import build_feature_table  # noqa: E402
+from fetex.preprocessing.time_series_prep import time_based_split  # noqa: E402
+from fetex.preprocessing.time_features import TIME_FEATURE_COLS  # noqa: E402
+from fetex.preprocessing.external_data_merge import WEATHER_DERIVED_COLS  # noqa: E402
 
 CAL_BASE = ["year", "month", "day", "hour", "minute", "minute_of_day", "dayofweek", "is_weekend",
             "is_holiday", "season", "time_slot_code", "hour_sin", "hour_cos", "dow_sin", "dow_cos"]

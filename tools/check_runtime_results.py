@@ -7,7 +7,7 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-from runtime_validation import source_fingerprint
+from fetex.validation.runtime import source_fingerprint
 
 
 def verify(out,expected=70):

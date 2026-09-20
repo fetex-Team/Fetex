@@ -11,7 +11,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -r requirements-runtime.txt
 .venv/Scripts/python.exe -m pytest tests/test_runtime_validation.py -q
 $env:MOBILITY_BACKEND = 'libsumo'
-.venv/Scripts/python.exe measure_wait_time.py --config-path presets/runtime_minimal.json --output-dir results/runtime_validation/minimal --seeds 42
+.venv/Scripts/python.exe -m fetex.runtime.measure_wait_time --config-path presets/runtime_minimal.json --output-dir results/runtime_validation/minimal --seeds 42
 .venv/Scripts/python.exe tools/verify_runtime_gui.py
 .venv/Scripts/python.exe tools/verify_runtime_integration.py
 .venv/Scripts/python.exe tools/validate_runtime.py sweeps
@@ -23,7 +23,7 @@ $env:MOBILITY_BACKEND = 'libsumo'
 
 GUI 검증은 데스크톱 세션에서 실행하며 TraCI를 사용한다. headless 실험의 기본 백엔드는 같은 SUMO 엔진/API의 libsumo다. 소켓 기반 실행은 `--backend traci`로 선택할 수 있다. GUI/libsumo 최소 시나리오의 승객별 대기시간도 비교했다.
 
-`measure_wait_time.py compare --config-path <설정.json> --output-dir <결과폴더> --seeds 42 43 44 45 46`은 기존 patrol/prepositioned 비교 명령이다. `dispatch_compare greedy hungarian`도 설정을 덮어쓰지 않고 실행한다. 설정 우선순위는 명시 경로, `MOBILITY_CONFIG`, 기본 `config.json` 순이다.
+`python -m fetex.runtime.measure_wait_time compare --config-path <설정.json> --output-dir <결과폴더> --seeds 42 43 44 45 46`은 patrol/prepositioned 비교 명령이다. `dispatch_compare greedy hungarian`도 설정을 덮어쓰지 않고 실행한다. 설정 우선순위는 명시 경로, `MOBILITY_CONFIG`, 기본 `config.json` 순이다.
 
 실험은 실행마다 설정 JSON을 저장하고 빌드·측정을 별도 프로세스에서 수행한다. 같은 코드 해시와 설정으로 완료된 실험만 재사용한다. `results/runtime_validation/STOP` 파일을 만들면 현재 실행을 마친 후 중지한다. 재개 전 해당 파일을 제거한다. 실패 실행은 `manifest.csv`와 해당 `run.log`로 확인한다.
 
@@ -58,7 +58,7 @@ GUI 검증은 데스크톱 세션에서 실행하며 TraCI를 사용한다. head
 
 ![최소 구성 SUMO 실제 화면](../results/runtime_validation/minimal/gui/sumo_60s.png)
 
-이 화면은 SUMO 2D 교통 런타임 증거다. 제공 Unity Asset과의 표현 연결은 `unity/README.md`, `export_unity_replay.py`, `unity/Assets/Scripts/SumoReplayPlayer.cs`에서 별도로 제공한다. 차량 4종은 SUMO의 sedan/hatchback/wagon/van 외형이다.
+이 화면은 SUMO 2D 교통 런타임 증거다. 제공 Unity Asset과의 표현 연결은 `unity/README.md`, `fetex.integrations.unity_replay`, `unity/Assets/Scripts/SumoReplayPlayer.cs`에서 별도로 제공한다. 차량 4종은 SUMO의 sedan/hatchback/wagon/van 외형이다.
 
 ## 실험 설계와 지표
 

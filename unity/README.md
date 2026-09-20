@@ -23,8 +23,8 @@
 만든 뒤 금요일 저녁 실험에 쓴다.
 
 ```powershell
-python module1_simulation/build_env.py --config-path presets/forecast_sample.json --config-dir results/unity_replay/sumo
-python export_unity_replay.py --config-path presets/forecast_sample.json --meta results/unity_replay/sumo/runtime_meta.json --output results/unity_replay
+python -m fetex.simulation.build_env --config-path presets/forecast_sample.json --config-dir results/unity_replay/sumo
+python -m fetex.integrations.unity_replay --config-path presets/forecast_sample.json --meta results/unity_replay/sumo/runtime_meta.json --output results/unity_replay
 ```
 
 생성물은 `map.json`, `patrol.json`, `forecast.json`이다. 두 replay는 동일 호출

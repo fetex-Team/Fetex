@@ -17,10 +17,10 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from config_loader import CFG  # noqa: E402
+from fetex.core.config import CFG  # noqa: E402
 from evaluate import calculate_metrics  # noqa: E402
-from module2_preprocessing.pipeline import build_feature_table  # noqa: E402
-from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
+from fetex.preprocessing.pipeline import build_feature_table  # noqa: E402
+from fetex.preprocessing.time_series_prep import time_based_split  # noqa: E402
 
 
 def _default_logs():
@@ -45,7 +45,7 @@ def evaluate(logs=None, external=None, model_path=None, output_dir=None):
 
     weather = None
     if external:
-        from module4_dispatch.forecast_dispatcher import _external_to_weather
+        from fetex.dispatch.forecast_dispatcher import _external_to_weather
         weather = _external_to_weather(pd.read_csv(external, parse_dates=["time_bucket"]))
         if weather is None:
             raise ValueError("외부 관측에는 time_bucket, temperature 컬럼이 필요합니다.")
