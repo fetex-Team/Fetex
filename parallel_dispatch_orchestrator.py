@@ -25,11 +25,12 @@ CONFIG_B_DIR = os.path.join(MODULE1, "sumo_config_B")
 RESULT_A = os.path.join(ROOT, "_result_A.json")
 RESULT_B = os.path.join(ROOT, "_result_B.json")
 
-DISPATCH_SUMO_VALUE = {"hungarian": "traci"}  # build_env.py와 동일 규칙
+DISPATCH_SUMO_VALUE = {"hungarian": "traci", "custom_greedy": "traci", "custom_routeExtension": "traci"}  # build_env.py와 동일 규칙
 
 
 def _sumo_dispatch_value(algo: str, strategy: str = None) -> str:
-    return "traci" if (algo == "hungarian" or strategy == "rl_prepositioned") else algo
+    # build_env.py / multi_factor_compare.py와 같은 규칙: 전략과 무관하게 알고리즘만으로 결정
+    return "traci" if algo in DISPATCH_SUMO_VALUE else algo
 
 
 def build_shared_map(algo_a: str):

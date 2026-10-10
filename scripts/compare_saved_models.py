@@ -27,6 +27,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from config_loader import CFG                                        # noqa: E402
+from log_selection import selected_log_paths                         # noqa: E402
 from evaluate import calculate_metrics                               # noqa: E402
 from module2_preprocessing.pipeline import build_feature_table       # noqa: E402
 from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
@@ -36,7 +37,7 @@ TARGET = "y_h1"  # train.py의 단일 출력 모델과 같은 타겟
 
 def _load_test_set(log_arg=None):
     """train.py와 같은 파이프라인·같은 분할로 test 구간을 만든다."""
-    logs = [log_arg] if log_arg else [os.path.join(ROOT, "data", "sim_logs", "demand_log_*.csv")]
+    logs = [log_arg] if log_arg else selected_log_paths()
     feature_df = build_feature_table(logs)
     feature_cols = feature_df.attrs["feature_cols"]
     _train, _val, test_df, cuts = time_based_split(feature_df, CFG["test_size"])

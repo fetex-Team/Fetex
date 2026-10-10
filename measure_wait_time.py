@@ -41,14 +41,19 @@ import time
 import datetime
 import random
 import csv
+import re
 import hashlib
 import traci
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from taxi_manager import TaxiFleetManager
-from passenger_manager import PassengerTimeoutManager
+from passenger_manager import PassengerTimeoutManager, riding_map
 from passenger_spawn_manager import PassengerSpawnManager
+from config_loader import CFG
+from holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
+from module4_dispatch.custom_dispatchers import make_dispatcher
+from step_snapshot import fetch_idle_taxis
 from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer  # 추가
 from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 2] 호출 로그 기록 (feat3, 병합)
 
@@ -118,13 +123,11 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         sim_start_hour=meta.get("sim_start_hour", 0),
     )
 
-    # taxi_dispatch_algorithm이 "hungarian"이거나 taxi_strategy가 "rl_prepositioned"일 때
-    # 매칭은 항상 HungarianDispatcher가 담당함 (RL은 매칭 위에 재배치만 얹는 구조이므로)
+    # 배차 알고리즘은 GUI/런타임 설정을 그대로 따른다. RL은 선배치 정책일 뿐
+    # 매칭 알고리즘을 바꾸지 않는다.
     taxi_strategy = meta.get("taxi_strategy")
     dispatch_algo = meta.get("taxi_dispatch_algorithm")
-    hungarian_dispatcher = (
-        HungarianDispatcher() if dispatch_algo == "hungarian" or taxi_strategy == "rl_prepositioned" else None
-    )
+    hungarian_dispatcher = make_dispatcher(dispatch_algo)  # hungarian / custom_greedy / custom_routeExtension (변수명은 호환 위해 유지)
 
     # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
     # dispatcher를 넘겨주면, 이미 Hungarian이 예약을 배정한 승객의 강제제거를 한 스텝
@@ -134,8 +137,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         dispatcher=hungarian_dispatcher,
     )
 
-    # taxi_strategy가 rl_prepositioned일 때만 RL 재배치 매니저를 추가로 켬. 학습된 모델 파일이 없으면
-    # 경고만 찍고 None으로 둬서(=재배치 없이 hungarian만 도는 상태) 워커가 조용히 죽지 않게 함
+    # taxi_strategy가 rl_prepositioned일 때만 RL 재배치 매니저를 추가로 켠다.
+    # 모델이 없으면 재배치 없이, 사용자가 고른 매칭 알고리즘만 그대로 실행한다.
     rl_maintainer = None
     if taxi_strategy == "rl_prepositioned":
         if os.path.exists(RL_MODEL_PATH):
@@ -143,7 +146,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             print(f"[안내] RL 재배치 정책을 불러왔습니다: {RL_MODEL_PATH}")
             print(f"[안내] 수요예측은 이걸 씁니다: {CATEGORY_MODEL_PATH}")
         else:
-            print(f"[경고] {RL_MODEL_PATH}가 없어 RL 재배치 없이 Hungarian 매칭만 수행합니다. "
+            print(f"[경고] {RL_MODEL_PATH}가 없어 RL 재배치 없이 '{dispatch_algo}' 매칭만 수행합니다. "
                   f"먼저 module4_dispatch/rl_train.py를 실행하세요.")
 
 
@@ -159,14 +162,46 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         except Exception:
             sim_end_hour = None
 
+    # [공휴일] 실행 날짜를 스폰 매니저 생성 *전에* 정함. 시드와 무관한 난수(rng)를 써서
+    # passenger_seed가 고정이어도 날짜가 매번 바뀜 (예전엔 random.seed 직후 randint라 항상 같은 날짜였음).
+    # run_date_mode: "sim_date"(평가·A/B, 날짜 고정) / "alternate"(평일·공휴일 번갈아) / "random"
+    run_date = pick_run_date(CFG, index=count_existing_logs())
+    # A/B 비교의 '평일/공휴일' 체크(runtime_meta.holiday_mode)가 있으면 config.json 값보다 우선.
+    # 강제 모드인데 뽑힌 날짜가 그 유형과 다르면, 로그 파일명 날짜와 실제 판정이 어긋나지 않게 맞는 날짜로 다시 뽑음.
+    holiday_mode = meta.get("holiday_mode") or CFG.get("holiday_mode", "auto")
+    _fixed = meta.get("run_date")  # A/B 오케스트레이터가 비교 1회당 1개로 정해 내려준 날짜
+    if _fixed:
+        # [A/B 날짜 고정] 워커가 날짜를 다시 뽑지 않고 오케스트레이터가 정한 날짜를 그대로 사용
+        run_date = datetime.date.fromisoformat(str(_fixed))
+        if holiday_mode == "today":
+            holiday_mode = "auto"
+        elif holiday_mode in ("weekday", "holiday") and is_holiday_date(run_date) != (holiday_mode == "holiday"):
+            print(f"[경고] 고정 날짜 {run_date}가 '{holiday_mode}' 설정과 다른 종류입니다. 그래도 고정 날짜를 유지합니다.")
+        print(f"[안내] A/B 고정 날짜 사용: {run_date}")
+    else:
+        if holiday_mode == "today":
+            run_date = datetime.date.today()
+            holiday_mode = "auto"
+            print(f"[안내] 공휴일 미체크 -> 오늘({run_date})은 {'공휴일/주말' if is_holiday_date(run_date) else '평일'}로 판정해 실행합니다.")
+        if holiday_mode in ("weekday", "holiday") and is_holiday_date(run_date) != (holiday_mode == "holiday"):
+            run_date = pick_run_date(CFG, index=1 if holiday_mode == "holiday" else 0, mode="alternate")
+    # RL 재배치가 쓰는 수요예측 모델에도 이번 실행 날짜를 알려줌 (요일·공휴일 피처)
+    if rl_maintainer is not None and hasattr(rl_maintainer, "set_run_date"):
+        rl_maintainer.set_run_date(run_date)
+    print(f"[안내] 이번 실행 날짜: {run_date} ({'공휴일/주말' if is_holiday_date(run_date) else '평일'}, "
+          f"run_date_mode={CFG.get('run_date_mode', 'alternate')})")
+
     # 학교/회사/음식점 승객을 실시간으로 생성·소멸(흡수→재스폰)시키는 매니저
     spawn_manager = PassengerSpawnManager(
         zones=meta.get("zones", {}),
+        department_edges=meta.get("department_store_edges", []),
         sim_start_hour=sim_start_hour,
         sim_end_hour=sim_end_hour,
         school_pop_base=meta.get("school_pop_base", 400),
         company_pop_base=meta.get("company_pop_base", 100),
         seed=meta.get("passenger_seed"),
+        sim_date=run_date.isoformat(),
+        holiday_mode=holiday_mode,
     )
 
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
@@ -177,8 +212,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
     # ---- 학습용 수요 로그 준비 ----
     demand_log_rows = []  # (pickup_datetime_iso, latitude, longitude) 누적 버퍼
-    # 실행마다 날짜를 과거 90일 내에서 랜덤 배정 -> 여러 번 돌릴수록 요일 다양성 확보
-    run_date = datetime.date.today() - datetime.timedelta(days=random.randint(0, 90))
+    # run_date는 위(스폰 매니저 생성 전)에서 이미 정했음 -> 여러 번 돌릴수록 평일/공휴일 다양성 확보
 
     # [Module 2] train.py(pipeline.py 경유)가 읽는 data/sim_logs/demand_log_*.csv 기록기.
     # 위 demand_log_rows(구 data/raw/simulation_demand_log.csv)와는 별개 경로 — train.py는
@@ -195,30 +229,44 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     traci.start([sumo_binary, "-c", _sumo_cfg])
 
     step = 0
-    empty_count = 0
+    _wall0 = time.time()      # [진단] 실제 경과 시간 측정용
+    _wall_prev = _wall0
     try:
         while step < max_steps:
             traci.simulationStep()
             now = traci.simulation.getTime()
-            manager.maintain(now)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
-            pax_manager.maintain(now)  # 대기시간 초과 승객 소멸 처리
+            # [성능] 맵 전체 상태 조회는 스텝당 딱 한 번. 하위 매니저/기록기는 이 값을 재사용한다.
+            current_pids = set(traci.person.getIDList())
+            current_vids = set(traci.vehicle.getIDList())
+            idle_taxis = fetch_idle_taxis() if (hungarian_dispatcher or recorder is not None) else None  # RL 단독이면 RL이 1분마다 직접 조회
+            manager.maintain(now, current_vids=current_vids)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
+            pax_manager.maintain(now, current_pids=current_pids)  # 대기시간 초과 승객 소멸 처리
             if hungarian_dispatcher:
-                hungarian_dispatcher.maintain(now)  # 헝가리안 실시간 배차 (taxi_dispatch_algorithm="hungarian"일 때만)
+                dispatched_now = hungarian_dispatcher.maintain(now, idle_taxis=idle_taxis)  # 헝가리안 실시간 배차 (taxi_dispatch_algorithm="hungarian"일 때만)
+                if dispatched_now:  # 방금 배정된 택시는 RL 재배치 후보/기록기의 idle 목록에서 제외
+                    _busy = set(dispatched_now)
+                    idle_taxis = [v for v in idle_taxis if v not in _busy]
             if rl_maintainer:
-                rl_maintainer.maintain(now, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour)  # 추가
+                rl_maintainer.maintain(now, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour,
+                                       current_pids=current_pids, idle_taxis=idle_taxis)  # 추가
 
-            spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids)  # 학교/회사/음식점 실시간 생성·소멸
-            log_recorder.step(now, timeout_removed_pids=pax_manager.removed_pids)  # [Module 2] 호출 로그 기록
+            spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids, current_pids=current_pids)  # 학교/회사/음식점 실시간 생성·소멸
+            log_recorder.step(now, timeout_removed_pids=pax_manager.removed_pids, current_pids=current_pids)  # [Module 2] 호출 로그 기록
 
             # 진행 표시: 시뮬레이션 10분마다 한 줄 (suppress_sumo_warnings=true면 이것만 보임)
             if int(now) % 600 == 0 and now > 0:
                 _hh = int(sim_start_hour + now / 3600); _mm = int((now % 3600) // 60)
+                _w = time.time()
                 print(f"[진행] 시뮬 {_hh:02d}:{_mm:02d} ({now/sim_end_seconds*100:.0f}%) | "
                       f"호출 누적 {len(log_recorder.records)}건 | 탑승 {len(pickup_time)}명 | "
-                      f"타임아웃 {len(pax_manager.removed_pids)}명 | 택시 {len(traci.vehicle.getIDList())}대", flush=True)
+                      f"타임아웃 {len(pax_manager.removed_pids)}명 | 택시 {sum(1 for v in current_vids if v.startswith('taxi'))}대 | "
+                      f"[진단] 살아있는 승객 {len(current_pids)}명 · 제거 보류 {len(pax_manager._reserved_now)}명 | "
+                      f"실시간 +{_w - _wall_prev:.0f}초 (누적 {(_w - _wall0)/60:.1f}분)", flush=True)
+                _wall_prev = _w
 
             # 이번 스텝에 새로 등장한 person 기록
-            for pid in traci.person.getIDList():
+            _riding = riding_map(now, current_vids)  # {탑승 중 승객: 택시} - 택시 대수만큼만 TraCI 호출 (승객별 getVehicle 대체)
+            for pid in current_pids:
                 if pid not in seen_persons:
                     seen_persons.add(pid)
                     depart_time[pid] = now
@@ -236,7 +284,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                         pass
 
                 if pid not in in_taxi:
-                    vid = traci.person.getVehicle(pid) if pid in traci.person.getIDList() else ""
+                    vid = _riding.get(pid, "")
                     if vid:  # 빈 문자열이 아니면 = 어떤 택시에 탑승함
                         pickup_time[pid] = now
                         in_taxi.add(pid)
@@ -245,7 +293,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             # 제거함) "정상 도착"으로 기록. 타임아웃으로 소멸한 사람과 구분하기 위함
             # (recorder.capture()의 arrived 인자 및 최종 검증용, 없어도 측정 결과엔 영향 없음)
             if recorder is not None:
-                active_now = set(traci.person.getIDList())
+                active_now = current_pids
                 for pid in in_taxi:
                     if pid not in active_now and pid not in arrived_pids and pid not in pax_manager.removed_pids:
                         arrived_pids.add(pid)
@@ -254,6 +302,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                 recorder.capture(
                     now, depart_time, pickup_time, arrived_pids,
                     pax_manager.removed_pids, set(), None, teleport_count,
+                    vehicle_ids=current_vids, idle_taxis=idle_taxis, person_ids=current_pids,
                 )
 
             # 설정한 시간대(sim_end_hour)에 도달하면 승객이 남아있어도 강제 종료.
@@ -261,13 +310,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             if sim_end_seconds is not None and now >= sim_end_seconds:
                 break
 
-            active_persons = traci.person.getIDList()
-            if step > 10 and len(active_persons) == 0:
-                empty_count += 1
-                if empty_count >= 5:
-                    break
-            else:
-                empty_count = 0
+            # [조기 종료 제거] 승객이 잠깐 0명이어도 중간에 끝내지 않는다.
+            # 시뮬은 sim_end_hour(sim_end_seconds)에 도달할 때까지 끝까지 돈다.
             step += 1
     except traci.exceptions.FatalTraCIError as e:
         # SUMO 프로세스 자체가 죽어서 연결이 끊긴 경우(예: 이미 예약된 승객을
@@ -285,21 +329,28 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         except Exception:
             pass
 
+    max_penalty_sec = meta.get("passenger_wait_timeout", 500)
+    # 규칙: 차에 못 탄 채 wait_timeout이 지나면 소멸(확정). 탑승한 사람은 소멸 기한이 사라진다.
+    # 소멸이 확정된 승객은 예약 때문에 물리 제거가 늦어져 나중에 태워지더라도 소멸로만 세고,
+    # 대기시간 표본(waits)에서는 뺀다 (이중 집계 방지).
+    timeout_pids = pax_manager.removed_pids & set(depart_time)
     waits = []
     for pid, dtime in depart_time.items():
-        if pid in pickup_time:
+        if pid in pickup_time and pid not in timeout_pids:
             waits.append(pickup_time[pid] - dtime)
 
     n_total = len(depart_time)
     n_measured = len(waits)
-    n_timeout_removed = len(pax_manager.removed_pids)  # 대기시간 초과로 소멸 처리된 승객
-    n_unpicked = n_total - n_measured  # 끝까지 못 탄 승객
+    n_unpicked = n_total - n_measured  # 끝까지 못 탄 승객 (소멸 확정 승객 포함)
+    n_timeout_removed = len(timeout_pids)
 
-    # [수정] 타임아웃된 승객에게 최대 대기시간 페널티를 부여하여 왜곡 방지
-    max_penalty_sec = meta.get("passenger_wait_timeout", 500)
+    # 타임아웃된 승객에게 최대 대기시간 페널티를 부여하여 왜곡 방지 (제때 탄 승객 + 페널티)
     adjusted_waits = list(waits)
     for _ in range(n_timeout_removed):
         adjusted_waits.append(max_penalty_sec)
+    overlap = timeout_pids & set(pickup_time)
+    if overlap:
+        print(f"[진단] 소멸 확정 후 뒤늦게 태워진 승객 {len(overlap)}명 (소멸로만 집계, 대기시간 표본에서 제외)")
 
     # ---- 학습용 수요 로그 저장 (for 루프 밖, 시뮬레이션 1회당 한 번만) ----
     if demand_log_rows:
@@ -313,7 +364,14 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         print(f"[안내] 학습용 수요 로그 {len(demand_log_rows)}건을 {DEMAND_LOG_PATH}에 남겼습니다.")
 
     if log_recorder.records:
-        saved_path = log_recorder.save()
+        # 파일명: demand_log_{구역}{전략}_{알고리즘}[공휴일]{yymmdd}.csv  (예: demand_log_강남역patrol_hungarian공휴일261003.csv)
+        # demand_log_ 접두어는 train.py·pipeline.py의 demand_log_*.csv 글롭이 읽도록 유지.
+        _region = re.sub(r'[\\/:*?"<>|\s]+', "", str(CFG.get("region", "")))
+        _strategy = meta.get("taxi_strategy") or "unknown"
+        _algo = meta.get("taxi_dispatch_algorithm") or "greedy"
+        _dtag = "공휴일" if getattr(spawn_manager, "is_holiday", False) else ""  # 공휴일로 돌린 로그는 이름에 표시
+        log_name = f"demand_log_{_region}{_strategy}_{_algo}{_dtag}{run_date.strftime('%y%m%d')}.csv"
+        saved_path = log_recorder.save(filename=log_name)
         print(f"[안내] Module 2 호출 로그 {len(log_recorder.records)}건을 {saved_path}에 저장했습니다 "
               f"(train.py가 읽는 실제 로그입니다).")
 
@@ -329,6 +387,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         "demand_fingerprint": hashlib.sha256(
             ",".join(f"{pid}:{t:.1f}" for pid, t in sorted(depart_time.items())).encode()
         ).hexdigest()[:16],
+        "run_date": run_date.isoformat(),
+        "is_holiday": bool(getattr(spawn_manager, "is_holiday", is_holiday_date(run_date))),
         "n_total_passengers": n_total,
         "n_measured": n_measured,
         "n_unpicked": n_unpicked,

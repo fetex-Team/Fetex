@@ -51,11 +51,12 @@ class ReplayRecorder:
         self.ids, self.entities, self.frames, self.forecasts = {}, [], [], []
         self.last_forecast = -1
 
-    def capture(self, now, requested, pickup, arrived, removed, failed, forecast, teleports):
-        idle = set(traci.vehicle.getTaxiFleet(0))
+    def capture(self, now, requested, pickup, arrived, removed, failed, forecast, teleports,
+                vehicle_ids=None, idle_taxis=None, person_ids=None):
+        idle = set(idle_taxis) if idle_taxis is not None else set(traci.vehicle.getTaxiFleet(0))
         taxis = set(traci.vehicle.getTaxiFleet(-1))
         vehicles = []
-        for vid in sorted(traci.vehicle.getIDList()):
+        for vid in sorted(vehicle_ids if vehicle_ids is not None else traci.vehicle.getIDList()):
             if vid not in self.ids:
                 kind = 'taxi' if vid in taxis else traci.vehicle.getTypeID(vid)
                 self.ids[vid] = len(self.entities)
@@ -75,7 +76,7 @@ class ReplayRecorder:
                              'a': round(traci.vehicle.getAngle(vid), 2), 's': state})
         pending = set(requested) - set(pickup) - set(removed) - failed
         people = []
-        for pid in sorted(pending & set(traci.person.getIDList())):
+        for pid in sorted(pending & (set(person_ids) if person_ids is not None else set(traci.person.getIDList()))):
             x, y = traci.person.getPosition(pid)
             people.append({'x': round(x - self.map['offsetX'], 3), 'z': round(y - self.map['offsetY'], 3)})
         if forecast and len(forecast.records) != self.last_forecast:

@@ -229,6 +229,58 @@ def get_boundary_edges(net, edges: list, margin_ratio: float = 0.08) -> list:
     return boundary_edges
 
 
+# ---------- 백화점/쇼핑몰 (스폰 전용 후보 edge 목록) ----------
+# CATEGORIES/zones에는 넣지 않는다 -> rl_env의 관측/행동 크기가 그대로라 RL 재학습이 필요 없고,
+# _match_category의 company(building=commercial) 선점 문제도 피함. runtime_meta.json의
+# "department_store_edges"로만 저장되어 passenger_spawn_manager가 읽는다.
+DEPARTMENT_TAG_RULES = [("shop", "department_store"), ("shop", "mall")]
+
+
+def _is_department(tags: dict) -> bool:
+    return any(tags.get(k) == v for k, v in DEPARTMENT_TAG_RULES)
+
+
+def get_department_store_edges(cfg, net, raw_osm_path: str = None, search_radius: float = 80.0) -> list:
+    """OSM에서 shop=department_store / shop=mall POI를 찾아 가장 가까운 통행 가능 edge 목록을 반환.
+    실제 지도가 아니거나 해당 POI가 없으면 빈 리스트(=백화점 승객 생성 안 함, 임의 배정 안 함)."""
+    if not (cfg.get("use_real_map") and raw_osm_path):
+        return []
+    try:
+        root = ET.parse(raw_osm_path).getroot()
+        node_coords = {}
+        for node in root.findall("node"):
+            nid, lat, lon = node.attrib.get("id"), node.attrib.get("lat"), node.attrib.get("lon")
+            if nid and lat and lon:
+                node_coords[nid] = (float(lat), float(lon))
+        coords = []
+        for node in root.findall("node"):
+            tags = {t.attrib["k"]: t.attrib["v"] for t in node.findall("tag")}
+            if tags and _is_department(tags) and node.attrib.get("id") in node_coords:
+                coords.append(node_coords[node.attrib["id"]])
+        for way in root.findall("way"):
+            tags = {t.attrib["k"]: t.attrib["v"] for t in way.findall("tag")}
+            if not tags or not _is_department(tags):
+                continue
+            pts = [node_coords[n.attrib["ref"]] for n in way.findall("nd") if n.attrib["ref"] in node_coords]
+            if pts:
+                coords.append((sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)))
+        found = set()
+        for lat, lon in coords:
+            try:
+                x, y = net.convertLonLat2XY(lon, lat)
+            except Exception:
+                continue
+            nearby = net.getNeighboringEdges(x, y, r=search_radius)
+            for edge, dist in sorted(nearby, key=lambda pair: pair[1]):
+                if edge.getFunction() != "internal" and edge.allows("passenger"):
+                    found.add(edge.getID())
+                    break
+        return sorted(found)
+    except Exception as e:
+        print(f"[안내] 백화점 POI 파싱 실패({type(e).__name__}: {e}) — 백화점 승객 없이 진행합니다.")
+        return []
+
+
 def get_zones(cfg, net, raw_osm_path: str = None) -> dict:
     """
     build_env.py에서 부르는 진입점.

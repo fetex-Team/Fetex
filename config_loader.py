@@ -13,7 +13,7 @@ DEFAULT_CONFIG = {
     "num_normal_cars": 20, "num_taxis": 20, "num_auto_cars": 1,
     "num_obstacles": 2, "num_passengers": 1000,
     "region": "강남역", "use_real_map": True,
-    "sim_start_hour": 8, "sim_end_hour": 10,
+    "sim_start_hour": 9, "sim_end_hour": 23,
     "passenger_wait_timeout": 500,
     "passenger_seed": None,
     # build_env.py가 CFG['passenger_mode']로 직접 인덱싱하므로(.get() 아님) 기본값 필수 —
@@ -124,9 +124,30 @@ DEFAULT_CONFIG = {
     "weather_strong_wind_threshold_kmh": 50.4,
     "weather_strong_wind_taxi_bonus": 0.0,
     "weather_typhoon_wind_threshold_kmh": 61.2,
-    "weather_typhoon_taxi_bonus": 0.0
+    "weather_typhoon_taxi_bonus": 0.0,
 
-
+    # ---- 공휴일(주말 포함) 반영 ----
+    # holiday_mode: "auto"=sim_date(실행 날짜)로 평일/공휴일 자동 판정, "weekday"=무조건 평일, "holiday"=무조건 공휴일
+    "holiday_mode": "auto",
+    # run_date_mode: 이번 실행의 날짜를 정하는 방식
+    #   "sim_date"=위 sim_date 고정(평가·A/B용, 날짜가 같아야 비교가 공정함)
+    #   "alternate"=과거 90일 중 평일/공휴일을 번갈아 뽑음(학습 로그 생성용)
+    #   "random"=과거 90일 중 랜덤
+    "run_date_mode": "alternate",
+    # 공휴일일 때 택시 선택 확률에 곱하는 배율 (평일은 항상 1.0). 날씨 가산 후에 곱함.
+    #   school: 등교 / company: 출근 / restaurant: 음식점 방문 / general: 기본 수요(num_passengers 가챠)
+    #   lunch, evening: 점심 이동, 퇴근은 "아침에 회사가 흡수한 인원"에서 파생되므로 1.0 권장(이중 감소 방지)
+    "holiday_multipliers": {
+        "school": 0.0, "company": 0.25, "lunch": 1.0,
+        "evening": 1.0, "restaurant": 1.5, "general": 1.3, "department": 2.0,
+    },
+    # ---- 백화점/쇼핑몰 방문 승객 (OSM의 shop=department_store/mall, 버스정류장·지하철입구 -> 백화점 -> 체류 후 주거) ----
+    # 지도에서 백화점을 못 찾으면 자동으로 꺼짐. 평일 기준 값이며 공휴일엔 holiday_multipliers["department"]가 곱해짐.
+    "department_enabled": True,
+    "department_pop_base": 40,                 # 백화점 한 곳당 인구
+    "department_window_start": 11.0, "department_window_end": 21.0,
+    "department_taxi_probability": 0.10,
+    "department_stay_sec": 5400.0,             # 체류 시간(초) 후 주거로 귀가
 }
 
 REGION_PRESETS = {

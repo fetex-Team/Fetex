@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split, GridSearchCV
 
 from config_loader import CFG
+from log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 
 # 하위 모듈 불러오기
 from module3_prediction.models import CNNLSTMModel, build_xgboost_model
@@ -69,13 +70,14 @@ def prepare_real_sequence_dataset(max_lag=None, log_path=None):
     logs = [log_path] if log_path else [DEMAND_LOG_GLOB]
 
     if not log_path:
-        found_paths = sorted(glob.glob(DEMAND_LOG_GLOB))
+        found_paths = selected_log_paths(DEMAND_LOG_DIR)
         if not found_paths:
             raise FileNotFoundError(
                 f"{DEMAND_LOG_DIR}에 수요 로그가 없습니다. "
                 f"먼저 `python measure_wait_time.py`(또는 A/B·멀티팩터 비교)를 한 번 이상 돌려 "
                 f"학습용 수요 로그를 쌓아주세요."
             )
+        logs = found_paths
         file_list = ", ".join(os.path.basename(p) for p in found_paths)
         print(f"[안내] 로그 파일 {len(found_paths)}개({file_list})를 학습 데이터로 사용합니다.")
 

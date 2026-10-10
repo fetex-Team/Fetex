@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _args.config_path:
     os.environ["MOBILITY_CONFIG"] = os.path.abspath(_args.config_path)
 from config_loader import CFG, ROOT, _apply_region_coords
-from poi_extractor import get_zones, get_boundary_edges, CATEGORIES
+from poi_extractor import get_zones, get_boundary_edges, get_department_store_edges, CATEGORIES
 from largest_component_filter import filter_to_largest_scc
 DEPART_JITTER_SEC = float(CFG.get("depart_jitter_sec", 300.0))
 
@@ -160,6 +160,10 @@ def create_network_and_routes():
     for category in CATEGORIES:
         print(f"  - {category}: {len(zones.get(category, []))}개 도로 구역 배정")
 
+    # [백화점] 카테고리를 늘리지 않고 스폰 전용 후보 edge 목록만 따로 만든다 (runtime_meta.json에 저장)
+    department_store_edges = [e for e in get_department_store_edges(CFG, net, raw_osm_path=raw_osm_path) if e in allowed]
+    print(f"  - department_store(스폰 전용): {len(department_store_edges)}개 도로 구역 배정")
+
     boundary_edges = get_boundary_edges(net, edges)
     print(f"  - 택시 스폰 후보(길 끝): {len(boundary_edges)}개 도로")
 
@@ -205,9 +209,11 @@ def create_network_and_routes():
 
     proc_tag = ET.SubElement(cfg, "processing")
     _dispatch_algo = str(CFG.get("taxi_dispatch_algorithm", "greedy"))
-    if _dispatch_algo not in ("greedy", "routeExtension", "hungarian"):
-        raise ValueError("배차 알고리즘은 greedy/routeExtension/hungarian 중에서 선택하세요.")
-    _sumo_dispatch_value = "traci" if (_dispatch_algo == "hungarian" or taxi_strategy == "rl_prepositioned") else _dispatch_algo
+    if _dispatch_algo not in ("greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"):
+        raise ValueError("배차 알고리즘은 greedy/routeExtension/hungarian/custom_greedy/custom_routeExtension 중에서 선택하세요.")
+    # 택시 전략(patrol/prepositioned/rl_prepositioned)과 배차 알고리즘은 서로 독립 -> 어떤 조합이든 가능.
+    # SUMO 쪽 값은 알고리즘만으로 결정한다 (hungarian만 파이썬이 직접 배정하므로 "traci").
+    _sumo_dispatch_value = "traci" if _dispatch_algo in ("hungarian", "custom_greedy", "custom_routeExtension") else _dispatch_algo
     ET.SubElement(proc_tag, "device.taxi.dispatch-algorithm", value=_sumo_dispatch_value)
     ET.SubElement(proc_tag, "device.taxi.idle-algorithm", value=str(CFG.get("taxi_idle_algorithm", "randomCircling")))
     ET.SubElement(proc_tag, "ignore-route-errors", value="true")
@@ -248,6 +254,7 @@ def create_network_and_routes():
         "sim_end_hour": sim_end_hour,
         "passenger_wait_timeout": CFG.get("passenger_wait_timeout", 900),
         "zones": zones,
+        "department_store_edges": department_store_edges,
         "hotspot_edges": [e for cat in ("company", "school", "subway_entrance", "bus_stop", "restaurant")
                            for e in zones.get(cat, [])],
         "school_pop_base": CFG.get("school_pop_base", 400),

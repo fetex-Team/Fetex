@@ -1,0 +1,22 @@
+# 캐시
+__pycache__/
+*.pyc
+
+# 백업/체크포인트 (제일 큰 후보)
+saved_models_backups/
+demand_v2_backups/
+rl_model_backups/
+module4_dispatch/checkpoints/
+data/sim_logs/backup/
+_backup_custom_dispatch/
+logs/
+
+# 재생성되는 SUMO 빌드 산출물 (build_env.py가 다시 만듦)
+module1_simulation/sumo_config*/
+
+# 압축본/임시 결과
+*.zip
+_result_combo*.json
+
+# 최종 RL 모델 하나만 예외로 포함
+!module4_dispatch/rl_reposition_model.zip

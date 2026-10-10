@@ -27,6 +27,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from config_loader import CFG
+from log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 from module2_preprocessing.category_indexing import CategoryIndexer
 from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
 from module2_preprocessing.external_data_merge import merge_external_data  # train.py와 동일하게 재사용
@@ -49,7 +50,7 @@ CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entra
 
 def _load_all_demand_logs():
     """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제)"""
-    paths = sorted(glob.glob(DEMAND_LOG_GLOB))
+    paths = selected_log_paths(DEMAND_LOG_DIR)
     if not paths:
         return None
     frames = [pd.read_csv(p, parse_dates=["pickup_datetime"]) for p in paths]

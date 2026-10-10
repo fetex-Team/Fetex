@@ -18,6 +18,7 @@ import os
 import sys
 import json
 import time
+import datetime
 import shutil
 import subprocess
 import xml.etree.ElementTree as ET
@@ -30,13 +31,47 @@ CONFIG_PATH = os.path.join(ROOT, "config.json")
 
 # build_env.py와 동일한 규칙: "hungarian"은 SUMO 내장 알고리즘이 아니라
 # traci 콜백으로 직접 배정하는 모드이므로 SUMO 쪽엔 "traci"로 알려줘야 함
-DISPATCH_SUMO_VALUE = {"hungarian": "traci"}
+DISPATCH_SUMO_VALUE = {"hungarian": "traci", "custom_greedy": "traci", "custom_routeExtension": "traci"}
 def _sumo_dispatch_value(algo: str, strategy: str = None) -> str:
-    return "traci" if (algo == "hungarian" or strategy == "rl_prepositioned") else algo
+    # RL은 선배치만 담당한다. 매칭 방식은 사용자가 고른 알고리즘을 보존한다.
+    return "traci" if algo in DISPATCH_SUMO_VALUE else algo
 
 
 def _combo_label(combo: dict) -> str:
     return "_".join(f"{k}={v}" for k, v in combo.items())
+
+
+def decide_run_dates(combos: list) -> list:
+    """비교 1회당 날짜를 '한 번만' 정해서 모든 조합에 똑같이 적용 (병렬 워커가 각자 랜덤으로 뽑던 버그 수정).
+
+    - holiday_mode == "today"        -> 오늘 날짜
+    - holiday_mode == weekday/holiday -> 그 종류에 맞는 날짜 1개 (같은 모드끼리는 같은 날짜)
+    - holiday_mode 없음/auto          -> config.json 규칙(run_date_mode)으로 1개만 뽑아 전 조합 공유
+    반환: 조합 순서대로의 datetime.date 리스트
+    """
+    from holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
+    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+        cfg = json.load(f)
+
+    cache = {}
+    dates = []
+    for combo in combos:
+        mode = combo.get("holiday_mode") or cfg.get("holiday_mode", "auto")
+        if mode not in cache:
+            if mode == "today":
+                d = datetime.date.today()
+            elif mode in ("weekday", "holiday"):
+                d = pick_run_date(cfg, index=1 if mode == "holiday" else 0, mode="alternate")
+                if is_holiday_date(d) != (mode == "holiday"):  # 안전장치: 종류가 안 맞으면 다시 몇 번 시도
+                    for k in range(2, 30):
+                        d = pick_run_date(cfg, index=(1 if mode == "holiday" else 0) + 2 * k, mode="alternate")
+                        if is_holiday_date(d) == (mode == "holiday"):
+                            break
+            else:
+                d = pick_run_date(cfg, index=count_existing_logs())
+            cache[mode] = d
+        dates.append(cache[mode])
+    return dates
 
 
 def build_shared_map(base_combo: dict):
@@ -44,7 +79,8 @@ def build_shared_map(base_combo: dict):
     print(f"[오케스트레이터] 공용 맵 생성 중... (기준 조합: {base_combo})")
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         cfg = json.load(f)
-    cfg.update(base_combo)
+    # holiday_mode(평일/공휴일 비교)는 이번 비교에만 쓰는 값이라 config.json에는 남기지 않음
+    cfg.update({k: v for k, v in base_combo.items() if k != "holiday_mode"})
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False, indent=2)
 
@@ -55,7 +91,7 @@ def build_shared_map(base_combo: dict):
 
 import time
 
-def patch_combo(idx, combo):
+def patch_combo(idx, combo, run_date=None):
     base_dir = os.path.join(MODULE1, "sumo_config_combo0")
     dst_dir = base_dir if idx == 0 else os.path.join(MODULE1, f"sumo_config_combo{idx}")
 
@@ -76,6 +112,9 @@ def patch_combo(idx, combo):
     with open(meta_path, "r", encoding="utf-8") as f:
         meta = json.load(f)
     meta.update(combo)
+    if run_date is not None:
+        # measure_wait_time.py가 이 값이 있으면 날짜를 새로 뽑지 않고 그대로 사용
+        meta["run_date"] = run_date.isoformat() if hasattr(run_date, "isoformat") else str(run_date)
     with open(meta_path, "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
@@ -140,14 +179,77 @@ def wait_for_results(result_paths: list):
         time.sleep(2)
 
 
+def _day_type(iso: str, is_holiday=None) -> str:
+    if is_holiday is None:
+        try:
+            from holiday_utils import is_holiday_date
+            is_holiday = is_holiday_date(datetime.date.fromisoformat(iso))
+        except Exception:
+            return ""
+    return "공휴일/주말" if is_holiday else "평일"
+
+
+def save_ranking_text(ranked, results, labels_total, combos=None):
+    """최종 순위를 ab_results/ab_ranking_<시각>.txt 로 저장하고 경로를 반환."""
+    out_dir = os.path.join(ROOT, "ab_results")
+    os.makedirs(out_dir, exist_ok=True)
+    now = datetime.datetime.now()
+    path = os.path.join(out_dir, f"ab_ranking_{now.strftime('%Y%m%d_%H%M%S')}.txt")
+
+    lines = []
+    lines.append("=" * 64)
+    lines.append(" A/B 비교 최종 순위")
+    lines.append("=" * 64)
+    lines.append(f" 실행 시각 : {now.strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append(f" 비교 조합 : {labels_total}개 (순위 산정 {len(ranked)}개)")
+    dates = sorted({(r.get("run_date"), r.get("is_holiday")) for r in results.values() if r.get("run_date")})
+    if dates:
+        lines.append(" 시뮬 날짜 : " + ", ".join(f"{d} ({_day_type(d, h)})" for d, h in dates))
+        if len(dates) > 1:
+            lines.append("   ※ 조합마다 날짜가 다릅니다 - 승패가 날짜 차이 때문일 수 있습니다.")
+    lines.append(" 기준 지표 : 평균 대기시간(타임아웃 페널티 포함, 낮을수록 좋음)")
+    lines.append("-" * 64)
+
+    best_v = ranked[0][0]
+    for rank, (v, k) in enumerate(ranked, 1):
+        r = results[k]
+        total = r.get("n_total_passengers") or 0
+        to = r.get("n_timeout_removed") or 0
+        rate = f"{to / total * 100:.1f}%" if total else "-"
+        diff = "" if rank == 1 else f" (1위 대비 +{(v - best_v) / best_v * 100:.1f}%)" if best_v else ""
+        lines.append(f"{rank}위  {k}")
+        lines.append(f"    평균 대기(페널티 포함) : {v}초 (약 {v / 60:.1f}분){' ← 최적' if rank == 1 else diff}")
+        if r.get("avg_wait_sec") is not None:
+            lines.append(f"    평균 대기(탑승자만)    : {r['avg_wait_sec']}초")
+        lines.append(f"    타임아웃 소멸          : {to}명 / 전체 {total}명 ({rate})")
+        lines.append(f"    실행 날짜              : {r.get('run_date', '-')}")
+        lines.append(f"    수요 지문              : {r.get('demand_fingerprint', '-')}")
+        lines.append("")
+
+    fps = {r.get("demand_fingerprint") for r in results.values() if r.get("demand_fingerprint")}
+    if len(fps) > 1:
+        lines.append("※ 조합별 수요 지문이 서로 다릅니다. 같은 날짜여도 승객 수요(점심/저녁 재스폰 포함)가")
+        lines.append("  완전히 같지는 않아서, 작은 차이(수 %)는 우연일 수 있습니다. 반복 실행으로 확인하세요.")
+    unmeasured = [k for k, r in results.items() if r.get("true_avg_wait_sec_with_penalty") is None]
+    if unmeasured:
+        lines.append("※ 측정 실패(탑승자 없음)로 순위에서 제외: " + ", ".join(unmeasured))
+    lines.append("=" * 64)
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    return path
+
+
 def compare(result_paths: list):
     from measure_wait_time import print_result
 
     metrics = {}
+    results = {}
     for label, path in result_paths:
         with open(os.path.join(ROOT, path), "r", encoding="utf-8") as f:
             result = json.load(f)
         print_result(label, result)
+        results[label] = result
         metrics[label] = result.get("true_avg_wait_sec_with_penalty")
 
     print(f"\n===== [최종 비교 - 병렬 실행, 전체 {len(result_paths)}개 조합] =====")
@@ -162,6 +264,12 @@ def compare(result_paths: list):
         marker = " ← 최적" if rank == 1 else f" (+{diff_pct:.1f}%)"
         print(f" {rank}위: {k} — 평균 대기(타임아웃 포함) {v}초{marker}")
 
+    try:
+        saved = save_ranking_text(ranked, results, len(result_paths))
+        print(f"\n[오케스트레이터] 최종 순위를 텍스트로 저장했습니다: {saved}")
+    except Exception as e:
+        print(f"\n[경고] 순위 텍스트 저장 실패: {e}")
+
 
 def main():
     if len(sys.argv) < 2:
@@ -173,9 +281,12 @@ def main():
         print("비교할 조합이 없습니다.")
         sys.exit(1)
 
+    run_dates = decide_run_dates(combos)
+    print("[오케스트레이터] 이번 비교의 시뮬 날짜: " + ", ".join(sorted({d.isoformat() for d in run_dates})))
+
     build_shared_map(combos[0])
     for idx, combo in enumerate(combos):
-        patch_combo(idx, combo)
+        patch_combo(idx, combo, run_dates[idx])
 
     result_paths = launch_workers(combos)
     wait_for_results(result_paths)

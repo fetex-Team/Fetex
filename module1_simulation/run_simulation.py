@@ -11,7 +11,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
+from config_loader import CFG
+from holiday_utils import pick_run_date
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
+from module4_dispatch.custom_dispatchers import make_dispatcher
+from step_snapshot import fetch_idle_taxis
+from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer
 
 def run_sumo_gui():
     if 'SUMO_HOME' in os.environ:
@@ -46,8 +51,23 @@ def run_sumo_gui():
         wait_timeout_sec=meta.get("passenger_wait_timeout", 900)
     )
     hungarian_dispatcher = (
-        HungarianDispatcher() if meta.get("taxi_dispatch_algorithm") == "hungarian" else None
+        make_dispatcher(meta.get("taxi_dispatch_algorithm"))
     )
+    # RL은 택시의 선배치만 담당한다. 매칭은 위의 GUI 설정(greedy/hungarian)을 그대로 쓴다.
+    rl_maintainer = None
+    if meta.get("taxi_strategy") == "rl_prepositioned":
+        model_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                  "module4_dispatch", "rl_reposition_model.zip")
+        category_model_path = os.environ.get(
+            "AI_CATEGORY_MODEL_PATH",
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                         "saved_models", "category_demand_models.pkl"),
+        )
+        if os.path.exists(model_path):
+            rl_maintainer = RLRepositionMaintainer(model_path, meta, category_model_path=category_model_path)
+            print(f"[안내] RL 선배치 정책을 불러왔습니다: {model_path}")
+        else:
+            print(f"[경고] RL 모델이 없어 선배치 없이 '{meta.get('taxi_dispatch_algorithm')}' 매칭만 실행합니다.")
 
 
     sim_end_hour = meta.get("sim_end_hour")
@@ -68,11 +88,13 @@ def run_sumo_gui():
     # 학교/회사/음식점 승객을 실시간으로 생성·소멸(흡수→재스폰)시키는 매니저
     spawn_manager = PassengerSpawnManager(
         zones=meta.get("zones", {}),
+        department_edges=meta.get("department_store_edges", []),
         sim_start_hour=sim_start_hour,
         sim_end_hour=sim_end_hour,
         school_pop_base=meta.get("school_pop_base", 400),
         company_pop_base=meta.get("company_pop_base", 100),
         seed=meta.get("passenger_seed"),
+        sim_date=pick_run_date(CFG, mode="sim_date").isoformat(),  # [공휴일] 설정창 sim_date로 평일/공휴일 판정
     )
 
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
@@ -93,18 +115,28 @@ def run_sumo_gui():
         while step < max_steps:
             traci.simulationStep()
             now_seconds = traci.simulation.getTime()
-            manager.maintain(now_seconds)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
-            pax_manager.maintain(now_seconds)
+            # [성능] 맵 전체 상태 조회는 스텝당 딱 한 번. 하위 매니저는 이 값을 재사용한다.
+            current_pids = set(traci.person.getIDList())
+            current_vids = set(traci.vehicle.getIDList())
+            idle_taxis = fetch_idle_taxis() if hungarian_dispatcher else None  # RL 단독이면 RL이 의사결정 시점(1분마다)에 직접 조회
+            manager.maintain(now_seconds, current_vids=current_vids)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
+            pax_manager.maintain(now_seconds, current_pids=current_pids)
             if hungarian_dispatcher:
-                hungarian_dispatcher.maintain(now_seconds)
-            spawn_manager.maintain(now_seconds, timeout_removed_pids=pax_manager.removed_pids)
+                dispatched_now = hungarian_dispatcher.maintain(now_seconds, idle_taxis=idle_taxis)
+                if dispatched_now:  # 방금 배정된 택시는 RL 재배치 후보에서 제외 (stop 충돌 방지)
+                    _busy = set(dispatched_now)
+                    idle_taxis = [v for v in idle_taxis if v not in _busy]
+            if rl_maintainer:
+                rl_maintainer.maintain(now_seconds, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour,
+                                       current_pids=current_pids, idle_taxis=idle_taxis)
+            spawn_manager.maintain(now_seconds, timeout_removed_pids=pax_manager.removed_pids, current_pids=current_pids)
            
             if step % 100 == 0:
                 sc = spawn_manager.spawn_counts
                 print(
                         f"[DEBUG] time={now_seconds:.0f}s | "
-                        f"vehicles={len(traci.vehicle.getIDList())} | "
-                        f"persons={len(traci.person.getIDList())}"
+                        f"vehicles={len(current_vids)} | "
+                        f"persons={len(current_pids)}"
                         f" | 누적 생성={spawn_manager.total_spawned} "
                         f"(학교아침={sc['school_morning']} 회사아침={sc['company_morning']} "
                         f"점심출={sc['lunch_release']} 점심복귀={sc['lunch_return']} "

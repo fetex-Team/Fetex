@@ -36,6 +36,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from config_loader import CFG                                    # noqa: E402
+from log_selection import selected_log_paths                     # noqa: E402
 from module2_preprocessing.pipeline import build_feature_table   # noqa: E402
 from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
 from evaluate import calculate_metrics, fmt_pct                           # noqa: E402
@@ -62,13 +63,17 @@ def external_to_weather_csv(external_csv: str) -> str:
 
 
 def main(log_paths=None, external_csv=None):
-    logs = log_paths or [os.path.join(ROOT, "data", "sim_logs", "demand_log_*.csv")]
+    logs = log_paths or selected_log_paths()
     weather_path = external_to_weather_csv(external_csv) if external_csv else None
     feat = build_feature_table(logs, weather_path=weather_path)
     features = feat.attrs["feature_cols"]
     targets = feat.attrs["target_cols"]
-    if len(targets) < 6:
-        raise ValueError(f"타겟이 6개가 아닙니다: {targets}")
+    
+    # [결함 수정] 6개로 하드코딩된 검증을 제거하고, config.json 설정에 맞춰 
+    # 생성된 다중 타겟(target_cols) 개수를 그대로 유연하게 반영하도록 변경
+    if len(targets) == 0:
+        raise ValueError(f"타겟 컬럼이 존재하지 않습니다: {targets}")
+    print(f"[안내] 타겟 개수 {len(targets)}개로 유연한 MultiOutputRegressor 학습을 진행합니다.")
 
     train_df, _val, test_df, cuts = time_based_split(feat, CFG["test_size"])
     X_tr, Y_tr = train_df[features].fillna(0).values, train_df[targets].values

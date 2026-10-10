@@ -61,11 +61,16 @@ class RLRepositionMaintainer:
             for e in edges:
                 self._edge_to_zone[e] = cat
 
-    def _zone_counts(self):
+    def set_run_date(self, run_date):
+        """이번 실행의 날짜를 예측 모델에 알려준다 (요일·공휴일 피처, 수요 이력 초기화)."""
+        if self.demand_predictor is not None:
+            self.demand_predictor.reset(run_date)
+
+    def _zone_counts(self, current_pids=None, idle_taxis=None):
         waiting = {c: 0 for c in ZONE_CATEGORIES}
         idle = {c: 0 for c in ZONE_CATEGORIES}
 
-        for pid in traci.person.getIDList():
+        for pid in (current_pids if current_pids is not None else traci.person.getIDList()):
             try:
                 if traci.person.getVehicle(pid):
                     continue
@@ -76,7 +81,7 @@ class RLRepositionMaintainer:
             if cat:
                 waiting[cat] += 1
 
-        for vid in traci.vehicle.getTaxiFleet(0):
+        for vid in (idle_taxis if idle_taxis is not None else traci.vehicle.getTaxiFleet(0)):
             try:
                 edge = traci.vehicle.getRoadID(vid)
             except traci.exceptions.TraCIException:
@@ -87,18 +92,19 @@ class RLRepositionMaintainer:
 
         return waiting, idle
 
-    def _build_obs(self, now, sim_start_hour, sim_end_hour):
-        waiting, idle = self._zone_counts()
+    def _build_obs(self, now, sim_start_hour, sim_end_hour, current_pids=None, idle_taxis=None):
+        waiting, idle = self._zone_counts(current_pids, idle_taxis)
 
         if self.demand_predictor is not None:
             self.demand_predictor.update(waiting)  # rl_env.py의 _get_obs()와 동일한 순서
-            predicted = self.demand_predictor.predict_by_zone(now)
+            # now는 시뮬 시작을 0으로 하는 경과초 -> 예측 모델이 쓰는 '시계 시각'으로 바꿔서 전달
+            predicted = self.demand_predictor.predict_by_zone(sim_start_hour * 3600.0 + now)
         else:
             predicted = {c: 0.0 for c in ZONE_CATEGORIES}
 
-        sim_start = sim_start_hour * 3600.0
-        sim_end = sim_end_hour * 3600.0
-        time_frac = min(max((now - sim_start) / max(sim_end - sim_start, 1.0), 0.0), 1.0)
+        # now는 0부터 시작하는 경과초이므로 시뮬 길이로만 나눈다 (예전엔 시작 시각을 또 빼서 앞 9시간 동안 0이었음)
+        sim_len = max((sim_end_hour - sim_start_hour) * 3600.0, 1.0)
+        time_frac = min(max(now / sim_len, 0.0), 1.0)
 
         vec = []
         for c in ZONE_CATEGORIES:
@@ -106,12 +112,15 @@ class RLRepositionMaintainer:
         vec.append(time_frac)
         return np.array(vec, dtype=np.float32)
 
-    def maintain(self, now: float, sim_start_hour: float = 0, sim_end_hour: float = 24):
+    def maintain(self, now: float, sim_start_hour: float = 0, sim_end_hour: float = 24,
+                 current_pids: set = None, idle_taxis: list = None):
+        """current_pids / idle_taxis: 메인 루프의 스텝 스냅샷 (None이면 의사결정 시점에 직접 조회).
+        idle_taxis에는 같은 스텝에 Hungarian이 방금 배정한 택시가 이미 빠져 있어야 한다."""
         if now - self._last_decision_time < DECISION_INTERVAL_SEC:
             return
         self._last_decision_time = now
 
-        obs = self._build_obs(now, sim_start_hour, sim_end_hour)
+        obs = self._build_obs(now, sim_start_hour, sim_end_hour, current_pids, idle_taxis)
         action, _ = self.model.predict(obs, deterministic=True)
         weights = np.asarray(action, dtype=np.int64).reshape(-1)
         if weights.size != len(ZONE_CATEGORIES):
@@ -122,7 +131,7 @@ class RLRepositionMaintainer:
         if not np.any(weights):
             return
 
-        eligible_taxis = self._eligible_idle_taxis()
+        eligible_taxis = self._eligible_idle_taxis(idle_taxis)
         if not eligible_taxis:
             return
 
@@ -165,10 +174,10 @@ class RLRepositionMaintainer:
         except traci.exceptions.TraCIException:
             return False
 
-    def _eligible_idle_taxis(self):
+    def _eligible_idle_taxis(self, idle_taxis=None):
         """승객 배차가 이미 예약된 택시는 제외한 재배치 후보를 반환한다."""
         eligible = []
-        for taxi_id in traci.vehicle.getTaxiFleet(0):
+        for taxi_id in (idle_taxis if idle_taxis is not None else traci.vehicle.getTaxiFleet(0)):
             if not self._has_no_pending_stop(taxi_id):
                 continue
             try:

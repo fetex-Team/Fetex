@@ -20,9 +20,12 @@ FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
 STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned"]
 
 FACTOR_OPTIONS = {
-    "taxi_strategy": ("택시 전략", STRATEGIES),
-    "taxi_dispatch_algorithm": ("배차 알고리즘", ["greedy", "routeExtension", "hungarian"]),
+    "taxi_strategy": ("택시 전략 (체크)", STRATEGIES),
+    "taxi_dispatch_algorithm": ("배차 알고리즘 (체크)", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
+    "holiday_mode": ("공휴일 (체크)", ["weekday", "holiday"]),
 }
+FACTOR_VALUE_LABELS = {"weekday": "평일", "holiday": "공휴일"}
+AB_WARN_COMBOS = 5  # 조합이 이 개수 이상이면 실행 전에 경고
 
 NUMERIC_GROUPS = {
     "Module 1 — 맵/시뮬레이션": [
@@ -74,6 +77,11 @@ NUMERIC_GROUPS = {
         ("restaurant_window2_start", "음식점 시간대2 시작", 0, 24, 2, 0),
         ("restaurant_window2_end", "음식점 시간대2 종료", 0, 24, 2, 0),
         ("restaurant_civilian_taxi_probability", "음식점 시민 택시확률", 0, 1, 3, 0),
+        ("department_pop_base", "백화점 건물당 인구", 0, 1000, 0, 1),
+        ("department_window_start", "백화점 시간대 시작", 0, 24, 2, 0),
+        ("department_window_end", "백화점 시간대 종료", 0, 24, 2, 0),
+        ("department_taxi_probability", "백화점 시민 택시확률", 0, 1, 3, 0),
+        ("department_stay_sec", "백화점 체류시간(초)", 0, 86400, 0, 1),
     ],
     "Module 2 — 전처리": [
         ("h3_resolution", "H3 resolution", 5, 15, 0, 1), ("max_lag", "Max lag", 1, 100, 0, 1),
@@ -115,15 +123,18 @@ BOOLS = [
     ("use_real_map", "실제 OSM 지도 사용"),
     ("dispatch_use_euclidean", "Module 4 테스트 거리: 유클리드 사용"),
     ("suppress_sumo_warnings", "SUMO 경고 로그 숨기기 (속도 향상)"),
+    ("department_enabled", "백화점 승객 생성 (건물 위치는 build_env 때 OSM에서 찾음, 없으면 자동 꺼짐)"),
     ("run_sim_before_training", "학습만 실행 시 시뮬레이션 먼저 돌려서 로그 생성 (끄면 기존 로그로 바로 학습)"),
     ("rl_randomize_passenger_seed", "RL 학습: 매 에피소드마다 다른 승객 호출 패턴 사용"),
     ("force_regenerate_demand_v2", "학습만 실행 시 demand_v2.joblib이 이미 있어도 새 라인으로 다시 생성 (기존 파일은 demand_v2_backups/에 백업)"),
 ]
 CHOICES = [
     ("taxi_strategy", "택시 전략", STRATEGIES),
-    ("taxi_dispatch_algorithm", "SUMO taxi dispatch algorithm", ["greedy", "routeExtension", "hungarian"]),
+    ("taxi_dispatch_algorithm", "SUMO taxi dispatch algorithm", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
     ("taxi_idle_algorithm", "SUMO taxi idle algorithm", ["randomCircling", "stopOnRoad", "taxiStop"]),
     ("passenger_mode", "승객 생성 모드", ["replay", "legacy"]),
+    ("holiday_mode", "공휴일 판정 모드", ["auto", "weekday", "holiday"]),
+    ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
 ]
 
 
@@ -164,8 +175,9 @@ class ConfigGUI:
         bf.pack(fill="x", padx=12, pady=8)
         ttk.Button(bf, text="적용하기", command=self.save_config_only).pack(side="left", fill="x", expand=True, padx=3)
         ttk.Button(bf, text="▶ 플레이", command=self.run_main).pack(side="left", fill="x", expand=True, padx=3)
-        ttk.Button(bf, text="학습만 실행", command=self.run_training).pack(side="left", fill="x", expand=True, padx=3)
+        ttk.Button(bf, text="학습만 실행", command=self.open_training_dialog).pack(side="left", fill="x", expand=True, padx=3)
         ttk.Button(bf, text="🧪 A/B 비교하기", command=self.open_ab_compare_dialog).pack(side="left", fill="x", expand=True, padx=3)
+        ttk.Button(bf, text="📊 분석하기", command=self.open_analysis_dialog).pack(side="left", fill="x", expand=True, padx=3)
         ttk.Button(bf, text="🎮 유니티에서 작업하기", command=self.run_unity_export).pack(side="left", fill="x", expand=True, padx=3)
 
         self.status = ttk.Label(bottom_frame, text="현재 config.json을 불러오는 중...")
@@ -210,6 +222,10 @@ class ConfigGUI:
                 "restaurant_pop_base", "restaurant_window1_start", "restaurant_window1_end",
                 "restaurant_window2_start", "restaurant_window2_end", "restaurant_civilian_taxi_probability",
             ],
+            "백화점 (Department Store)": [
+                "department_pop_base", "department_window_start", "department_window_end",
+                "department_taxi_probability", "department_stay_sec",
+            ],
         }
 
         item_dict = {item[0]: item for item in items}
@@ -224,7 +240,7 @@ class ConfigGUI:
             content_frame = ttk.Frame(group_frame, padding=(5, 5))
             content_frame.pack(fill="x", expand=True)
 
-            is_expanded = [True]
+            is_expanded = [False]
 
             def make_toggle(c_frame, btn, expanded):
                 def _toggle():
@@ -241,9 +257,10 @@ class ConfigGUI:
             lbl = ttk.Label(header_frame, text=cat_name, font=("맑은 고딕", 10, "bold"))
             lbl.pack(side="left", padx=5)
 
-            btn = ttk.Button(header_frame, text="▼ 접기", width=10)
+            btn = ttk.Button(header_frame, text="▶ 펼치기", width=10)
             btn.config(command=make_toggle(content_frame, btn, is_expanded))
             btn.pack(side="right")
+            content_frame.pack_forget()  # 기본 접힘
 
             for k in keys:
                 if k in item_dict:
@@ -350,6 +367,32 @@ class ConfigGUI:
             self.text_vars[key] = v
             ttk.Entry(r, textvariable=v, width=24).pack(side="right")
 
+        # [공휴일 보정] 공휴일/주말일 때 카테고리별 택시확률 배율 (평일은 항상 1.0)
+        ttk.Label(f, foreground="gray", wraplength=520, justify="left", text=(
+            "공휴일 판정: auto=아래 날짜로 자동(토·일·한국 공휴일), weekday/holiday=강제.\n"
+            "실행 날짜: sim_date=위 '기준 날짜' 고정(평가·A/B용), alternate=평일/공휴일 번갈아(학습 로그용), random=랜덤.")
+        ).pack(anchor="w", pady=(4, 0))
+        self.holiday_frame = ttk.LabelFrame(f, text="공휴일 배율 (공휴일/주말일 때 택시확률에 곱함)", padding=8)
+        self.holiday_frame.pack(fill="x", pady=(8, 4))
+        self.holiday_mult_vars = {}
+        _hm_defaults = DEFAULT_CONFIG.get("holiday_multipliers", {})
+        for key, label in [
+            ("school", "등교 (0=공휴일 등교 없음)"),
+            ("company", "출근 (점심·퇴근 인원도 같이 줄어듦)"),
+            ("restaurant", "음식점 방문"),
+            ("general", "기본 수요 (num_passengers 가챠)"),
+            ("department", "백화점 방문 (공휴일 증가)"),
+            ("lunch", "점심 이동 (아침 인원에서 파생, 1.0 권장)"),
+            ("evening", "퇴근 (아침 인원에서 파생, 1.0 권장)"),
+        ]:
+            row = ttk.Frame(self.holiday_frame)
+            row.pack(fill="x", pady=3)
+            ttk.Label(row, text=label, width=34).pack(side="left")
+            var = tk.DoubleVar(value=_hm_defaults.get(key, 1.0))
+            self.holiday_mult_vars[key] = var
+            ttk.Entry(row, textvariable=var, width=8).pack(side="right", padx=4)
+            ttk.Scale(row, from_=0, to=3, variable=var, length=200).pack(side="right", fill="x", expand=True)
+
         # [날씨 보정] 체크하면 아래 슬라이더가 나타남
         self.weather_bonus_var = tk.BooleanVar(value=bool(DEFAULT_CONFIG.get("weather_bonus_enabled", False)))
         self.bool_vars["weather_bonus_enabled"] = self.weather_bonus_var
@@ -393,6 +436,7 @@ class ConfigGUI:
         c.update({k: v.get().strip() for k, v in self.text_vars.items()})
         for k, (v, dec, isint) in self.vars.items():
             c[k] = int(v.get()) if isint else round(float(v.get()), dec)
+        c["holiday_multipliers"] = {k: round(float(v.get()), 2) for k, v in self.holiday_mult_vars.items()}
         return c
 
     def set_values(self, c):
@@ -408,6 +452,9 @@ class ConfigGUI:
         for k, (v, dec, isint) in self.vars.items():
             if k in c:
                 v.set(int(c[k]) if isint else float(c[k]))
+        _hm = {**DEFAULT_CONFIG.get("holiday_multipliers", {}), **(c.get("holiday_multipliers") or {})}
+        for k, v in self.holiday_mult_vars.items():
+            v.set(float(_hm.get(k, 1.0)))
 
     def load_config_file(self, show=True):
         try:
@@ -590,11 +637,6 @@ class ConfigGUI:
     def run_training(self):
         c = self.current()
 
-        if c.get("taxi_dispatch_algorithm") in ["greedy", "routeExtension"]:
-            c["taxi_dispatch_algorithm"] = "hungarian"
-            self.choice_vars["taxi_dispatch_algorithm"].set("hungarian")
-            print("[안내] 강화학습/외부 제어를 위해 배차 알고리즘을 'hungarian'으로 자동 변경했습니다.")
-
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(c, f, ensure_ascii=False, indent=2)
 
@@ -621,6 +663,8 @@ class ConfigGUI:
                     print("[경고] demand_v2.joblib 학습을 SKIP했지만 " + v2_cell_warn)
 
             if c.get("run_sim_before_training", True):
+                import time as _time, log_selection as _ls
+                _sim_t0 = _time.time()
                 n_sim_runs = 3
                 for i in range(n_sim_runs):
                     self.status.config(text=f"0.5/4 시뮬레이션으로 학습 로그 생성 중... ({i + 1}/{n_sim_runs})")
@@ -628,6 +672,9 @@ class ConfigGUI:
                     if not self._run("measure_wait_time.py", blocking=True):
                         self.status.config(text="시뮬레이션(로그 생성) 실행 실패 - 학습 중단")
                         return
+                _added = _ls.add_new_logs_to_selection(_sim_t0)
+                if _added:
+                    print(f"[로그 선택] 방금 만든 로그 {len(_added)}개를 학습 선택 목록에 추가했습니다: {', '.join(_added)}")
             else:
                 self.status.config(text="0.5/4 시뮬레이션 생략 (기존 로그로 학습)")
                 self.root.update()
@@ -666,14 +713,11 @@ class ConfigGUI:
             # 성공 메시지)까지 확인해야 안전하다.
             v2_converted_path = os.path.join(ROOT, "saved_models", "category_demand_from_v2.pkl")
             v2_converted_this_run = v2_msg.startswith("saved_models/category_demand_from_v2.pkl 생성")
-            if v2_converted_this_run and os.path.exists(v2_converted_path):
-                category_model_for_rl = v2_converted_path
-                rl_source_note = "category_demand_from_v2.pkl (이번에 새로 변환된 demand_v2 결과)"
-            else:
-                # 변환 실패/생략(no_data, 학습 데이터 없음, 낡은 v2 등)이면 이번에 새로
-                # 학습한 category_demand_models_new.pkl로 안전하게 대체한다.
-                category_model_for_rl = category_new_path
-                rl_source_note = "category_demand_models_new.pkl (v2 변환 안 됨 - 대체)"
+            
+            # [결함 수정] H3 셀 모델을 무지성으로 복제한 v2 변환본 대신, 
+            # 카테고리별로 완벽하게 정상 학습된(train_category_demand.py) 모델을 항상 사용하도록 강제 고정
+            category_model_for_rl = category_new_path
+            rl_source_note = "category_demand_models_new.pkl (카테고리 전용 정상 학습 모델 - RL 오염 방지)"
 
             self.status.config(text="4/4 강화학습 실행 중...")
             self.root.update()
@@ -732,10 +776,44 @@ class ConfigGUI:
         self.save_config_only()
         self._run("export_unity_replay.py")
 
+    def _list_category_models(self):
+        """[(표시이름, 경로)] 수요예측 모델 후보. 맨 위가 '최신 성공작'(마지막으로 RL까지 정상 종료된 학습의 모델).
+        활성과 내용이 똑같은 파일(변환본 등)은 중복으로 나열하지 않고 활성 이름 뒤에 표시."""
+        import filecmp
+        from datetime import datetime as _dt
+
+        def stamp(p):
+            return _dt.fromtimestamp(os.path.getmtime(p)).strftime("%m-%d %H:%M")
+
+        sm = os.path.join(ROOT, "saved_models")
+        active = os.path.join(sm, "category_demand_models.pkl")
+        others = [
+            ("v2 변환본", os.path.join(sm, "category_demand_from_v2.pkl")),
+            ("학습 중간본(_new)", os.path.join(sm, "category_demand_models_new.pkl")),
+        ]
+        bdir = os.path.join(ROOT, "saved_models_backups")
+        if os.path.isdir(bdir):
+            for ts in sorted(os.listdir(bdir), reverse=True)[:10]:
+                others.append((f"백업 {ts}", os.path.join(bdir, ts, "category_demand_models.pkl")))
+
+        out, same_as_active = [], []
+        for name, p in others:
+            if not os.path.exists(p):
+                continue
+            if os.path.exists(active) and filecmp.cmp(active, p, shallow=False):
+                if not name.startswith("백업"):
+                    same_as_active.append(name)
+                    continue  # 활성과 같은 내용 -> 따로 나열 안 함
+            out.append((f"{name} ({stamp(p)})", p))
+        if os.path.exists(active):
+            note = f" · {', '.join(same_as_active)}와 동일" if same_as_active else ""
+            out.insert(0, (f"최신 성공작 ({stamp(active)}){note}", active))
+        return out or [("최신 성공작 (모델 파일 없음)", active)]
+
     def open_ab_compare_dialog(self):
         win = tk.Toplevel(self.root)
         win.title("A/B 비교하기")
-        win.geometry("380x460")
+        win.geometry("420x650")
         win.resizable(False, False)
 
         ttk.Label(
@@ -754,7 +832,28 @@ class ConfigGUI:
             for v in values:
                 var = tk.BooleanVar(value=False)
                 value_vars[key][v] = var
-                ttk.Checkbutton(box, text=v, variable=var).pack(anchor="w")
+                ttk.Checkbutton(box, text=FACTOR_VALUE_LABELS.get(v, v), variable=var).pack(anchor="w")
+
+        try:
+            from holiday_utils import is_holiday_date
+            from datetime import date as _date
+            _t = _date.today()
+            _today_txt = f"오늘({_t})은 {'공휴일/주말' if is_holiday_date(_t) else '평일'}"
+        except Exception:
+            _today_txt = "오늘 날짜로 평일/공휴일 자동 판정"
+        ttk.Label(win, text=f"※ 공휴일 칸을 체크 안 하면 {_today_txt}로 실행해요.",
+                  foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
+
+        models = self._list_category_models()
+        model_box = ttk.LabelFrame(win, text="수요예측 모델 (선택)", padding=8)
+        model_box.pack(fill="x", padx=15, pady=6)
+        model_var = tk.StringVar(value=models[0][0])
+        ttk.Combobox(model_box, textvariable=model_var, values=[m[0] for m in models],
+                     state="readonly", width=44).pack(fill="x")
+        ttk.Label(model_box, text="rl_prepositioned 전략이 참고하는 수요예측입니다.",
+                  foreground="#6b7280").pack(anchor="w", pady=(4, 0))
+        ttk.Label(win, text="※ 비교로 생긴 로그를 학습에 쓰려면 '학습만 실행' 창에서 고르세요.",
+                  foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
 
         def run_compare():
             selected = {}
@@ -782,15 +881,178 @@ class ConfigGUI:
             keys = list(selected.keys())
             combos = [dict(zip(keys, combo)) for combo in itertools.product(*[selected[k] for k in keys])]
 
-            if len(combos) > 8:
-                if not messagebox.askyesno("확인", f"조합이 {len(combos)}개라 창이 {len(combos)}개 동시에 뜹니다. 계속할까요?"):
+            if len(combos) >= AB_WARN_COMBOS:
+                if not messagebox.askyesno(
+                        "⚠ 조합이 많아요",
+                        f"조합이 {len(combos)}개라 SUMO 창이 {len(combos)}개 동시에 뜹니다.\n"
+                        f"PC 메모리/CPU가 부족하면 느려지거나 멈출 수 있어요 ({AB_WARN_COMBOS}개 이상 경고).\n\n"
+                        f"그래도 실행할까요?"):
                     return
+
+            if "holiday_mode" not in selected:
+                for _c in combos:
+                    _c["holiday_mode"] = "today"   # 미체크: 오늘 날짜 기준 자동 판정
 
             win.destroy()
             self.save_config_only()
-            self._run("multi_factor_compare.py", [json.dumps(combos, ensure_ascii=False)])
+            model_path = dict(models)[model_var.get()]
+            self._run("multi_factor_compare.py", [json.dumps(combos, ensure_ascii=False)],
+                      env_extra={"AI_CATEGORY_MODEL_PATH": model_path})
 
         ttk.Button(win, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=15, fill="x", padx=15)
+
+    def _build_log_picker(self, parent, persist=True):
+        """학습 팝업 안에 들어가는 '학습에 쓸 로그' 선택 목록. 반환값 save()를 호출하면 selected_logs.json에 저장.
+        로그가 없으면 None."""
+        import log_selection as ls
+        logs = ls.list_logs()
+        if not logs:
+            ttk.Label(parent, text="data/sim_logs에 로그가 아직 없습니다. (시뮬레이션 먼저 돌리기를 켜면 만들어집니다)",
+                      foreground="#6b7280").pack(anchor="w")
+            return None
+        saved = ls.load_selection()
+        checked = {r["filename"] for r in logs} if saved is None else set(saved)
+        by_name = {r["filename"]: r for r in logs}
+
+        tree = ttk.Treeview(parent, columns=("chk", "date", "kind", "label", "rows"), show="headings",
+                            selectmode="browse", height=9)
+        for c, t, w in (("chk", "사용", 45), ("date", "날짜", 90), ("kind", "구분", 55), ("label", "구역·전략_알고리즘", 330), ("rows", "행 수", 70)):
+            tree.heading(c, text=t)
+            tree.column(c, width=w, anchor="w" if c == "label" else "center")
+        tree.pack(fill="both", expand=True)
+        info = ttk.Label(parent, text="", foreground="#b45309", wraplength=620, justify="left")
+        info.pack(anchor="w", pady=4)
+
+        def row_vals(fn):
+            r = by_name[fn]
+            kind = "-" if r["is_holiday"] is None else ("공휴일" if r["is_holiday"] else "평일")
+            return ("☑" if fn in checked else "☐", r["date"] or "-", kind, r["label"], f"{r['rows']:,}")
+
+        def refresh_info():
+            sel = [by_name[f] for f in checked]
+            n_h = sum(1 for r in sel if r["is_holiday"])
+            n_w = sum(1 for r in sel if r["is_holiday"] is False)
+            msg = f"선택 {len(sel)}개 (평일 {n_w} · 공휴일 {n_h}) · {sum(r['rows'] for r in sel):,}행"
+            g = ls.same_date_groups(checked)
+            if g:
+                msg += "\n⚠ 같은 날짜가 겹쳐 그날 수요가 2배로 합쳐집니다 → 날짜당 하나만 남기세요: " + \
+                       " / ".join(f"{d}({len(v)}개)" for d, v in sorted(g.items()))
+            info.config(text=msg)
+
+        for r in logs:
+            tree.insert("", "end", iid=r["filename"], values=row_vals(r["filename"]))
+        refresh_info()
+
+        def on_click(event):
+            fn = tree.identify_row(event.y)
+            if tree.identify_region(event.x, event.y) != "cell" or not fn:
+                return
+            checked.symmetric_difference_update({fn})
+            tree.item(fn, values=row_vals(fn))
+            refresh_info()
+        tree.bind("<Button-1>", on_click)
+
+        def set_all(on):
+            checked.clear()
+            if on:
+                checked.update(by_name)
+            for fn in by_name:
+                tree.item(fn, values=row_vals(fn))
+            refresh_info()
+
+        bar = ttk.Frame(parent)
+        bar.pack(anchor="w")
+        ttk.Button(bar, text="전체 선택", command=lambda: set_all(True)).pack(side="left", padx=2)
+        ttk.Button(bar, text="전체 해제", command=lambda: set_all(False)).pack(side="left", padx=2)
+
+        def save():
+            """True=진행 가능, False=취소."""
+            if not checked:
+                messagebox.showwarning("학습 로그", "최소 1개는 선택해야 합니다.")
+                return False
+            if ls.same_date_groups(checked) and not messagebox.askyesno(
+                    "같은 날짜 겹침", "같은 날짜 로그가 함께 선택돼 있어 그날 수요가 겹쳐 집계됩니다. 그래도 진행할까요?"):
+                return False
+            if not persist:
+                return sorted(checked)      # 분석 팝업: 학습 선택 파일은 건드리지 않고 목록만 돌려줌
+            if checked == set(by_name):
+                ls.clear_selection()        # 전부 선택 = 선택 안 함(이후 새 로그도 자동 포함)
+            else:
+                ls.save_selection(checked)
+            return True
+        return save
+
+    def open_analysis_dialog(self):
+        """'분석하기' 팝업: 분석할 로그를 고르면 analyze_demand_logs.py가 평일/공휴일·전략별로 비교한 리포트를 만든다."""
+        win = tk.Toplevel(self.root)
+        win.title("로그 분석하기")
+        win.geometry("700x600")
+        top = ttk.LabelFrame(win, text="🗺 지도·순위 보기 (브라우저)", padding=8)
+        top.pack(fill="x", padx=12, pady=(10, 4))
+        ttk.Label(top, text="출발 지도, 전략·알고리즘 순위, 시간대별 그래프를 브라우저에서 봐요.\n"
+                            "로그는 거기서 체크박스로 고르면 돼요. (끝낼 때는 열린 콘솔 창을 닫기)",
+                  justify="left").pack(side="left")
+        ttk.Button(top, text="브라우저로 열기",
+                   command=lambda: (win.destroy(), self._run("analyzer_server.py"))).pack(side="right")
+        ttk.Label(win, text="아래는 표/CSV/그래프 리포트(report.md)를 만들 때 쓸 로그예요. (학습용 로그 선택에는 영향 없음)\n"
+                            "결과는 data/analysis/<날짜_시각>/ 에 저장돼요.",
+                  padding=(12, 6), justify="left").pack(anchor="w")
+        box = ttk.LabelFrame(win, text="리포트로 분석할 로그", padding=8)
+        box.pack(fill="both", expand=True, padx=12, pady=6)
+        pick = self._build_log_picker(box, persist=False)
+        if pick is None:
+            return
+
+        def start():
+            names = pick()
+            if not names:
+                return
+            win.destroy()
+            paths = [os.path.join(ROOT, "data", "sim_logs", n) for n in names]
+            self._run("analyze_demand_logs.py", ["--logs", *paths])
+
+        bar = ttk.Frame(win)
+        bar.pack(fill="x", padx=12, pady=10)
+        ttk.Button(bar, text="취소", command=win.destroy).pack(side="right", padx=3)
+        ttk.Button(bar, text="리포트 만들기", command=start).pack(side="right", padx=3)
+
+    def open_training_dialog(self):
+        """'학습만 실행' 팝업: 학습에 쓸 로그 + 학습 전 옵션을 여기서 정하고 시작."""
+        win = tk.Toplevel(self.root)
+        win.title("학습만 실행")
+        win.geometry("700x560")
+        ttk.Label(win, text="이 창에서 정한 대로 학습이 시작됩니다.\n"
+                            "순서: 맵 재생성 → (시뮬레이션으로 로그 생성) → 예측모델 학습 → 강화학습",
+                  padding=10, justify="left").pack(anchor="w")
+
+        opt = ttk.LabelFrame(win, text="학습 전 옵션", padding=8)
+        opt.pack(fill="x", padx=12, pady=4)
+        sim_var = self.bool_vars["run_sim_before_training"]
+        v2_var = self.bool_vars["force_regenerate_demand_v2"]
+        # 사용자가 기존 로그를 골라 둔 경우, 그 선택만으로 학습하는 것이 안전한 기본값이다.
+        # 추가 시뮬레이션은 선택 로그를 보완하는 것이 아니라 새 로그를 학습 목록에 섞는다.
+        import log_selection as _training_log_selection
+        if _training_log_selection.load_selection() is not None:
+            sim_var.set(False)
+            ttk.Label(opt, text="선택된 로그만 학습하도록 '3회 추가 생성'을 자동 해제했습니다.",
+                      foreground="#b45309").pack(anchor="w")
+        ttk.Checkbutton(opt, text="시뮬레이션 3회 먼저 돌려 새 로그도 학습에 추가 (선택 로그만 쓰려면 해제)", variable=sim_var).pack(anchor="w")
+        ttk.Checkbutton(opt, text="demand_v2.joblib이 있어도 다시 생성 (기존 파일은 demand_v2_backups/에 백업)", variable=v2_var).pack(anchor="w")
+
+        box = ttk.LabelFrame(win, text="학습에 쓸 로그  (새로 만든 로그는 선택 목록에 자동으로 추가됩니다)", padding=8)
+        box.pack(fill="both", expand=True, padx=12, pady=6)
+        save_sel = self._build_log_picker(box)
+
+        def start():
+            if save_sel is not None and not save_sel():
+                return
+            win.destroy()
+            self.run_training()
+
+        bar = ttk.Frame(win)
+        bar.pack(fill="x", padx=12, pady=10)
+        ttk.Button(bar, text="취소", command=win.destroy).pack(side="right", padx=3)
+        ttk.Button(bar, text="학습 시작", command=start).pack(side="right", padx=3)
 
 
 if __name__ == "__main__":

@@ -1,22 +1,18 @@
 import random
 import traci
 
+from collections import Counter
+
 from config_loader import CFG
 
 CATEGORY_PEAK_HOURS = {
-    # 회사는 "아침에 붐비는 건물"이지만, 그 시간엔 회사 앞에서 택시를 부르는 사람이 없음
-    # (다들 도착하는 쪽이라 출발지가 아님) -> 아침 피크는 빼고, 실제로 회사에서
-    # 택시를 부르는 시점(점심 나갈 때, 퇴근할 때)만 남김
     "company": [CFG.get("lunch_start_hour", 12.0), CFG.get("evening_start_hour", 18.0), CFG.get("late_evening_start_hour", 23.0)],
-    # 학교도 마찬가지로 등교(7~8시)는 도착 방향이라 빼고, 하교(실제 출발지가 되는 시점)만 남김
     "school": [CFG.get("school_afternoon_start_hour", 16.0)],
     "residential": [CFG.get("school_start_hour", 7.0), CFG.get("evening_start_hour", 18.0), CFG.get("late_evening_start_hour", 23.0)],
     "restaurant": [CFG.get("lunch_start_hour", 12.0), CFG.get("evening_start_hour", 18.0)],
-    # 아침 출근/등교 승객의 실제 출발지는 정류장/지하철입구이므로, 아침 피크를 여기로 옮김
     "subway_entrance": [CFG.get("school_start_hour", 7.0), CFG.get("company_start_hour", 8.0), CFG.get("evening_start_hour", 18.0)],
     "bus_stop": [CFG.get("school_start_hour", 7.0), CFG.get("company_start_hour", 8.0), CFG.get("evening_start_hour", 18.0)],
 }
-
 
 class TaxiFleetManager:
     def __init__(self, target_count: int, boundary_edges: list, all_edges: list,
@@ -24,7 +20,7 @@ class TaxiFleetManager:
                  hotspot_edges: list = None, zones: dict = None,
                  sim_start_hour: float = 0, remaining_edges_threshold: int = None, **kwargs):
         self.target_count = target_count
-        self.boundary_edges = boundary_edges or all_edges  # 재생성 시 사용할 검증된 출발점
+        self.boundary_edges = boundary_edges or all_edges
         self.all_edges = all_edges
         self.vtype = vtype
         self.strategy = strategy
@@ -38,8 +34,29 @@ class TaxiFleetManager:
         self.target_pick_attempts = int(CFG.get("taxi_target_pick_attempts", 10))
         self.respawn_prefix = str(CFG.get("taxi_respawn_prefix", "taxi_respawn"))
 
-        self.fail_counts = {}      # vid -> 연속 목적지 탐색 실패 횟수
-        self._respawn_counter = 0  # 재생성된 택시에 부여할 고유 id 카운터
+        self.fail_counts = {}
+        self._respawn_counter = 0
+
+        self.max_spawn_per_step = int(CFG.get("taxi_max_spawn_per_step", 5))
+        self.spawn_pending_grace_sec = float(CFG.get("taxi_spawn_pending_grace_sec", 30))
+        self.min_spawn_lane_len = float(CFG.get("taxi_min_spawn_lane_len", 15.0))
+        self.rl_keepalive = bool(CFG.get("taxi_rl_keepalive", True))
+        self._spawned = {}
+        self._our_removed = set()
+        self._type_cache = {}
+        self._lane_len_cache = {}
+        self._known_taxis = set()
+        self._last_info = {}
+        self.vanish_counts = Counter()
+        self.spawn_stats = Counter()
+        self._vanish_printed = 0
+        self._last_summary = 0.0
+        self._last_now = 0.0
+        self._removed_this_step = []
+        self.warmup_sec = float(CFG.get("taxi_warmup_sec", 10))
+        self.lock_initial = bool(CFG.get("taxi_lock_initial_count", False))
+        self._init_reported = False
+        self._pending_cache = (None, None)
 
     def _current_hour(self, now_seconds: float) -> float:
         return self.sim_start_hour + (now_seconds / 3600.0)
@@ -57,10 +74,8 @@ class TaxiFleetManager:
     def _current_hotspot_pools(self, now_seconds: float):
         if not self.zones:
             return self.hotspot_edges, self.hotspot_edges
-
         ranking = self._category_busyness_ranking(now_seconds)
         primary_pool, secondary_pool = [], []
-
         idx = 0
         while idx < len(ranking) and not primary_pool:
             primary_pool = self.zones.get(ranking[idx], [])
@@ -68,12 +83,10 @@ class TaxiFleetManager:
         while idx < len(ranking) and not secondary_pool:
             secondary_pool = self.zones.get(ranking[idx], [])
             idx += 1
-
         if not primary_pool:
             primary_pool = self.hotspot_edges or self.all_edges
         if not secondary_pool:
             secondary_pool = primary_pool
-
         return primary_pool, secondary_pool
 
     def _pick_target_edge(self, now_seconds: float, current_edge: str) -> str:
@@ -85,136 +98,275 @@ class TaxiFleetManager:
 
         for _ in range(self.target_pick_attempts):
             candidate = random.choice(pool)
-            if candidate == current_edge:
-                continue
-            # 후보 edge 자체가 내부(intersection) edge면 경로탐색 대상이 아니므로 스킵
-            if candidate.startswith(":"):
+            if candidate == current_edge or candidate.startswith(":"):
                 continue
             try:
-                route = traci.simulation.findRoute(current_edge, candidate)
+                route = traci.simulation.findRoute(current_edge, candidate, vType=self.vtype)
                 if route and len(route.edges) > 0:
                     return candidate
             except Exception:
                 continue
-        return None  # 적절한 후보를 못 찾으면 이번 스텝엔 재타겟팅 포기 (제자리 유지)
+        return None
 
     def _respawn_taxi(self, old_vid: str):
-        """
-        고립된 edge에 갇힌 택시를 소멸시키고, 검증된 출발점(boundary_edges)에서
-        새 택시로 재생성한다. 갇혔던 그 자리에서 다시 살리면 또 갇힐 수 있으므로
-        반드시 boundary_edges(길 끝)에서 새로 스폰한다.
-
-        taxi device는 여기서 setParameter로 나중에 붙이지 않는다 — SUMO는 삽입
-        이후 시점에 device를 붙이는 걸 지원하지 않아 에러가 난다. 대신
-        build_env.py에서 taxi_type vType 정의 자체에 <param has.taxi.device=true>를
-        박아둬서, 이 타입으로 삽입되는 모든 차량(정적/동적 무관)이 자동으로
-        taxi device를 달고 태어나게 되어 있다.
-        """
         try:
             traci.vehicle.remove(old_vid)
         except traci.exceptions.TraCIException:
             pass
+        self._our_removed.add(old_vid)
+        self._removed_this_step.append(old_vid)
         self.fail_counts.pop(old_vid, None)
+        self.spawn_stats["respawn_isolated"] += 1
+        if self.spawn_stats["respawn_isolated"] <= 10:
+            print(f"[택시 재생성] t={self._last_now:.0f}s id={old_vid} (목적지 {self.fail_threshold}회 연속 실패 -> 제거 후 재스폰)", flush=True)
         self._spawn_new_taxi()
 
-    def _spawn_new_taxi(self):
-        """boundary_edges(검증된 길 끝)에서 새 택시 한 대를 생성한다."""
-        self._respawn_counter += 1
-        new_vid = f"{self.respawn_prefix}_{self._respawn_counter}"
-        route_id = f"route_{new_vid}"
-        start_edge = random.choice(self.boundary_edges)
-
+    def _edge_ok_for_spawn(self, edge_id: str) -> bool:
+        if edge_id in self._lane_len_cache:
+            return self._lane_len_cache[edge_id]
         try:
-            traci.route.add(route_id, [start_edge])
-            traci.vehicle.add(new_vid, route_id, typeID=self.vtype)
+            ok = traci.lane.getLength(edge_id + "_0") >= self.min_spawn_lane_len
         except traci.exceptions.TraCIException:
-            pass  # 이번 시도가 실패해도 다음 maintain() 사이클에서 대수 부족이 다시 감지되어 재시도됨
+            ok = True
+        self._lane_len_cache[edge_id] = ok
+        return ok
 
-    def maintain(self, now_seconds: float = 0):
+    def _spawn_new_taxi(self):
+        now = self._last_now
+        candidates = list(self.boundary_edges)
+        random.shuffle(candidates)
+        tried = 0
+        for start_edge in candidates:
+            if tried >= 2:  # [최적화 1] 헛발질 재시도를 5회에서 2회로 줄여 랙 방지
+                break
+            if start_edge.startswith(":") or not self._edge_ok_for_spawn(start_edge):
+                continue
+            tried += 1
+            others = [e for e in self.all_edges if e != start_edge and not e.startswith(":")]
+            if not others:
+                continue
+            end_edge = random.choice(others)
+            try:
+                route = traci.simulation.findRoute(start_edge, end_edge, vType=self.vtype)
+                if route and len(route.edges) > 1:
+                    self._respawn_counter += 1
+                    new_vid = f"{self.respawn_prefix}_{self._respawn_counter}"
+                    route_id = f"route_{new_vid}"
+                    traci.route.add(route_id, list(route.edges))
+                    traci.vehicle.add(new_vid, route_id, typeID=self.vtype, departPos="random_free")
+                    self._spawned[new_vid] = now
+                    self.spawn_stats["spawned"] += 1
+                    return new_vid
+            except Exception as e:
+                if type(e).__name__ == "FatalTraCIError":
+                    raise
+        self.spawn_stats["spawn_route_fail"] += 1
+        return None
+
+    def _is_taxi(self, vid: str) -> bool:
+        t = self._type_cache.get(vid)
+        if t is None:
+            try:
+                t = traci.vehicle.getTypeID(vid)
+            except traci.exceptions.TraCIException:
+                return False
+            self._type_cache[vid] = t
+        return t == self.vtype
+
+    def _update_spawned(self, now: float, current_ids: set) -> set:
+        if not self._spawned:
+            return set()
+        for vid in [v for v in self._spawned if v in current_ids]:
+            del self._spawned[vid]
+        if not self._spawned:
+            return set()
+        api_pending = self._pending_ids()
+        pending = set()
+        for vid, t0 in list(self._spawned.items()):
+            waited = now - t0
+            still = (vid in api_pending) if api_pending is not None else (waited < self.spawn_pending_grace_sec)
+            if not still:
+                del self._spawned[vid]
+                self.spawn_stats["lost_after_add"] += 1
+            elif waited >= self.spawn_pending_grace_sec:
+                try:
+                    traci.vehicle.remove(vid)
+                except traci.exceptions.TraCIException:
+                    pass
+                self._our_removed.add(vid)
+                del self._spawned[vid]
+                self.spawn_stats["stuck_pending_dropped"] += 1
+            else:
+                pending.add(vid)
+        return pending
+
+    def _pending_ids(self):
+        now = self._last_now
+        if self._pending_cache[0] == now:
+            return self._pending_cache[1]
         try:
-            current_ids = set(traci.vehicle.getIDList())
-            # 더 이상 존재하지 않는 차량의 실패 카운터는 정리 (메모리 누수 방지)
-            self.fail_counts = {vid: c for vid, c in self.fail_counts.items() if vid in current_ids}
+            ids = set(traci.simulation.getPendingVehicles())
+        except Exception:
+            ids = None
+        self._pending_cache = (now, ids)
+        return ids
 
-            # ------------------------------------------------------------
-            # 대수 보충(top-up) 안전장치 — "왜 줄었는지"를 하나하나 원인별로 다 잡는 대신,
-            # 매 스텝마다 지금 살아있는 택시 대수를 세서 target_count보다 모자라면
-            # 그 차이만큼 무조건 boundary_edges에서 새로 채워 넣는다.
-            # 고립 edge(fail_counts 5회), 정지위치 배정 실패로 인한 자연 도착 처리,
-            # teleport 등 원인이 무엇이든 결과(대수 유지)만은 항상 보장하기 위함.
-            # ------------------------------------------------------------
-            taxi_count = sum(
-                1 for vid in current_ids if traci.vehicle.getTypeID(vid) == self.vtype
-            )
-            shortage = self.target_count - taxi_count
-            for _ in range(max(0, shortage)):
+    @staticmethod
+    def _safe_ids(func_name: str) -> set:
+        try:
+            return set(getattr(traci.simulation, func_name)())
+        except Exception:
+            return set()
+
+    def _track_vanished(self, now: float, taxis_now: set):
+        vanished = self._known_taxis - taxis_now
+        ours = vanished & self._our_removed
+        vanished -= ours
+        self._our_removed -= ours
+        if len(self._our_removed) > 2000:
+            self._our_removed.clear()
+        if vanished:
+            arrived = self._safe_ids("getArrivedIDList")
+            colliding = self._safe_ids("getCollidingVehiclesIDList")
+            for vid in sorted(vanished):
+                if vid in arrived:
+                    reason = "경로 끝 도착"
+                elif vid in colliding:
+                    reason = "충돌"
+                else:
+                    reason = "불명(텔레포트/제거/관측 누락)"
+                self.vanish_counts[reason] += 1
+                if self._vanish_printed < 20:
+                    self._vanish_printed += 1
+                    info = self._last_info.get(vid)
+                    print(f"[택시 소멸] t={now:.0f}s id={vid} 사유={reason} 직전상태={info}", flush=True)
+        for vid in vanished | ours:
+            self._last_info.pop(vid, None)
+        self._known_taxis = set(taxis_now)
+        if self.vanish_counts and now - self._last_summary >= 600:
+            self._last_summary = now
+            print(f"[택시 진단] t={now:.0f}s 소멸 누계 {dict(self.vanish_counts)} | 스폰 {dict(self.spawn_stats)} | 살아있음 {len(taxis_now)}/{self.target_count}", flush=True)
+
+    def vanish_summary(self) -> str:
+        return f"소멸 {dict(self.vanish_counts)} | 스폰 {dict(self.spawn_stats)}"
+
+    def maintain(self, now_seconds: float = 0, current_vids: set = None):
+        self._last_now = now_seconds
+        try:
+            current_ids = set(current_vids) if current_vids is not None else set(traci.vehicle.getIDList())
+            self.fail_counts = {vid: c for vid, c in self.fail_counts.items() if vid in current_ids}
+            self._type_cache = {v: ty for v, ty in self._type_cache.items() if v in current_ids}
+
+            taxis_now = {vid for vid in current_ids if self._is_taxi(vid)}
+            self._track_vanished(now_seconds, taxis_now)
+
+            if not self._init_reported and now_seconds >= self.warmup_sec and taxis_now:
+                self._init_reported = True
+                n_spawned = sum(1 for v in taxis_now if v.startswith(self.respawn_prefix))
+                print(f"[택시 초기 대수] t={now_seconds:.0f}s 설정 {self.target_count} / 실제 {len(taxis_now)} "
+                      f"(처음 배치 {len(taxis_now) - n_spawned} + 매니저 스폰 {n_spawned})"
+                      + (" -> 실제 대수로 목표 고정" if self.lock_initial else ""), flush=True)
+                if self.lock_initial:
+                    self.target_count = len(taxis_now)
+
+            pending = self._update_spawned(now_seconds, current_ids)
+            shortage = self.target_count - (len(taxis_now) + len(pending))
+            if shortage > 0:
+                api = self._pending_ids()
+                if api:
+                    shortage -= len({v for v in api if v.startswith("taxi") and v not in self._spawned and v not in self._our_removed})
+            for _ in range(min(max(0, shortage), self.max_spawn_per_step)):
                 self._spawn_new_taxi()
 
-            for vid in current_ids:
-                if traci.vehicle.getTypeID(vid) != self.vtype:
-                    continue
-
-                if traci.vehicle.getPersonIDList(vid):
-                    continue  # 손님 태우고 이동 중 — 건드리지 않음
-
-                # [추가] Hungarian이 방금 이 택시한테 픽업/하차 예약(stop)을 배정했지만
-                # 아직 그 지점에 도착 전인 경우. isStopped()는 "지금 당장 멈춰있는지"만
-                # 보기 때문에, 이 경우는 못 잡아냄 - getStops(vid, 0)으로 예정된 정지가
-                # 하나라도 있으면 이 순찰 재경로 로직을 건드리지 않고 넘어감.
-                # (안 그러면 예약된 stop과 여기서 걸리는 changeTarget이 충돌해서
-                #  "could not assign stop ... after rerouting (taxi:dispatch)" 에러 -> 누적되면
-                #  SUMO 내부 상태 손상으로 bad allocation 크래시까지 이어짐)
+            for vid in taxis_now:
                 try:
-                    if traci.vehicle.getStops(vid, 0):
-                        continue
+                    self._maintain_one(vid, now_seconds)
                 except traci.exceptions.TraCIException:
                     continue
-
-                current_edge = traci.vehicle.getRoadID(vid)
-                # 교차로 내부(internal) edge에 걸쳐있는 순간엔 경로탐색이 불안정하므로 건드리지 않고
-                # 다음 스텝(정상 edge로 넘어간 뒤)까지 대기
-                if current_edge.startswith(":"):
-                    continue
-
-                route = traci.vehicle.getRoute(vid)
-                route_idx = traci.vehicle.getRouteIndex(vid)
-                remaining = len(route) - route_idx - 1
-
-                if remaining > self.remaining_edges_threshold:
-                    continue
-
-                new_target = self._pick_target_edge(now_seconds, current_edge)
-
-                if not new_target or new_target == current_edge:
-                    # 목적지 탐색 실패 — 연속 실패 카운트 누적
-                    self.fail_counts[vid] = self.fail_counts.get(vid, 0) + 1
-                    if self.fail_counts[vid] >= self.fail_threshold:
-                        # 5번 연속 실패 = 고립된 edge로 판정, 소멸 후 재생성
-                        self._respawn_taxi(vid)
-                    continue
-
-                # 목적지를 찾았으면 실패 카운트 리셋
-                self.fail_counts[vid] = 0
-
-                try:
-                    # 손님 없이 대기 중인 택시는 SUMO taxi device가 자동으로 "idling 정지"를
-                    # 걸어둔 상태일 수 있음. 그 상태에서 바로 changeTarget을 하면 기존 정지
-                    # 스케줄과 충돌해서 "could not assign stop" 에러가 나고 결국 택시가 오도가도
-                    # 못 하다 소멸함. resume()으로 idling 정지를 먼저 풀어준 뒤 목적지를 바꿈.
-                    #
-                    # 예전엔 getStops(vid, 1)의 "예정된 정지가 있는지"만 보고 무조건 resume()을
-                    # 불렀는데, 이건 "정지가 예약돼 있음"과 "지금 실제로 정지해 있음"을 혼동한
-                    # 것이었음. 아직 정지 지점에 도달 전인 택시에도 resume()을 걸어서
-                    # "Failed to resume from stopping" 에러가 대량으로 찍히던 원인.
-                    # isStopped()로 "지금 실제로 멈춰있는지"를 확인한 뒤에만 resume() 호출.
-                    if traci.vehicle.isStopped(vid):
-                        traci.vehicle.resume(vid)
-                except traci.exceptions.TraCIException:
-                    pass  # 정지 상태가 아니었으면 resume 호출이 실패할 수 있음 — 무시하고 진행
-
-                try:
-                    traci.vehicle.changeTarget(vid, new_target)
-                except traci.exceptions.TraCIException:
-                    continue  # 이번 시도가 실패해도 다음 스텝에 다시 시도됨
         except traci.exceptions.TraCIException:
             pass
+        finally:
+            if self._removed_this_step:
+                if current_vids is not None:
+                    current_vids.difference_update(self._removed_this_step)
+                self._removed_this_step = []
+
+    def _next_edge_fallback(self, current_edge: str):
+        try:
+            links = traci.lane.getLinks(current_edge + "_0")
+        except traci.exceptions.TraCIException:
+            return None
+        nexts = []
+        for link in links:
+            lane_id = link[0]
+            if not lane_id or lane_id.startswith(":"):
+                continue
+            edge_id = lane_id.rsplit("_", 1)[0]
+            if edge_id != current_edge and not edge_id.startswith(":"):
+                nexts.append(edge_id)
+        return random.choice(nexts) if nexts else None
+
+    # [수정] 클래스 외부로 빠져나갔던 들여쓰기를 완벽 복구
+    def _maintain_one(self, vid: str, now_seconds: float):
+        if traci.vehicle.getPersonIDList(vid):
+            self._last_info[vid] = ("승객 탑승", None, None)
+            return
+
+        try:
+            if traci.vehicle.getStops(vid, 0):
+                self._last_info[vid] = ("배차 stop 있음", None, None)
+                return
+        except traci.exceptions.TraCIException:
+            return
+
+        current_edge = traci.vehicle.getRoadID(vid)
+        if current_edge.startswith(":"):
+            return
+
+        route = traci.vehicle.getRoute(vid)
+        route_idx = traci.vehicle.getRouteIndex(vid)
+        remaining = len(route) - route_idx - 1
+        self._last_info[vid] = ("빈 택시", current_edge, remaining)
+
+        if remaining > self.remaining_edges_threshold:
+            return
+
+        # [최적화 2] RL이 제어 중일 땐 매니저가 새 목적지를 주지 않고(이중 제어 방지), 오직 1칸 생존 연장만 허용
+        if self.strategy == "rl_prepositioned":
+            if not (self.rl_keepalive and remaining <= 0):
+                return
+            new_target = self._next_edge_fallback(current_edge)
+            if new_target:
+                self.spawn_stats["fallback_next_edge"] += 1
+        else:
+            new_target = self._pick_target_edge(now_seconds, current_edge)
+            if not new_target or new_target == current_edge:
+                new_target = self._next_edge_fallback(current_edge)
+                if new_target:
+                    self.spawn_stats["fallback_next_edge"] += 1
+
+        if not new_target or new_target == current_edge:
+            self.fail_counts[vid] = self.fail_counts.get(vid, 0) + 1
+            if self.fail_counts[vid] >= self.fail_threshold:
+                self._respawn_taxi(vid)
+            return
+
+        try:
+            if traci.vehicle.isStopped(vid):
+                traci.vehicle.resume(vid)
+        except traci.exceptions.TraCIException:
+            pass
+
+        # [최적화 3] 도달 가능한 도로인지 확인 후 명령을 내려 에러 도배(unreachable) 완벽 차단
+        try:
+            route_check = traci.simulation.findRoute(current_edge, new_target, vType=self.vtype)
+            if route_check and len(route_check.edges) > 0:
+                traci.vehicle.changeTarget(vid, new_target)
+                self.fail_counts[vid] = 0
+            else:
+                self.fail_counts[vid] = self.fail_counts.get(vid, 0) + 1
+        except Exception:
+            self.fail_counts[vid] = self.fail_counts.get(vid, 0) + 1
+
+        if self.fail_counts.get(vid, 0) >= self.fail_threshold:
+            self._respawn_taxi(vid)

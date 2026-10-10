@@ -47,12 +47,13 @@ class HungarianDispatcher:
         # dispatchTaxi 실패(연속) 시 그 예약을 포기하고 다음 스텝에 다시 시도할 수 있게
         # 별도로 걸러내진 않음 — SUMO가 상태를 관리하므로 실패해도 다음 스텝에 재시도됨.
 
-    def _get_pending_reservations(self):
-        """아직 배정 시도하지 않은 예약만 반환."""
-        try:
-            reservations = traci.person.getTaxiReservations(0)
-        except traci.exceptions.TraCIException:
-            return []
+    def _get_pending_reservations(self, reservations=None):
+        """아직 배정 시도하지 않은 예약만 반환. reservations를 주면 TraCI 조회를 생략."""
+        if reservations is None:
+            try:
+                reservations = traci.person.getTaxiReservations(0)
+            except traci.exceptions.TraCIException:
+                return []
         return [r for r in reservations if r.id not in self.dispatched_reservations]
 
     def _get_idle_taxis(self):
@@ -70,17 +71,20 @@ class HungarianDispatcher:
         except (traci.exceptions.TraCIException, IndexError):
             return (0.0, 0.0)
 
-    def maintain(self, now_seconds: float = 0):
+    def maintain(self, now_seconds: float = 0, idle_taxis=None, reservations=None):
+        """idle_taxis / reservations: 메인 루프가 스텝당 한 번 가져온 값 (None이면 직접 조회).
+        반환: 이번 스텝에 dispatchTaxi 성공한 택시 id 리스트 (메인 루프가 idle 목록에서 빼는 데 사용)."""
+        dispatched_now = []
         try:
-            reservations = self._get_pending_reservations()
-            idle_taxis = self._get_idle_taxis()
+            reservations = self._get_pending_reservations(reservations)
+            idle_taxis = list(idle_taxis) if idle_taxis is not None else self._get_idle_taxis()
 
             # 후보가 아예 없을 때 왜 안 잡히는지 확인하기 위한 임시 프린트
             # if not reservations or not idle_taxis:
             #     return
 
             if not reservations or not idle_taxis:
-                return
+                return dispatched_now
 
             taxi_positions = []
             for vid in idle_taxis:
@@ -105,6 +109,7 @@ class HungarianDispatcher:
                 try:
                     traci.vehicle.dispatchTaxi(vid, [res.id])
                     self.dispatched_reservations.add(res.id)
+                    dispatched_now.append(vid)
                     self.dispatched_person_ids.update(res.persons)  # 이 승객들은 이제 예약이 걸린 상태
                     # 👈 배정 성공할 때마다 콘솔에 찍히는 디버그 로그 추가
                     #print(f"[Hungarian] {vid} -> 예약 {res.id} 배정 (누적 {len(self.dispatched_reservations)}건)")
@@ -112,3 +117,4 @@ class HungarianDispatcher:
                     continue
         except traci.exceptions.TraCIException:
             pass
+        return dispatched_now

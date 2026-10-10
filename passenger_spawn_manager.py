@@ -37,20 +37,38 @@ traci.person.getIDList()를 매 스텝 비교해서, "이전 스텝엔 있었는
 import random
 import traci
 from config_loader import CFG
+from holiday_utils import resolve_is_holiday
 
 
 class PassengerSpawnManager:
     _weather_logged = False  # 날씨 보정 로그를 프로세스당 1번만 찍기 위한 플래그
+    _holiday_logged_for = None  # 공휴일 로그를 같은 날짜에 대해 1번만 찍기 위한 플래그
+    _HOLIDAY_DEFAULTS = {"school": 0.0, "company": 0.25, "lunch": 1.0,
+                         "evening": 1.0, "restaurant": 1.5, "general": 1.3, "department": 2.0}
 
     def __init__(self, zones: dict, sim_start_hour: float, sim_end_hour: float = None,
                  school_pop_base: int = None, company_pop_base: int = None,
-                 seed: int = None):
+                 seed: int = None, sim_date=None, department_edges: list = None,
+                 holiday_mode: str = None):
         if seed is not None:
             random.seed(seed)
 
         self.sim_start_hour = sim_start_hour
         # [날씨 보정] GUI "날씨적용" 체크 시 오늘 날씨로 모든 택시 선택 확률에 가산값을 더함.
         self.weather_bonus = self._compute_weather_bonus()
+        # [공휴일 보정] sim_date(없으면 평일 취급)와 holiday_mode로 평일/공휴일을 판정하고,
+        # 공휴일이면 카테고리별 배율을 택시확률에 곱함. 평일이면 모든 배율이 1.0이라 기존과 동일.
+        self.sim_date = sim_date
+        # holiday_mode를 직접 넘기면(A/B의 평일/공휴일 비교) config.json 값보다 우선.
+        _hmode = holiday_mode or CFG.get("holiday_mode", "auto")
+        self.is_holiday = resolve_is_holiday(sim_date, _hmode) if (
+            sim_date is not None or _hmode != "auto") else False
+        user_mult = CFG.get("holiday_multipliers") or {}
+        self.holiday_mult = {k: float(user_mult.get(k, v)) for k, v in self._HOLIDAY_DEFAULTS.items()}
+        if PassengerSpawnManager._holiday_logged_for != (str(sim_date), self.is_holiday):
+            PassengerSpawnManager._holiday_logged_for = (str(sim_date), self.is_holiday)
+            print(f"[공휴일 보정] 날짜 {sim_date} -> {'공휴일/주말' if self.is_holiday else '평일'}"
+                  f"{' | 배율 ' + str(self.holiday_mult) if self.is_holiday else ''}")
         self.school_pop_base = int(CFG.get("school_pop_base", 400) if school_pop_base is None else school_pop_base)
         self.company_pop_base = int(CFG.get("company_pop_base", 100) if company_pop_base is None else company_pop_base)
         self.school_start_hour = float(CFG.get("school_start_hour", 7.0))
@@ -83,6 +101,18 @@ class PassengerSpawnManager:
         self._restaurant_civilian_accumulator = 0.0
         self._restaurant_civilian_last_second = -1
 
+        # 백화점/쇼핑몰 (스폰 전용 후보 edge. zones/카테고리에는 없음 -> RL 관측/행동 크기 영향 없음)
+        self.department_edges = list(department_edges or [])
+        self.department_enabled = bool(CFG.get("department_enabled", True)) and len(self.department_edges) > 0
+        self.department_pop_base = float(CFG.get("department_pop_base", 40))
+        self.department_window_start = float(CFG.get("department_window_start", 11.0))
+        self.department_window_end = float(CFG.get("department_window_end", 21.0))
+        self.department_taxi_probability = float(CFG.get("department_taxi_probability", 0.10))
+        self.department_stay_sec = float(CFG.get("department_stay_sec", 5400.0))
+        self._department_accumulator = 0.0
+        self._department_last_second = -1
+        self._department_pending = []  # 체류 후 귀가 트리거 시각 목록
+
         # -------------------------------------------------------------
         # 기본 승객 수(num_passengers) 기반 독립 가챠 생성
         # 기존 시간대별(school/company/residential 스케줄) 로직과는 완전히 별개로,
@@ -95,11 +125,9 @@ class PassengerSpawnManager:
         self.sim_end_hour = sim_end_hour
         if self.sim_end_hour is not None and self.num_passengers > 0:
             duration_sec = max(1.0, (self.sim_end_hour - self.sim_start_hour) * 3600.0)
-            # 초당 시도 횟수(소수 가능). population이 duration_sec보다 커지면
-            # 매초 여러 번 시도해야 하는데, 예전엔 정수초 interval로 반올림해서
-            # 1초 밑으로는 못 내려가 5000/10000처럼 큰 값끼리 결과가 똑같아지는
-            # 포화 버그가 있었음 -> accumulator로 매초 여러 번 시도 가능하게 수정
-            self._gacha_rate_per_sec = self.num_passengers / duration_sec
+            
+            # [변경] 기존 초당 비율에 10초 주기를 반영하여 10배로 늘림
+            self._gacha_rate_per_sec = (self.num_passengers / duration_sec) * 10.0
         else:
             self._gacha_rate_per_sec = None
         self._gacha_accumulator = 0.0
@@ -140,6 +168,7 @@ class PassengerSpawnManager:
             "lunch_release": 0, "lunch_return": 0,
             "school_afternoon": 0, "evening": 0,
             "residential_gacha": 0, "restaurant_civilian": 0,
+            "department": 0, "department_return": 0,
         }
         # 각 이벤트가 "한 번만" 실행되도록 하는 트리거 플래그/스냅샷
         self._lunch_12_done = False
@@ -153,6 +182,7 @@ class PassengerSpawnManager:
 
         # 음식점 개인별 재스폰 대기열: [(트리거시각, 출발edge), ...]
         self._restaurant_pending = []
+        self._current_pids = None  # maintain() 실행 중에만 유효한 스냅샷 참조
 
     # ---------- 내부 유틸 ----------
     def _current_hour(self, now_seconds: float) -> float:
@@ -171,6 +201,8 @@ class PassengerSpawnManager:
         except traci.exceptions.TraCIException:
             return None
         self.total_spawned += 1
+        if self._current_pids is not None:
+            self._current_pids.add(pid)  # 이번 스텝 스냅샷에도 반영
         if dest_category:
             self._dest_category[pid] = dest_category
         if lunch_cycle:
@@ -184,8 +216,8 @@ class PassengerSpawnManager:
         return candidate
 
     # ---------- 도착(흡수) 감지 ----------
-    def _process_arrivals(self, timeout_removed_pids: set, now_seconds: float):
-        current_ids = set(traci.person.getIDList())
+    def _process_arrivals(self, timeout_removed_pids: set, now_seconds: float, current_pids: set):
+        current_ids = set(current_pids)  # 복사: 이후 스폰으로 current_pids가 커져도 _prev_active_ids는 스폰 전 상태 유지
         disappeared = self._prev_active_ids - current_ids
         self._prev_active_ids = current_ids
 
@@ -207,6 +239,10 @@ class PassengerSpawnManager:
             if category == "restaurant" and not was_lunch:
                 self._restaurant_pending.append((now_seconds + self.restaurant_stay_sec, None))
 
+            # 백화점 도착 -> 체류 후 주거로 귀가 예약
+            if category == "department":
+                self._department_pending.append(now_seconds + self.department_stay_sec)
+
     # ---------- 아침 (7~10시): 학교 등교(7~8시, 9시 컷오프) + 회사 출근(8~10시) ----------
     def _maintain_morning(self, now_seconds: float, now_hour: float):
         # 학교 등교: 7~8시, 8시에 가까울수록 택시 확률 선형 증가, 9시 이후 완전 중단
@@ -215,7 +251,7 @@ class PassengerSpawnManager:
             if random.random() < rate:
                 peak = min(max(self.school_taxi_peak_hour, self.school_start_hour), self.school_end_hour)
                 taxi_prob = 0.0 if now_hour <= self.school_start_hour else min(1.0, (now_hour - self.school_start_hour) / max(peak - self.school_start_hour, 1e-9))
-                if random.random() < self._tp(taxi_prob):
+                if random.random() < self._tp(taxi_prob, "school"):
                     start_e = self._pick_edge(self.transit_edges)
                     end_e = self._pick_edge(self.school_edges)
                     self._spawn_person(now_seconds, start_e, end_e, dest_category="school")
@@ -239,7 +275,7 @@ class PassengerSpawnManager:
             for _ in range(attempts):
                 peak = min(max(self.company_taxi_peak_hour, self.company_start_hour), self.company_end_hour)
                 taxi_prob = 0.0 if now_hour <= self.company_start_hour else min(1.0, (now_hour - self.company_start_hour) / max(peak - self.company_start_hour, 1e-9))
-                if random.random() < self._tp(taxi_prob):
+                if random.random() < self._tp(taxi_prob, "company"):
                     start_e = self._pick_edge(self.transit_edges)
                     end_e = self._pick_edge(self.company_edges)
                     self._spawn_person(now_seconds, start_e, end_e, dest_category="company")
@@ -250,7 +286,7 @@ class PassengerSpawnManager:
         if not self._lunch_12_done and now_hour >= self.lunch_start_hour:
             self._lunch_12_done = True
             release_total = int(self.absorbed.get("company", 0) * self.lunch_company_release_fraction)
-            self._lunch_release_taxi_count = int(release_total * self._tp(self.lunch_taxi_fraction))
+            self._lunch_release_taxi_count = int(release_total * self._tp(self.lunch_taxi_fraction, "lunch"))
             for _ in range(self._lunch_release_taxi_count):
                 start_e = self._pick_edge(self.company_edges)
                 end_e = self._pick_edge(self.restaurant_edges)
@@ -296,7 +332,7 @@ class PassengerSpawnManager:
         if self.evening_start_hour <= now_hour < self.evening_end_hour:
             rate = self._evening_pool_snapshot / max((self.evening_end_hour - self.evening_start_hour) * 3600.0, 1.0)
             if random.random() < rate:
-                if random.random() < self._tp(self.evening_taxi_fraction):  # 버스35%+지하철35% 제외 -> 30%만 택시
+                if random.random() < self._tp(self.evening_taxi_fraction, "evening"):  # 버스35%+지하철35% 제외 -> 30%만 택시
                     dest_pool = self.residential_edges if random.random() < self.evening_residential_fraction else self.restaurant_edges
                     start_e = self._pick_edge(self.company_edges)
                     end_e = self._pick_edge(dest_pool)
@@ -352,11 +388,44 @@ class PassengerSpawnManager:
         self._restaurant_civilian_accumulator -= attempts
 
         for _ in range(attempts):
-            if random.random() < self._tp(self.restaurant_civilian_taxi_probability):
+            if random.random() < self._tp(self.restaurant_civilian_taxi_probability, "restaurant"):
                 start_e = self._pick_edge(self.transit_edges)
                 end_e = self._pick_edge(self.restaurant_edges)
                 self._spawn_person(now_seconds, start_e, end_e, dest_category="restaurant")
                 self.spawn_counts["restaurant_civilian"] += 1
+
+    # ---------- 백화점 방문 시민 (버스정류장/지하철입구 -> 백화점, 체류 후 주거 귀가) ----------
+    def _maintain_department(self, now_seconds: float, now_hour: float):
+        if not self.department_enabled:
+            return
+        # 체류가 끝난 사람은 시간대와 무관하게 주거로 귀가
+        still = []
+        for trigger_time in self._department_pending:
+            if now_seconds >= trigger_time:
+                start_e = self._pick_edge(self.department_edges)
+                end_e = self._pick_edge(self.residential_edges)
+                if self._spawn_person(now_seconds, start_e, end_e, dest_category="residential"):
+                    self.spawn_counts["department_return"] += 1
+            else:
+                still.append(trigger_time)
+        self._department_pending = still
+
+        if not (self.department_window_start <= now_hour < self.department_window_end):
+            return
+        total_pop = self.department_pop_base * len(self.department_edges)
+        rate = total_pop / max((self.department_window_end - self.department_window_start) * 3600.0, 1.0)
+        cur_second = int(now_seconds)
+        if cur_second != self._department_last_second:
+            self._department_last_second = cur_second
+            self._department_accumulator += rate
+        attempts = int(self._department_accumulator)
+        self._department_accumulator -= attempts
+        for _ in range(attempts):
+            if random.random() < self._tp(self.department_taxi_probability, "department"):
+                start_e = self._pick_edge(self.transit_edges)
+                end_e = self._pick_edge(self.department_edges)
+                if self._spawn_person(now_seconds, start_e, end_e, dest_category="department"):
+                    self.spawn_counts["department"] += 1
 
     # ---------- 날씨 보정 ----------
     @staticmethod
@@ -404,17 +473,28 @@ class PassengerSpawnManager:
                   f"{wind_label} -> 택시확률 {bonus:+.3f}")
         return bonus
 
-    def _tp(self, p: float) -> float:
-        """기본 택시확률 p에 날씨 가산값을 더해 0~1로 자른 값."""
-        return min(1.0, max(0.0, p + self.weather_bonus))
+    def _tp(self, p: float, category: str = None) -> float:
+        """기본 택시확률 p에 날씨 가산값을 더한 뒤, 공휴일이면 카테고리 배율을 곱해 0~1로 자른 값.
+
+        배율을 가산 뒤에 곱하므로 배율 0(예: 공휴일 등교)이면 날씨 가산이 있어도 확실히 0이 됨.
+        평일이거나 category가 None이면 배율은 1.0 (기존 동작과 동일).
+        """
+        mult = self.holiday_mult.get(category, 1.0) if (self.is_holiday and category) else 1.0
+        return min(1.0, max(0.0, (p + self.weather_bonus) * mult))
 
     # ---------- 기본 승객 수(num_passengers) 독립 가챠 ----------
     def _maintain_residential_gacha(self, now_seconds: float):
         if self._gacha_rate_per_sec is None:
             return
+        
         cur_second = int(now_seconds)
+        
+        # [변경] 정확히 10초에 한 번씩만 실행되도록 조건 추가
+        if cur_second % 10 != 0:
+            return
+            
         if cur_second == self._gacha_last_second:
-            return  # 같은 초 안에서 traci step이 여러 번 불려도 중복 누적 방지
+            return  
         self._gacha_last_second = cur_second
 
         self._gacha_accumulator += self._gacha_rate_per_sec
@@ -422,23 +502,29 @@ class PassengerSpawnManager:
         self._gacha_accumulator -= attempts
 
         for _ in range(attempts):
-            if random.random() < self._tp(self.residential_taxi_probability):
+            if random.random() < self._tp(self.residential_taxi_probability, "general"):
                 start_e = self._pick_edge(self.all_edges)
                 end_e = self._pick_edge(self.all_edges, exclude=start_e)
                 self._spawn_person(now_seconds, start_e, end_e, dest_category=None)
                 self.spawn_counts["residential_gacha"] += 1
-        # 미당첨(90%)은 그냥 아무것도 생성하지 않고 소멸
-
     # ---------- 매 스텝 호출 ----------
-    def maintain(self, now_seconds: float, timeout_removed_pids: set = None):
+    def maintain(self, now_seconds: float, timeout_removed_pids: set = None, current_pids: set = None):
+        """current_pids: 메인 루프가 스텝 시작에 한 번 가져온 person ID set (pax_manager가 지운 id는 이미 빠져 있음).
+        이 매니저가 새로 만든 사람은 _spawn_person()이 current_pids에 직접 추가해서,
+        뒤에 오는 log_recorder가 같은 스텝에 새 승객을 보게 한다. None이면 직접 조회."""
         timeout_removed_pids = timeout_removed_pids or set()
+        if current_pids is None:
+            current_pids = set(traci.person.getIDList())
+        self._current_pids = current_pids
         now_hour = self._current_hour(now_seconds) % 24
 
-        self._process_arrivals(timeout_removed_pids, now_seconds)
+        self._process_arrivals(timeout_removed_pids, now_seconds, current_pids)
         self._maintain_morning(now_seconds, now_hour)
         self._maintain_lunch(now_seconds, now_hour)
         self._maintain_school_afternoon(now_seconds, now_hour)
         self._maintain_evening(now_seconds, now_hour)
         self._maintain_restaurant_timers(now_seconds)
         self._maintain_restaurant_civilian(now_seconds, now_hour)
+        self._maintain_department(now_seconds, now_hour)
         self._maintain_residential_gacha(now_seconds)
+        self._current_pids = None

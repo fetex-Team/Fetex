@@ -59,10 +59,55 @@ class CategoryDemandPredictor:
         years = {self.run_date.year, (self.run_date + datetime.timedelta(days=1)).year}
         self._holiday_dates = korean_holidays(years)
 
+    def reset(self, run_date=None):
+        """에피소드(또는 평가 실행) 시작 때 호출: 날짜(요일·공휴일 피처)를 맞추고 수요 이력을 비운다.
+        안 비우면 이전 에피소드 마지막 수요가 새 에피소드 초반 lag 피처로 새어 들어간다."""
+        if run_date is not None:
+            self.run_date = run_date
+            from module2_preprocessing.time_features import korean_holidays
+            years = {self.run_date.year, (self.run_date + datetime.timedelta(days=1)).year}
+            self._holiday_dates = korean_holidays(years)
+        self._wcache = {}
+        for c in self.category_list:
+            n = self._history[c].maxlen
+            self._history[c].clear()
+            self._history[c].extend([0.0] * n)
+
     def update(self, observed_counts: dict):
         """rl_env.py가 매 decision interval마다 실제 관측한 대기승객 수(또는 신규 수요)를 넣어줌"""
         for c in self.category_list:
             self._history[c].append(float(observed_counts.get(c, 0.0)))
+
+    def _weather_features(self, sim_dt) -> dict:
+        """학습 때(train.py / train_category_demand.py)와 같은 함수(merge_external_data)로 날씨 피처를 만든다.
+        - 날씨 파일(data/external/weather_*.csv)이 그 날짜를 포함하면 실제 관측값이 붙고,
+        - 포함하지 않으면 학습 때와 똑같이 값=NaN->0, weather_missing=1이 된다 (학습/실행 입력이 일치).
+        5분 칸 단위로 캐시해서 호출 비용을 줄인다."""
+        key = (sim_dt.date(), (sim_dt.hour * 60 + sim_dt.minute) // 5)
+        cache = getattr(self, "_wcache", None)
+        if cache is None:
+            cache = self._wcache = {}
+        if key in cache:
+            return cache[key]
+        from module2_preprocessing.external_data_merge import (
+            merge_external_data, find_weather_file, load_weather, EXTERNAL_FEATURE_COLS)
+        if getattr(self, "_weather_loaded", False) is False:
+            self._weather_loaded = True
+            self._weather = None
+            try:
+                path = find_weather_file()
+                if path and os.path.exists(path):
+                    self._weather = load_weather(path)
+            except Exception as e:
+                print(f"[경고] 날씨 파일을 읽지 못해 학습 때 날씨 없는 행과 같은 값으로 채웁니다: {e}")
+        bucket = pd.Timestamp(sim_dt).floor("5min")
+        row = merge_external_data(pd.DataFrame({"time_bucket": [bucket]}), weather=self._weather, verbose=False)
+        out = {}
+        for c in EXTERNAL_FEATURE_COLS:
+            v = row.iloc[0][c]
+            out[c] = 0.0 if pd.isna(v) else float(v)   # 학습 때 X.fillna(0)과 동일
+        cache[key] = out
+        return out
 
     def _build_features(self, category: str, sim_time: float) -> np.ndarray:
         """학습 때(Module 2 create_features)와 같은 이름의 피처를 만들어 준다.
@@ -110,6 +155,8 @@ class CategoryDemandPredictor:
                 val = tf.iloc[0][col]
                 if not isinstance(val, str):
                     feats[col] = float(val)
+
+        feats.update(self._weather_features(sim_dt))   # temperature/precipitation/wind_speed/is_rain/weather_missing/weather_interpolated
 
         missing = [c for c in self.feature_cols if c not in feats]
         if missing and not getattr(self, "_warned_missing", False):

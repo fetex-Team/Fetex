@@ -110,7 +110,7 @@ def main():
                 # [Surge Pricing 대체] GUI 탭4의 "인센티브 리워드 가중치" 슬라이더 값.
                 # config.json에 없으면 0.0 (기존 대기감소 보상만 쓰는 것과 완전히 동일하게 동작)
                 incentive_weight=CFG.get("incentive_weight", 0.0),
-                target_hotspot_ratio=CFG.get("target_hotspot_ratio", 0.8),
+                target_hotspot_ratio=CFG.get("target_hotspot_ratio", 0.7),
                 randomize_passenger_seed=CFG.get("rl_randomize_passenger_seed", True),
                 training_seed_base=int(CFG.get("rl_training_seed_base", 1000)),
                 worker_index=worker_index,

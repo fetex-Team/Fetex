@@ -107,10 +107,13 @@ def save_feature_table(feat: pd.DataFrame, out_path: str):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--logs", nargs="+", default=[os.path.join(ROOT, "data", "sim_logs", "demand_log_*.csv")])
+    ap.add_argument("--logs", nargs="+", default=None, help="생략하면 config_gui에서 고른 로그(없으면 demand_log_*.csv 전체)")
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "processed", "features.csv"))
     ap.add_argument("--weather", default=None)
     ap.add_argument("--freq", default=None)
     a = ap.parse_args()
+    if a.logs is None:
+        from log_selection import selected_log_paths
+        a.logs = selected_log_paths()
     feat = build_feature_table(a.logs, freq=a.freq, weather_path=a.weather)
     save_feature_table(feat, a.out)
