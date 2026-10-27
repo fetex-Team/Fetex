@@ -52,7 +52,6 @@ from passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
 from holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
-from module4_dispatch.custom_dispatchers import make_dispatcher
 from step_snapshot import fetch_idle_taxis
 from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer  # 추가
 from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 2] 호출 로그 기록 (feat3, 병합)
@@ -127,7 +126,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     # 매칭 알고리즘을 바꾸지 않는다.
     taxi_strategy = meta.get("taxi_strategy")
     dispatch_algo = meta.get("taxi_dispatch_algorithm")
-    hungarian_dispatcher = make_dispatcher(dispatch_algo)  # hungarian / custom_greedy / custom_routeExtension (변수명은 호환 위해 유지)
+    hungarian_dispatcher = HungarianDispatcher() if dispatch_algo == "hungarian" else None
 
     # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
     # dispatcher를 넘겨주면, 이미 Hungarian이 예약을 배정한 승객의 강제제거를 한 스텝
@@ -259,7 +258,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                 _w = time.time()
                 print(f"[진행] 시뮬 {_hh:02d}:{_mm:02d} ({now/sim_end_seconds*100:.0f}%) | "
                       f"호출 누적 {len(log_recorder.records)}건 | 탑승 {len(pickup_time)}명 | "
-                      f"타임아웃 {len(pax_manager.removed_pids)}명 | 택시 {sum(1 for v in current_vids if v.startswith('taxi'))}대 | "
+                      f"타임아웃 {len(pax_manager.removed_pids)}명 | 택시 {len(current_vids)}대 | "
                       f"[진단] 살아있는 승객 {len(current_pids)}명 · 제거 보류 {len(pax_manager._reserved_now)}명 | "
                       f"실시간 +{_w - _wall_prev:.0f}초 (누적 {(_w - _wall0)/60:.1f}분)", flush=True)
                 _wall_prev = _w
@@ -301,7 +300,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                 teleport_count += traci.simulation.getStartingTeleportNumber()
                 recorder.capture(
                     now, depart_time, pickup_time, arrived_pids,
-                    pax_manager.removed_pids, set(), None, teleport_count,
+                    pax_manager.removed_pids, set(), rl_maintainer, teleport_count,
                     vehicle_ids=current_vids, idle_taxis=idle_taxis, person_ids=current_pids,
                 )
 

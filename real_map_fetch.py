@@ -3,6 +3,8 @@ import sys
 import urllib.request
 import subprocess
 import xml.etree.ElementTree as ET
+import tempfile
+import time
 
 # 프로젝트 루트 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -14,8 +16,35 @@ def fetch_osm_data(lat_min, lat_max, lng_min, lng_max, output_path):
     print(f"[안내] OSM 실제 지도 데이터 다운로드 중... (bbox={lng_min},{lat_min},{lng_max},{lat_max})")
     
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req) as response, open(output_path, 'wb') as out_file:
-        out_file.write(response.read())
+    with urllib.request.urlopen(req) as response:
+        payload = response.read()
+
+    # Windows에서 기존 region.osm.xml을 직접 'wb'로 열면, Explorer 미리 보기나
+    # 백신의 순간 검사 때문에 간헐적으로 [Errno 22] Invalid argument가 난다.
+    # 먼저 같은 폴더의 임시 파일에 완성본을 쓴 뒤 교체하면 실패해도 기존 지도는 보존된다.
+    output_dir = os.path.dirname(os.path.abspath(output_path))
+    fd, temp_path = tempfile.mkstemp(prefix="region_download_", suffix=".osm.xml", dir=output_dir)
+    try:
+        with os.fdopen(fd, 'wb') as out_file:
+            out_file.write(payload)
+        for attempt in range(3):
+            try:
+                os.replace(temp_path, output_path)
+                break
+            except OSError as exc:
+                if attempt == 2:
+                    raise OSError(
+                        f"OSM 파일을 교체할 수 없습니다: {output_path}. "
+                        "SUMO/Explorer에서 이 파일을 열었다면 닫은 뒤 다시 시도하세요."
+                    ) from exc
+                time.sleep(0.5)
+    finally:
+        # os.replace 성공 뒤에는 temp_path가 사라지고, 실패한 경우에만 정리한다.
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
     
     file_size_kb = os.path.getsize(output_path) / 1024
     print(f"[완료] OSM 원본 저장: {output_path} ({file_size_kb:.1f} KB)")

@@ -178,7 +178,7 @@ class ConfigGUI:
         ttk.Button(bf, text="학습만 실행", command=self.open_training_dialog).pack(side="left", fill="x", expand=True, padx=3)
         ttk.Button(bf, text="🧪 A/B 비교하기", command=self.open_ab_compare_dialog).pack(side="left", fill="x", expand=True, padx=3)
         ttk.Button(bf, text="📊 분석하기", command=self.open_analysis_dialog).pack(side="left", fill="x", expand=True, padx=3)
-        ttk.Button(bf, text="🎮 유니티에서 작업하기", command=self.run_unity_export).pack(side="left", fill="x", expand=True, padx=3)
+        ttk.Button(bf, text="🎬 유니티 재생 생성기", command=self.open_unity_replay_dialog).pack(side="left", fill="x", expand=True, padx=3)
 
         self.status = ttk.Label(bottom_frame, text="현재 config.json을 불러오는 중...")
         self.status.pack(anchor="w", padx=12, pady=(0, 8))
@@ -770,11 +770,108 @@ class ConfigGUI:
             self.status.config(text="학습 중 오류 발생")
             messagebox.showerror("학습 오류", str(e))
 
+    def open_unity_replay_dialog(self):
+        """유니티 재생 데이터(Replay JSON) 생성을 위한 설정 다이얼로그."""
+        win = tk.Toplevel(self.root)
+        win.title("🎬 유니티 재생 생성기 설정")
+        win.geometry("520x680")
+        win.resizable(True, True)
+
+        # ── 하단 고정 액션 바 (버튼이 절대 화면 밖으로 밀려나지 않도록 먼저 bottom에 pack) ──
+        action_bar = ttk.Frame(win, padding=12)
+        action_bar.pack(side="bottom", fill="x")
+
+        ttk.Label(action_bar, text="※ 결과는 backup/ 폴더에 안전 보관되며 최신본으로 자동 갱신됩니다.",
+                  foreground="#6b7280").pack(anchor="w", pady=(0, 6))
+
+        # ── 상단/본문 영역 ──
+        body = ttk.Frame(win, padding=(12, 10))
+        body.pack(side="top", fill="both", expand=True)
+
+        ttk.Label(
+            body,
+            text="유니티에서 3D 시각화할 시뮬레이션 데이터를 생성합니다.\n"
+                 "선택한 전략들은 동일한 승객 수요와 날씨 조건으로 공정하게 비교 생성됩니다.",
+            wraplength=480, justify="left",
+        ).pack(anchor="w", pady=(0, 8))
+
+        # 1. 전략 선택 프레임
+        strat_box = ttk.LabelFrame(body, text="1. 생성할 택시 전략 선택 (체크)", padding=8)
+        strat_box.pack(fill="x", pady=4)
+
+        strat_defs = [
+            ("patrol", "일반 순찰 (patrol) — 빈 차 상태에서 구역 순찰", True),
+            ("prepositioned", "정적 선제배치 (prepositioned) — 핫스팟 구역 고정 대기", True),
+            ("rl_prepositioned", "AI 강화학습 선제배치 (rl_prepositioned) — PPO 동적 재배치", True),
+        ]
+        strat_vars = {}
+        for key, desc, default_val in strat_defs:
+            var = tk.BooleanVar(value=default_val)
+            strat_vars[key] = var
+            ttk.Checkbutton(strat_box, text=desc, variable=var).pack(anchor="w", pady=2)
+
+        # 2. 배차 알고리즘 선택 프레임
+        algo_box = ttk.LabelFrame(body, text="2. 배차 알고리즘 선택", padding=8)
+        algo_box.pack(fill="x", pady=4)
+
+        algos = ["hungarian", "greedy", "routeExtension", "custom_greedy", "custom_routeExtension"]
+        algo_var = tk.StringVar(value="hungarian")
+        algo_combo = ttk.Combobox(algo_box, textvariable=algo_var, values=algos, state="readonly", width=25)
+        algo_combo.pack(anchor="w")
+        ttk.Label(algo_box, text="💡 hungarian(헝가리안) 알고리즘이 전체 대기시간을 최소화하는 추천 방식입니다.",
+                  foreground="#6b7280").pack(anchor="w", pady=(3, 0))
+
+        # 3. 기록 간격 (Stride) 선택 프레임
+        stride_box = ttk.LabelFrame(body, text="3. 기록 간격 (Stride)", padding=8)
+        stride_box.pack(fill="x", pady=4)
+
+        stride_options = [
+            ("10초 간격 (권장, 파일 약 15MB 내외)", "10"),
+            ("5초 간격 (중간 정밀도)", "5"),
+            ("1초 간격 (초당 전체 기록, 고용량)", "1"),
+        ]
+        stride_var = tk.StringVar(value="10")
+        for label, val in stride_options:
+            ttk.Radiobutton(stride_box, text=label, value=val, variable=stride_var).pack(anchor="w", pady=1)
+
+        # 4. 유니티 StreamingAssets 자동 복사 연동
+        unity_default_path = r"J:\chromdowload\zip\Fetex-Unity-main\Fetex-Unity-main\Assets\StreamingAssets"
+        unity_box = ttk.LabelFrame(body, text="4. 유니티(Unity) 연동", padding=8)
+        unity_box.pack(fill="x", pady=4)
+
+        has_unity = os.path.exists(unity_default_path)
+        copy_var = tk.BooleanVar(value=has_unity)
+        ttk.Checkbutton(
+            unity_box,
+            text="완료 후 유니티 StreamingAssets 폴더로 자동 복사",
+            variable=copy_var
+        ).pack(anchor="w")
+        status_txt = f"경로: {unity_default_path}" if has_unity else "※ 기본 유니티 경로를 찾을 수 없습니다."
+        ttk.Label(unity_box, text=status_txt, foreground="#059669" if has_unity else "#b45309",
+                  wraplength=460).pack(anchor="w", pady=(2, 0))
+
+        def run_export():
+            selected_strats = [k for k, v in strat_vars.items() if v.get()]
+            if not selected_strats:
+                messagebox.showwarning("경고", "생성할 전략을 하나 이상 선택하세요.")
+                return
+
+            self.save_config_only()
+            cmd_args = ["--strategies"] + selected_strats + ["--algorithm", algo_var.get(), "--stride", stride_var.get()]
+            if copy_var.get() and has_unity:
+                cmd_args += ["--unity-dir", unity_default_path]
+
+            win.destroy()
+            self._run("export_unity_replay.py", cmd_args)
+
+        run_btn = tk.Button(action_bar, text="🚀 유니티 재생 데이터 생성 시작", command=run_export,
+                            bg="#2563eb", fg="white", font=("Malgun Gothic", 11, "bold"),
+                            relief="raised", cursor="hand2", pady=8)
+        run_btn.pack(fill="x")
+
     def run_unity_export(self):
-        """유니티 재생용 JSON(map.json + 전략/알고리즘별 replay json)을 생성.
-        export_unity_replay.py가 내부에서 build_env.py 재실행 + 시뮬레이션까지 다 함."""
-        self.save_config_only()
-        self._run("export_unity_replay.py")
+        """(하위 호환) 유니티 재생 생성기 다이얼로그 호출"""
+        self.open_unity_replay_dialog()
 
     def _list_category_models(self):
         """[(표시이름, 경로)] 수요예측 모델 후보. 맨 위가 '최신 성공작'(마지막으로 RL까지 정상 종료된 학습의 모델).

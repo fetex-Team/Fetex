@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (2942780 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
+<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (1587745 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
  <bounds minlat="37.4954430" minlon="127.0213060" maxlat="37.5044260" maxlon="127.0326290" />
  <node id="286490183" visible="true" version="3" changeset="35203064" timestamp="2015-11-09T21:42:01Z" user="panhoong" uid="624466" lat="37.5039457" lon="127.0259991" />
  <node id="287525731" visible="true" version="23" changeset="115122718" timestamp="2021-12-19T11:39:36Z" user="user_5239402" uid="5239402" lat="37.5091066" lon="127.0642476">
@@ -126,7 +126,8 @@
   <tag k="shelter" v="yes" />
   <tag k="tactile_paving" v="yes" />
  </node>
- <node id="357854833" visible="true" version="12" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.4966562" lon="127.0239846">
+ <node id="357854833" visible="true" version="14" changeset="189873953" timestamp="2026-10-02T11:45:06Z" user="wmxwu" uid="20503922" lat="37.4966562" lon="127.0239846">
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="롯데칠성" />
@@ -139,10 +140,12 @@
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="22114" />
   <tag k="route_ref" v="144;541;730" />
+  <tag k="shelter" v="yes" />
   <tag k="source" v="공공데이터포털" />
   <tag k="source:date" v="2021/09/16 07:31:03" />
  </node>
- <node id="357855116" visible="true" version="10" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.4965920" lon="127.0227611">
+ <node id="357855116" visible="true" version="12" changeset="189873953" timestamp="2026-10-02T11:45:05Z" user="wmxwu" uid="20503922" lat="37.4965920" lon="127.0227611">
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="서초동진흥아파트" />
@@ -155,6 +158,7 @@
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="22168" />
   <tag k="route_ref" v="730" />
+  <tag k="shelter" v="yes" />
   <tag k="source" v="공공데이터포털" />
   <tag k="source:date" v="2021/09/16 07:31:03" />
  </node>
@@ -265,7 +269,8 @@
   <tag k="source" v="공공데이터포털" />
   <tag k="source:date" v="2021/09/16 07:31:03" />
  </node>
- <node id="357966956" visible="true" version="19" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.5018031" lon="127.0257319">
+ <node id="357966956" visible="true" version="21" changeset="189956859" timestamp="2026-10-04T01:20:16Z" user="wmxwu" uid="20503922" lat="37.5018031" lon="127.0257319">
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="지하철2호선강남역(중)" />
@@ -276,6 +281,7 @@
   <tag k="network:wikidata" v="Q3724007" />
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="22011" />
+  <tag k="shelter" v="yes" />
  </node>
  <node id="368635189" visible="true" version="8" changeset="151063448" timestamp="2024-05-08T15:49:31Z" user="LuxuryCoop" uid="7245212" lat="37.5003551" lon="127.0269196">
   <tag k="amenity" v="cinema" />
@@ -960,8 +966,14 @@
  <node id="2280678705" visible="true" version="4" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4999818" lon="127.0339114" />
  <node id="2280678711" visible="true" version="5" changeset="85373984" timestamp="2020-05-18T09:36:57Z" user="octel" uid="238290" lat="37.5003255" lon="127.0356986" />
  <node id="2280678716" visible="true" version="5" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.5005054" lon="127.0355884" />
- <node id="2280678728" visible="true" version="4" changeset="85373984" timestamp="2020-05-18T09:36:57Z" user="octel" uid="238290" lat="37.5007121" lon="127.0369935" />
- <node id="2280678732" visible="true" version="3" changeset="85373984" timestamp="2020-05-18T09:36:57Z" user="octel" uid="238290" lat="37.5009049" lon="127.0369107" />
+ <node id="2280678728" visible="true" version="5" changeset="189570515" timestamp="2026-09-26T04:42:59Z" user="Nqye" uid="24581138" lat="37.5007121" lon="127.0369935">
+  <tag k="highway" v="traffic_signals" />
+  <tag k="traffic_signals" v="signal" />
+ </node>
+ <node id="2280678732" visible="true" version="4" changeset="189570515" timestamp="2026-09-26T04:42:59Z" user="Nqye" uid="24581138" lat="37.5009049" lon="127.0369107">
+  <tag k="highway" v="traffic_signals" />
+  <tag k="traffic_signals" v="signal" />
+ </node>
  <node id="2280678745" visible="true" version="6" changeset="164729899" timestamp="2025-04-09T15:18:39Z" user="aaei924" uid="10626814" lat="37.5012243" lon="127.0262358" />
  <node id="2280678751" visible="true" version="2" changeset="64132843" timestamp="2018-11-03T04:19:08Z" user="Q8ba2di0Pa" uid="2945135" lat="37.5012073" lon="127.0383603" />
  <node id="2280678787" visible="true" version="7" changeset="164729899" timestamp="2025-04-09T15:18:39Z" user="aaei924" uid="10626814" lat="37.5025398" lon="127.0253225" />
@@ -985,7 +997,9 @@
  <node id="2477255850" visible="true" version="2" changeset="85056023" timestamp="2020-05-12T04:04:25Z" user="octel" uid="238290" lat="37.5032214" lon="127.0348560" />
  <node id="2477255859" visible="true" version="4" changeset="85014503" timestamp="2020-05-11T09:42:36Z" user="octel" uid="238290" lat="37.5006318" lon="127.0336239" />
  <node id="2477255860" visible="true" version="5" changeset="148421720" timestamp="2024-03-09T13:07:49Z" user="SilkBlue" uid="5177972" lat="37.5002125" lon="127.0346502" />
- <node id="2477256602" visible="true" version="3" changeset="85075246" timestamp="2020-05-12T09:15:43Z" user="octel" uid="238290" lat="37.5061310" lon="127.0344638" />
+ <node id="2477256602" visible="true" version="4" changeset="189570728" timestamp="2026-09-26T04:57:45Z" user="Nqye" uid="24581138" lat="37.5061310" lon="127.0344638">
+  <tag k="junction" v="yes" />
+ </node>
  <node id="2477258767" visible="true" version="1" changeset="18103606" timestamp="2013-09-30T04:33:20Z" user="Tungmar" uid="427807" lat="37.5019977" lon="127.0299827" />
  <node id="2477258768" visible="true" version="1" changeset="18103606" timestamp="2013-09-30T04:33:20Z" user="Tungmar" uid="427807" lat="37.5023573" lon="127.0304280" />
  <node id="2477258769" visible="true" version="2" changeset="85056023" timestamp="2020-05-12T04:04:25Z" user="octel" uid="238290" lat="37.5022605" lon="127.0333632" />
@@ -1101,9 +1115,11 @@
   <tag k="traffic_signals:sound" v="no" />
   <tag k="traffic_signals:vibration" v="yes" />
  </node>
- <node id="3054785344" visible="true" version="4" changeset="169854319" timestamp="2025-08-02T09:45:50Z" user="Wolframite74" uid="20102979" lat="37.5034935" lon="127.0212820">
+ <node id="3054785344" visible="true" version="6" changeset="189956654" timestamp="2026-10-04T01:12:27Z" user="wmxwu" uid="20503922" lat="37.5034935" lon="127.0212820">
+  <tag k="crossing:island" v="no" />
   <tag k="crossing:signals" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="3056737034" visible="true" version="3" changeset="49977611" timestamp="2017-07-02T06:29:59Z" user="Lantian" uid="1765666" lat="37.4981846" lon="127.0256971" />
  <node id="3056741335" visible="true" version="3" changeset="49977611" timestamp="2017-07-02T06:29:59Z" user="Lantian" uid="1765666" lat="37.4979420" lon="127.0261914" />
@@ -1553,13 +1569,14 @@
  <node id="3355067061" visible="true" version="4" changeset="118315046" timestamp="2022-03-10T10:04:43Z" user="ljc_jlyb" uid="14280033" lat="37.4948815" lon="127.0176520" />
  <node id="3355067064" visible="true" version="2" changeset="62974154" timestamp="2018-09-27T11:21:03Z" user="Q8ba2di0Pa" uid="2945135" lat="37.4954094" lon="127.0194341" />
  <node id="3355067067" visible="true" version="2" changeset="50449904" timestamp="2017-07-21T07:40:21Z" user="Jisho" uid="4829972" lat="37.4957945" lon="127.0206867" />
- <node id="3396445128" visible="true" version="5" changeset="175889085" timestamp="2025-12-13T15:58:13Z" user="aaei924" uid="10626814" lat="37.5043997" lon="127.0239975">
+ <node id="3396445128" visible="true" version="6" changeset="190062734" timestamp="2026-10-05T23:55:38Z" user="wmxwu" uid="20503922" lat="37.5043997" lon="127.0239975">
   <tag k="description" v="신논현역 1번출구" />
   <tag k="description:en" v="Sinnonhyeon station gate 1" />
   <tag k="description:ja" v="新論峴駅 1番出口" />
   <tag k="description:ko" v="신논현역 1번출구" />
   <tag k="railway" v="subway_entrance" />
   <tag k="ref" v="1" />
+  <tag k="wheelchair" v="no" />
  </node>
  <node id="3396445129" visible="true" version="7" changeset="175889085" timestamp="2025-12-13T15:58:13Z" user="aaei924" uid="10626814" lat="37.5041873" lon="127.0248942">
   <tag k="description" v="신논현역 5번출구" />
@@ -1971,7 +1988,10 @@
  <node id="4182209828" visible="true" version="1" changeset="39279409" timestamp="2016-05-12T22:47:25Z" user="maphunter36" uid="2924920" lat="37.5071221" lon="127.0207298" />
  <node id="4182209839" visible="true" version="2" changeset="92867791" timestamp="2020-10-22T05:49:03Z" user="masterkr" uid="8075692" lat="37.5043539" lon="127.0227046" />
  <node id="4182209840" visible="true" version="2" changeset="92867791" timestamp="2020-10-22T05:49:03Z" user="masterkr" uid="8075692" lat="37.5045728" lon="127.0234403" />
- <node id="4182374177" visible="true" version="3" changeset="85056023" timestamp="2020-05-12T04:04:25Z" user="octel" uid="238290" lat="37.5034744" lon="127.0357109" />
+ <node id="4182374177" visible="true" version="5" changeset="189570660" timestamp="2026-09-26T04:52:07Z" user="Nqye" uid="24581138" lat="37.5034700" lon="127.0356952">
+  <tag k="highway" v="traffic_signals" />
+  <tag k="traffic_signals" v="signal" />
+ </node>
  <node id="4182408143" visible="true" version="1" changeset="39280935" timestamp="2016-05-13T02:48:12Z" user="maphunter36" uid="2924920" lat="37.5016275" lon="127.0297740" />
  <node id="4182408144" visible="true" version="2" changeset="84963335" timestamp="2020-05-10T08:44:36Z" user="octel" uid="238290" lat="37.5039660" lon="127.0286256" />
  <node id="4182408146" visible="true" version="2" changeset="84963335" timestamp="2020-05-10T08:44:36Z" user="octel" uid="238290" lat="37.5023594" lon="127.0314486" />
@@ -7547,13 +7567,15 @@
  <node id="7535662203" visible="true" version="1" changeset="85409189" timestamp="2020-05-19T02:31:38Z" user="octel" uid="238290" lat="37.5018456" lon="127.0311061" />
  <node id="7535662204" visible="true" version="1" changeset="85409189" timestamp="2020-05-19T02:31:38Z" user="octel" uid="238290" lat="37.5014924" lon="127.0293318" />
  <node id="7535662205" visible="true" version="1" changeset="85409189" timestamp="2020-05-19T02:31:38Z" user="octel" uid="238290" lat="37.5017541" lon="127.0294726" />
- <node id="7561738192" visible="true" version="3" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4995568" lon="127.0331260">
+ <node id="7561738192" visible="true" version="4" changeset="189873939" timestamp="2026-10-02T11:45:15Z" user="wmxwu" uid="20503922" lat="37.4995568" lon="127.0331260">
   <tag k="crossing" v="traffic_signals" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="7561738193" visible="true" version="3" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4997200" lon="127.0330459">
+ <node id="7561738193" visible="true" version="4" changeset="189873939" timestamp="2026-10-02T11:45:15Z" user="wmxwu" uid="20503922" lat="37.4997200" lon="127.0330459">
   <tag k="crossing" v="traffic_signals" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="7597460220" visible="true" version="2" changeset="122451183" timestamp="2022-06-16T08:26:34Z" user="ljc_jlyb" uid="14280033" lat="37.5000850" lon="127.0254338">
   <tag k="brand" v="세븐일레븐" />
@@ -7814,13 +7836,18 @@
   <tag k="takeaway" v="yes" />
   <tag k="website" v="http://www.istarbucks.co.kr" />
  </node>
- <node id="8376423650" visible="true" version="5" changeset="164729899" timestamp="2025-04-09T15:18:39Z" user="aaei924" uid="10626814" lat="37.5042612" lon="127.0245614">
+ <node id="8376423650" visible="true" version="6" changeset="189956851" timestamp="2026-10-04T01:19:59Z" user="wmxwu" uid="20503922" lat="37.5042612" lon="127.0245614">
   <tag k="crossing" v="traffic_signals" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="8376423652" visible="true" version="1" changeset="98385602" timestamp="2021-01-29T19:55:32Z" user="mapper_jb" uid="565465" lat="37.5036182" lon="127.0212239" />
  <node id="8376423653" visible="true" version="1" changeset="98385602" timestamp="2021-01-29T19:55:32Z" user="mapper_jb" uid="565465" lat="37.5033977" lon="127.0213266" />
- <node id="8376423655" visible="true" version="2" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5044884" lon="127.0249424" />
+ <node id="8376423655" visible="true" version="4" changeset="189956692" timestamp="2026-10-04T01:12:19Z" user="wmxwu" uid="20503922" lat="37.5044884" lon="127.0249424">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
  <node id="8376423658" visible="true" version="2" changeset="138264381" timestamp="2023-07-08T13:39:52Z" user="ljc_jlyb" uid="14280033" lat="37.5044907" lon="127.0241031" />
  <node id="8376423659" visible="true" version="4" changeset="174409255" timestamp="2025-11-09T10:07:52Z" user="Prikoldes01" uid="15750986" lat="37.5042535" lon="127.0242018">
   <tag k="barrier" v="kerb" />
@@ -7970,10 +7997,11 @@
   <tag k="wikidata" v="Q17469" />
   <tag k="wikipedia" v="ko:강남역" />
  </node>
- <node id="8793714499" visible="true" version="5" changeset="150497076" timestamp="2024-04-25T13:32:51Z" user="Rombardo" uid="5605765" lat="37.5043011" lon="127.0247265">
+ <node id="8793714499" visible="true" version="6" changeset="189956851" timestamp="2026-10-04T01:20:03Z" user="wmxwu" uid="20503922" lat="37.5043011" lon="127.0247265">
   <tag k="crossing" v="traffic_signals" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="8793714500" visible="true" version="2" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5043397" lon="127.0248796" />
  <node id="8808822187" visible="true" version="5" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4971120" lon="127.0279352">
@@ -8158,7 +8186,8 @@
   <tag k="source" v="공공데이터포털" />
   <tag k="source:date" v="2021/09/16 07:31:03" />
  </node>
- <node id="9311286022" visible="true" version="5" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.4997880" lon="127.0264898">
+ <node id="9311286022" visible="true" version="6" changeset="190062740" timestamp="2026-10-05T23:55:40Z" user="wmxwu" uid="20503922" lat="37.4997880" lon="127.0264898">
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="강남역.서초초교앞" />
@@ -8183,7 +8212,8 @@
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="23286" />
  </node>
- <node id="9316602733" visible="true" version="3" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.4965763" lon="127.0227099">
+ <node id="9316602733" visible="true" version="5" changeset="189873953" timestamp="2026-10-02T11:45:05Z" user="wmxwu" uid="20503922" lat="37.4965763" lon="127.0227099">
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="진흥아파트" />
@@ -8194,6 +8224,7 @@
   <tag k="network:wikidata" v="Q3724007" />
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="22866" />
+  <tag k="shelter" v="yes" />
   <tag k="source" v="공공데이터포털" />
   <tag k="source:date" v="2021/09/16 07:31:03" />
  </node>
@@ -8588,11 +8619,16 @@
  <node id="9621002486" visible="true" version="1" changeset="119070611" timestamp="2022-03-29T13:31:15Z" user="ljc_jlyb" uid="14280033" lat="37.4968289" lon="127.0244613" />
  <node id="9621002487" visible="true" version="1" changeset="119070611" timestamp="2022-03-29T13:31:15Z" user="ljc_jlyb" uid="14280033" lat="37.4969051" lon="127.0247085" />
  <node id="9621002488" visible="true" version="1" changeset="119070611" timestamp="2022-03-29T13:31:15Z" user="ljc_jlyb" uid="14280033" lat="37.4970219" lon="127.0251247" />
- <node id="9621002489" visible="true" version="1" changeset="119070611" timestamp="2022-03-29T13:31:15Z" user="ljc_jlyb" uid="14280033" lat="37.4970301" lon="127.0252668" />
- <node id="9621002490" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979" lat="37.4970268" lon="127.0252093">
+ <node id="9621002489" visible="true" version="3" changeset="189873962" timestamp="2026-10-02T11:45:09Z" user="wmxwu" uid="20503922" lat="37.4970301" lon="127.0252668">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="9621002490" visible="true" version="3" changeset="189873939" timestamp="2026-10-02T11:45:09Z" user="wmxwu" uid="20503922" lat="37.4970268" lon="127.0252093">
   <tag k="crossing" v="marked" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="9621002491" visible="true" version="1" changeset="119070611" timestamp="2022-03-29T13:31:15Z" user="ljc_jlyb" uid="14280033" lat="37.4972251" lon="127.0259211" />
  <node id="9621002492" visible="true" version="2" changeset="119108216" timestamp="2022-03-30T09:57:47Z" user="ljc_jlyb" uid="14280033" lat="37.4963072" lon="127.0264768">
@@ -8854,17 +8890,26 @@
  <node id="9632500727" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4986398" lon="127.0274483" />
  <node id="9632500728" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4986447" lon="127.0275563" />
  <node id="9632500729" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4986734" lon="127.0275350" />
- <node id="9632500730" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4994537" lon="127.0271646" />
+ <node id="9632500730" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:47:50Z" user="wmxwu" uid="20503922" lat="37.4994537" lon="127.0271646">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
  <node id="9632500731" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4987638" lon="127.0273935" />
  <node id="9632500732" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4988128" lon="127.0273967" />
  <node id="9632500733" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4988406" lon="127.0274052" />
  <node id="9632500734" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4988567" lon="127.0274169" />
  <node id="9632500735" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4988736" lon="127.0274436" />
- <node id="9632500736" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.4996172" lon="127.0270963" />
- <node id="9632500737" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979" lat="37.4995861" lon="127.0271093">
+ <node id="9632500736" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:47:51Z" user="wmxwu" uid="20503922" lat="37.4996172" lon="127.0270963">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="9632500737" visible="true" version="3" changeset="190062599" timestamp="2026-10-05T23:47:53Z" user="wmxwu" uid="20503922" lat="37.4995861" lon="127.0271093">
   <tag k="crossing" v="marked" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="9632500738" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5000510" lon="127.0268888" />
  <node id="9632500739" visible="true" version="3" changeset="178568112" timestamp="2026-02-15T03:22:19Z" user="SeongbinPark" uid="23747862" lat="37.5004035" lon="127.0267249">
@@ -8883,12 +8928,22 @@
   <tag k="highway" v="crossing" />
   <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9632500742" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5012183" lon="127.0263331" />
- <node id="9632500743" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5013310" lon="127.0262844" />
- <node id="9632500744" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979" lat="37.5012818" lon="127.0263057">
+ <node id="9632500742" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:48:01Z" user="wmxwu" uid="20503922" lat="37.5012183" lon="127.0263331">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="9632500743" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:47:59Z" user="wmxwu" uid="20503922" lat="37.5013310" lon="127.0262844">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="9632500744" visible="true" version="4" changeset="190062599" timestamp="2026-10-05T23:48:03Z" user="wmxwu" uid="20503922" lat="37.5012818" lon="127.0263057">
   <tag k="crossing" v="marked" />
+  <tag k="crossing:island" v="no" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="9632500745" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5026395" lon="127.0256493" />
  <node id="9632500746" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5027299" lon="127.0256109" />
@@ -8897,12 +8952,21 @@
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
  </node>
- <node id="9632500748" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5039652" lon="127.0250654" />
- <node id="9632500749" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5040292" lon="127.0250359" />
- <node id="9632500750" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979" lat="37.5039920" lon="127.0250530">
+ <node id="9632500748" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:48:11Z" user="wmxwu" uid="20503922" lat="37.5039652" lon="127.0250654">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="9632500749" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:48:09Z" user="wmxwu" uid="20503922" lat="37.5040292" lon="127.0250359">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="9632500750" visible="true" version="3" changeset="190062599" timestamp="2026-10-05T23:48:12Z" user="wmxwu" uid="20503922" lat="37.5039920" lon="127.0250530">
   <tag k="crossing" v="marked" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="9632500751" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5043726" lon="127.0248630" />
  <node id="9632500752" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5043990" lon="127.0248541" />
@@ -9573,46 +9637,68 @@
  <node id="9889607760" visible="true" version="1" changeset="123648753" timestamp="2022-07-15T11:27:02Z" user="izolight" uid="2821324" lat="37.4983108" lon="127.0294788">
   <tag k="highway" v="crossing" />
  </node>
- <node id="9889607761" visible="true" version="2" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4988163" lon="127.0297916">
+ <node id="9889607761" visible="true" version="6" changeset="190062599" timestamp="2026-10-05T23:47:28Z" user="wmxwu" uid="20503922" lat="37.4988163" lon="127.0297916">
+  <tag k="crossing:island" v="no" />
+  <tag k="crossing:markings" v="yes" />
+  <tag k="crossing:signals" v="no" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607762" visible="true" version="4" changeset="150497076" timestamp="2024-04-25T13:32:51Z" user="Rombardo" uid="5605765" lat="37.4991493" lon="127.0312231">
+ <node id="9889607762" visible="true" version="5" changeset="189873939" timestamp="2026-10-02T11:45:13Z" user="wmxwu" uid="20503922" lat="37.4991493" lon="127.0312231">
   <tag k="crossing" v="traffic_signals" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607763" visible="true" version="3" changeset="150497076" timestamp="2024-04-25T13:32:51Z" user="Rombardo" uid="5605765" lat="37.4990030" lon="127.0312957">
+ <node id="9889607763" visible="true" version="4" changeset="189873939" timestamp="2026-10-02T11:45:10Z" user="wmxwu" uid="20503922" lat="37.4990030" lon="127.0312957">
   <tag k="crossing" v="traffic_signals" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607764" visible="true" version="2" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4988183" lon="127.0311300">
+ <node id="9889607764" visible="true" version="5" changeset="189956865" timestamp="2026-10-04T01:20:38Z" user="wmxwu" uid="20503922" lat="37.4988183" lon="127.0311300">
   <tag k="crossing" v="uncontrolled" />
+  <tag k="crossing:island" v="no" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607765" visible="true" version="3" changeset="150497076" timestamp="2024-04-25T13:32:51Z" user="Rombardo" uid="5605765" lat="37.4988829" lon="127.0308964">
+ <node id="9889607765" visible="true" version="4" changeset="189873939" timestamp="2026-10-02T11:45:12Z" user="wmxwu" uid="20503922" lat="37.4988829" lon="127.0308964">
   <tag k="crossing" v="traffic_signals" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607766" visible="true" version="4" changeset="150497076" timestamp="2024-04-25T13:32:51Z" user="Rombardo" uid="5605765" lat="37.4990249" lon="127.0308263">
+ <node id="9889607766" visible="true" version="5" changeset="189873939" timestamp="2026-10-02T11:45:14Z" user="wmxwu" uid="20503922" lat="37.4990249" lon="127.0308263">
   <tag k="crossing" v="traffic_signals" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607767" visible="true" version="2" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4992026" lon="127.0309380">
+ <node id="9889607767" visible="true" version="5" changeset="189956851" timestamp="2026-10-04T01:20:34Z" user="wmxwu" uid="20503922" lat="37.4992026" lon="127.0309380">
+  <tag k="crossing:island" v="no" />
+  <tag k="crossing:signals" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607768" visible="true" version="3" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4993765" lon="127.0328688">
+ <node id="9889607768" visible="true" version="5" changeset="189873804" timestamp="2026-10-02T11:42:33Z" user="wmxwu" uid="20503922" lat="37.4993765" lon="127.0328688">
   <tag k="crossing" v="uncontrolled" />
+  <tag k="crossing:island" v="no" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607769" visible="true" version="2" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4997325" lon="127.0326984">
+ <node id="9889607769" visible="true" version="4" changeset="190062599" timestamp="2026-10-05T23:47:00Z" user="wmxwu" uid="20503922" lat="37.4997325" lon="127.0326984">
   <tag k="crossing" v="uncontrolled" />
+  <tag k="crossing:island" v="no" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607771" visible="true" version="2" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4997188" lon="127.0340439">
+ <node id="9889607771" visible="true" version="6" changeset="189956851" timestamp="2026-10-04T01:20:44Z" user="wmxwu" uid="20503922" lat="37.4997188" lon="127.0340439">
+  <tag k="crossing:island" v="no" />
+  <tag k="crossing:markings" v="yes" />
+  <tag k="crossing:signals" v="no" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="9889607773" visible="true" version="6" changeset="174442364" timestamp="2025-11-10T02:14:01Z" user="Prikoldes01" uid="15750986" lat="37.5002179" lon="127.0357568">
   <tag k="crossing:island" v="no" />
@@ -9622,11 +9708,17 @@
   <tag k="kerb" v="flush" />
   <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607775" visible="true" version="1" changeset="123648753" timestamp="2022-07-15T11:27:02Z" user="izolight" uid="2821324" lat="37.5006354" lon="127.0367367">
+ <node id="9889607775" visible="true" version="4" changeset="189873934" timestamp="2026-10-02T11:45:23Z" user="wmxwu" uid="20503922" lat="37.5006354" lon="127.0367367">
+  <tag k="crossing:signals" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="9889607776" visible="true" version="1" changeset="123648753" timestamp="2022-07-15T11:27:02Z" user="izolight" uid="2821324" lat="37.5008276" lon="127.0366468">
+ <node id="9889607776" visible="true" version="4" changeset="190008529" timestamp="2026-10-05T01:55:49Z" user="wmxwu" uid="20503922" lat="37.5008276" lon="127.0366468">
+  <tag k="crossing:signals" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="9889673578" visible="true" version="6" changeset="179903549" timestamp="2026-03-15T15:21:18Z" user="chiho_kang" uid="10604125" lat="37.4980546" lon="127.0293648">
   <tag k="addr:city" v="서울특별시" />
@@ -9670,6 +9762,7 @@
  <node id="10100725122" visible="true" version="1" changeset="127515546" timestamp="2022-10-14T10:03:22Z" user="upscope" uid="12398465" lat="37.5163244" lon="127.0196573" />
  <node id="10100725123" visible="true" version="1" changeset="127515546" timestamp="2022-10-14T10:03:22Z" user="upscope" uid="12398465" lat="37.5197937" lon="127.0281043" />
  <node id="10100725124" visible="true" version="1" changeset="127515546" timestamp="2022-10-14T10:03:22Z" user="upscope" uid="12398465" lat="37.5216241" lon="127.0337969" />
+ <node id="10100725126" visible="true" version="1" changeset="127515546" timestamp="2022-10-14T10:03:22Z" user="upscope" uid="12398465" lat="37.5005053" lon="127.0369314" />
  <node id="10120501317" visible="true" version="1" changeset="127914262" timestamp="2022-10-22T09:21:48Z" user="merylstreet" uid="1159672" lat="37.5009637" lon="127.0282290">
   <tag k="amenity" v="restaurant" />
   <tag k="name:en" v="Beer Room" />
@@ -10055,7 +10148,8 @@
  </node>
  <node id="11164125402" visible="true" version="1" changeset="140740206" timestamp="2023-09-03T01:08:51Z" user="Rombardo" uid="5605765" lat="37.4985964" lon="127.0279003" />
  <node id="11164125403" visible="true" version="1" changeset="140740206" timestamp="2023-09-03T01:08:51Z" user="Rombardo" uid="5605765" lat="37.4987247" lon="127.0281037" />
- <node id="11164481398" visible="true" version="2" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.4984292" lon="127.0297274">
+ <node id="11164481398" visible="true" version="4" changeset="189873793" timestamp="2026-10-02T11:42:29Z" user="wmxwu" uid="20503922" lat="37.4984292" lon="127.0297274">
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="삼성서초역삼세무서" />
@@ -10065,6 +10159,7 @@
   <tag k="network:wikidata" v="Q3724007" />
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="23396" />
+  <tag k="shelter" v="yes" />
   <tag k="source" v="공공데이터포털" />
   <tag k="source:date" v="2021/09/16 07:31:03" />
  </node>
@@ -10111,20 +10206,45 @@
   <tag k="tactile_paving" v="yes" />
  </node>
  <node id="11183597711" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4996444" lon="127.0301110" />
- <node id="11183597713" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4987967" lon="127.0297258" />
- <node id="11183597714" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4988333" lon="127.0298487" />
- <node id="11183597715" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4991758" lon="127.0308473" />
- <node id="11183597716" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4992285" lon="127.0310266" />
+ <node id="11183597713" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:47:33Z" user="wmxwu" uid="20503922" lat="37.4987967" lon="127.0297258">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="11183597714" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:47:12Z" user="wmxwu" uid="20503922" lat="37.4988333" lon="127.0298487">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="11183597715" visible="true" version="3" changeset="189873962" timestamp="2026-10-02T11:45:14Z" user="wmxwu" uid="20503922" lat="37.4991758" lon="127.0308473">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="11183597716" visible="true" version="3" changeset="189873962" timestamp="2026-10-02T11:45:14Z" user="wmxwu" uid="20503922" lat="37.4992285" lon="127.0310266">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
  <node id="11183597717" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4991249" lon="127.0307769" />
  <node id="11183597718" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4984474" lon="127.0285651" />
  <node id="11183597719" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4984580" lon="127.0285468" />
  <node id="11183597720" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4984269" lon="127.0285746" />
- <node id="11183597721" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4997032" lon="127.0326080" />
- <node id="11183597722" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4997575" lon="127.0327756" />
- <node id="11183597723" visible="true" version="2" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4991344" lon="127.0320380">
+ <node id="11183597721" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:46:47Z" user="wmxwu" uid="20503922" lat="37.4997032" lon="127.0326080">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="11183597722" visible="true" version="3" changeset="190062595" timestamp="2026-10-05T23:46:45Z" user="wmxwu" uid="20503922" lat="37.4997575" lon="127.0327756">
+  <tag k="barrier" v="kerb" />
+  <tag k="kerb" v="lowered" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="11183597723" visible="true" version="3" changeset="189873804" timestamp="2026-10-02T11:42:32Z" user="wmxwu" uid="20503922" lat="37.4991344" lon="127.0320380">
   <tag k="crossing" v="uncontrolled" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="11183597724" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4988081" lon="127.0309333" />
  <node id="11183597725" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4992419" lon="127.0311772" />
@@ -10145,11 +10265,12 @@
  <node id="11183748440" visible="true" version="2" changeset="164729899" timestamp="2025-04-09T15:18:39Z" user="aaei924" uid="10626814" lat="37.4968425" lon="127.0281029" />
  <node id="11183748444" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4976342" lon="127.0276374" />
  <node id="11183748445" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765" lat="37.4980948" lon="127.0274215" />
- <node id="11183748447" visible="true" version="3" changeset="185394710" timestamp="2026-07-09T09:13:42Z" user="brendan77" uid="193835" lat="37.4994235" lon="127.0266291">
+ <node id="11183748447" visible="true" version="4" changeset="189873804" timestamp="2026-10-02T11:42:28Z" user="wmxwu" uid="20503922" lat="37.4994235" lon="127.0266291">
   <tag k="crossing" v="uncontrolled" />
   <tag k="crossing:island" v="no" />
   <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="11183748448" visible="true" version="2" changeset="185394867" timestamp="2026-07-09T09:14:36Z" user="brendan77" uid="193835" lat="37.5006742" lon="127.0260353">
   <tag k="crossing" v="uncontrolled" />
@@ -10326,7 +10447,8 @@
  <node id="11527643061" visible="true" version="1" changeset="146398193" timestamp="2024-01-18T10:09:38Z" user="Ropino" uid="42123" lat="37.4980004" lon="127.0258914" />
  <node id="11527643062" visible="true" version="1" changeset="146398193" timestamp="2024-01-18T10:09:38Z" user="Ropino" uid="42123" lat="37.4980490" lon="127.0260496" />
  <node id="11527643063" visible="true" version="1" changeset="146398193" timestamp="2024-01-18T10:09:38Z" user="Ropino" uid="42123" lat="37.4980922" lon="127.0258466" />
- <node id="11560793750" visible="true" version="3" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.4991104" lon="127.0273316">
+ <node id="11560793750" visible="true" version="5" changeset="190062609" timestamp="2026-10-05T23:47:47Z" user="wmxwu" uid="20503922" lat="37.4991104" lon="127.0273316">
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="강남역11번출구" />
@@ -10334,6 +10456,7 @@
   <tag k="network:ko" v="서울특별시 시내버스" />
   <tag k="network:wikidata" v="Q3724007" />
   <tag k="public_transport" v="platform" />
+  <tag k="shelter" v="yes" />
  </node>
  <node id="11581282060" visible="true" version="4" changeset="184202822" timestamp="2026-06-16T22:59:50Z" user="hyun Yun" uid="24206446" lat="37.5058375" lon="127.0335485">
   <tag k="amenity" v="bar" />
@@ -10367,7 +10490,7 @@
   <tag k="name" v="The Coffee Bean &amp; Tea Leaf" />
   <tag k="takeaway" v="yes" />
  </node>
- <node id="11834079470" visible="true" version="3" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="wasabi1" uid="9596730" lat="37.4960438" lon="127.0281676">
+ <node id="11834079470" visible="true" version="3" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="user_9596730" uid="9596730" lat="37.4960438" lon="127.0281676">
   <tag k="alt_name" v="Dunkin' Donuts" />
   <tag k="amenity" v="fast_food" />
   <tag k="brand" v="Dunkin'" />
@@ -10740,11 +10863,12 @@
  <node id="12061684190" visible="true" version="1" changeset="154112710" timestamp="2024-07-18T17:54:50Z" user="citymapperkk" uid="21763370" lat="37.5023643" lon="127.0240976" />
  <node id="12061684191" visible="true" version="1" changeset="154112710" timestamp="2024-07-18T17:54:50Z" user="citymapperkk" uid="21763370" lat="37.5023571" lon="127.0243615" />
  <node id="12061684192" visible="true" version="1" changeset="154112710" timestamp="2024-07-18T17:54:50Z" user="citymapperkk" uid="21763370" lat="37.5023775" lon="127.0245668" />
- <node id="12061684193" visible="true" version="4" changeset="185395643" timestamp="2026-07-09T09:29:01Z" user="brendan77" uid="193835" lat="37.5026618" lon="127.0234415">
+ <node id="12061684193" visible="true" version="5" changeset="189873777" timestamp="2026-10-02T11:42:05Z" user="wmxwu" uid="20503922" lat="37.5026618" lon="127.0234415">
   <tag k="crossing:island" v="no" />
   <tag k="crossing:markings" v="yes" />
   <tag k="crossing:signals" v="no" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="incorrect" />
  </node>
  <node id="12061684194" visible="true" version="2" changeset="170086947" timestamp="2025-08-07T05:07:18Z" user="honnip" uid="19642799" lat="37.5030859" lon="127.0231086">
   <tag k="amenity" v="restaurant" />
@@ -15051,8 +15175,9 @@
   <tag k="ref" v="21413" />
   <tag k="route_ref" v="4422;146;3412;341;4312;4431;4424" />
  </node>
- <node id="13836991250" visible="true" version="2" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.5021643" lon="127.0253377">
+ <node id="13836991250" visible="true" version="4" changeset="189956698" timestamp="2026-10-04T01:20:06Z" user="wmxwu" uid="20503922" lat="37.5021643" lon="127.0253377">
   <tag k="bench" v="no" />
+  <tag k="bin" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="bus_stop" />
   <tag k="name" v="신논현역.남서울빌딩" />
@@ -15062,6 +15187,7 @@
   <tag k="network:wikidata" v="Q3724007" />
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="22411" />
+  <tag k="shelter" v="no" />
  </node>
  <node id="13836991251" visible="true" version="2" changeset="189328421" timestamp="2026-09-21T05:53:33Z" user="aaei924" uid="10626814" lat="37.5017988" lon="127.0255031">
   <tag k="bench" v="no" />
@@ -17552,20 +17678,26 @@
  <node id="13925231449" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4977354" lon="127.0281255" />
  <node id="13925231450" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4980403" lon="127.0283227" />
  <node id="13925231451" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.5004300" lon="127.0363953" />
- <node id="13925231452" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.5005353" lon="127.0367866" />
+ <node id="13925231452" visible="true" version="2" changeset="189570515" timestamp="2026-09-26T04:42:59Z" user="Nqye" uid="24581138" lat="37.5005448" lon="127.0368423" />
  <node id="13925231453" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.5004609" lon="127.0369653" />
- <node id="13925231596" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4983715" lon="127.0294489">
+ <node id="13925231596" visible="true" version="2" changeset="190062722" timestamp="2026-10-05T23:55:41Z" user="wmxwu" uid="20503922" lat="37.4983715" lon="127.0294489">
+  <tag k="crossing:signals" v="no" />
   <tag k="highway" v="crossing" />
  </node>
  <node id="13925231597" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4980611" lon="127.0283937">
   <tag k="highway" v="crossing" />
  </node>
  <node id="13925231598" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4981647" lon="127.0287457" />
- <node id="13925231599" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4986171" lon="127.0302840">
+ <node id="13925231599" visible="true" version="3" changeset="190062723" timestamp="2026-10-05T23:55:43Z" user="wmxwu" uid="20503922" lat="37.4986171" lon="127.0302840">
+  <tag k="crossing:markings" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
- <node id="13925231600" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506" lat="37.4988612" lon="127.0311089">
+ <node id="13925231600" visible="true" version="4" changeset="189873939" timestamp="2026-10-02T11:45:11Z" user="wmxwu" uid="20503922" lat="37.4988612" lon="127.0311089">
+  <tag k="crossing:island" v="no" />
+  <tag k="crossing:signals" v="yes" />
   <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
  </node>
  <node id="13946747895" visible="true" version="1" changeset="184207611" timestamp="2026-06-17T04:24:32Z" user="tpgnsfjqm" uid="23970928" lat="37.5001716" lon="127.0290709">
   <tag k="addr:city" v="서울특별시" />
@@ -19451,6 +19583,28 @@
   <tag k="amenity" v="cafe" />
   <tag k="name" v="메가MGC커피 1638th 강남CGV점" />
  </node>
+ <node id="14218584906" visible="true" version="2" changeset="189956851" timestamp="2026-10-04T01:20:51Z" user="wmxwu" uid="20503922" lat="37.5008446" lon="127.0367047">
+  <tag k="crossing" v="traffic_signals" />
+  <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="14218584907" visible="true" version="2" changeset="189873939" timestamp="2026-10-02T11:45:22Z" user="wmxwu" uid="20503922" lat="37.5006522" lon="127.0367930">
+  <tag k="crossing" v="traffic_signals" />
+  <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
+ <node id="14218589027" visible="true" version="1" changeset="189570629" timestamp="2026-09-26T04:49:52Z" user="Nqye" uid="24581138" lat="37.5034262" lon="127.0355338">
+  <tag k="crossing" v="uncontrolled" />
+  <tag k="crossing:markings" v="yes" />
+  <tag k="highway" v="crossing" />
+ </node>
+ <node id="14218590642" visible="true" version="3" changeset="189956654" timestamp="2026-10-04T01:10:49Z" user="wmxwu" uid="20503922" lat="37.5060883" lon="127.0343246">
+  <tag k="crossing" v="uncontrolled" />
+  <tag k="crossing:island" v="no" />
+  <tag k="crossing:markings" v="yes" />
+  <tag k="highway" v="crossing" />
+  <tag k="tactile_paving" v="yes" />
+ </node>
  <way id="26004328" visible="true" version="11" changeset="71948798" timestamp="2019-07-06T02:40:51Z" user="octel" uid="238290">
   <nd ref="1326174679" />
   <nd ref="1326174672" />
@@ -19689,7 +19843,7 @@
   <tag k="name:ko" v="국기원" />
   <tag k="office" v="government" />
  </way>
- <way id="117790044" visible="true" version="12" changeset="158196545" timestamp="2024-10-22T06:11:42Z" user="Sinatraa" uid="21723990">
+ <way id="117790044" visible="true" version="13" changeset="189570728" timestamp="2026-09-26T04:57:45Z" user="Nqye" uid="24581138">
   <nd ref="1326174832" />
   <nd ref="12278019143" />
   <nd ref="8496017113" />
@@ -19703,6 +19857,7 @@
   <nd ref="1326174601" />
   <nd ref="1326174615" />
   <nd ref="4182408165" />
+  <nd ref="14218590642" />
   <nd ref="2477256602" />
   <tag k="highway" v="residential" />
   <tag k="name" v="논현로105길" />
@@ -20274,7 +20429,7 @@
   <tag k="wikidata" v="Q7223951" />
   <tag k="wikipedia" v="ko:강남대로" />
  </way>
- <way id="218864491" visible="true" version="32" changeset="183934431" timestamp="2026-06-10T17:08:33Z" user="ljc_jlyb" uid="14280033">
+ <way id="218864491" visible="true" version="34" changeset="189873913" timestamp="2026-10-02T11:45:16Z" user="wmxwu" uid="20503922">
   <nd ref="2280678660" />
   <nd ref="3825549802" />
   <nd ref="9889607765" />
@@ -20289,8 +20444,10 @@
   <nd ref="8556713272" />
   <nd ref="8552337603" />
   <nd ref="9889607775" />
+  <nd ref="14218584907" />
   <nd ref="2280678728" />
   <tag k="highway" v="primary" />
+  <tag k="lane_markings" v="yes" />
   <tag k="name" v="테헤란로" />
   <tag k="name:en" v="Teheran-ro" />
   <tag k="name:ja" v="テヘラン路" />
@@ -20341,12 +20498,13 @@
   <tag k="wikidata" v="Q7223951" />
   <tag k="wikipedia" v="ko:강남대로" />
  </way>
- <way id="219837933" visible="true" version="18" changeset="183934431" timestamp="2026-06-10T17:08:33Z" user="ljc_jlyb" uid="14280033">
+ <way id="219837933" visible="true" version="19" changeset="189956668" timestamp="2026-10-04T01:12:26Z" user="wmxwu" uid="20503922">
   <nd ref="414684605" />
   <nd ref="3054785344" />
   <nd ref="10796636294" />
   <nd ref="2281095533" />
   <tag k="highway" v="primary" />
+  <tag k="lane_markings" v="yes" />
   <tag k="name" v="사평대로" />
   <tag k="name:en" v="Sapyeong-daero" />
   <tag k="name:ja" v="砂坪大路" />
@@ -21319,7 +21477,7 @@
   <tag k="highway" v="footway" />
   <tag k="source" v="survey" />
  </way>
- <way id="309155295" visible="true" version="5" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="wasabi1" uid="9596730">
+ <way id="309155295" visible="true" version="5" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="user_9596730" uid="9596730">
   <nd ref="3144858729" />
   <nd ref="3144858829" />
   <nd ref="3144858730" />
@@ -21450,8 +21608,9 @@
   <tag k="name" v="캠브리지빌딩" />
   <tag k="start_date" v="2002" />
  </way>
- <way id="375049565" visible="true" version="24" changeset="183934431" timestamp="2026-06-10T17:08:33Z" user="ljc_jlyb" uid="14280033">
+ <way id="375049565" visible="true" version="25" changeset="189570515" timestamp="2026-09-26T04:42:59Z" user="Nqye" uid="24581138">
   <nd ref="2280678732" />
+  <nd ref="14218584906" />
   <nd ref="9889607776" />
   <nd ref="8552337604" />
   <nd ref="2280678716" />
@@ -21740,7 +21899,7 @@
   <tag k="name:ko" v="테헤란로4길" />
   <tag k="surface" v="asphalt" />
  </way>
- <way id="379232161" visible="true" version="5" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="wasabi1" uid="9596730">
+ <way id="379232161" visible="true" version="5" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="user_9596730" uid="9596730">
   <nd ref="3825549672" />
   <nd ref="3825549673" />
   <nd ref="4184048891" />
@@ -21837,8 +21996,9 @@
   <tag k="name:en" v="Sapyeong-daero 55-gil" />
   <tag k="name:ko" v="사평대로55길" />
  </way>
- <way id="417746802" visible="true" version="5" changeset="85075246" timestamp="2020-05-12T09:15:43Z" user="octel" uid="238290">
+ <way id="417746802" visible="true" version="6" changeset="189570629" timestamp="2026-09-26T04:49:52Z" user="Nqye" uid="24581138">
   <nd ref="4182374177" />
+  <nd ref="14218589027" />
   <nd ref="7509242900" />
   <nd ref="2477255850" />
   <nd ref="7510293243" />
@@ -22384,10 +22544,11 @@
   <tag k="highway" v="footway" />
   <tag k="surface" v="asphalt" />
  </way>
- <way id="494952003" visible="true" version="3" changeset="164729899" timestamp="2025-04-09T15:18:39Z" user="aaei924" uid="10626814">
+ <way id="494952003" visible="true" version="5" changeset="189956859" timestamp="2026-10-04T01:20:18Z" user="wmxwu" uid="20503922">
   <nd ref="4867295788" />
   <nd ref="357966956" />
   <nd ref="4867295789" />
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="platform" />
   <tag k="name" v="지하철2호선강남역" />
@@ -22395,6 +22556,7 @@
   <tag k="name:ko" v="지하철2호선강남역" />
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="22011" />
+  <tag k="shelter" v="yes" />
  </way>
  <way id="494952007" visible="true" version="15" changeset="183934431" timestamp="2026-06-10T17:08:33Z" user="ljc_jlyb" uid="14280033">
   <nd ref="7168335697" />
@@ -22606,7 +22768,7 @@
   <tag k="name:ko" v="서초대로74길" />
   <tag k="name:zh" v="瑞草大路74街" />
  </way>
- <way id="504227067" visible="true" version="10" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="wasabi1" uid="9596730">
+ <way id="504227067" visible="true" version="10" changeset="167965346" timestamp="2025-06-22T16:04:20Z" user="user_9596730" uid="9596730">
   <nd ref="3087683154" />
   <nd ref="9632500794" />
   <nd ref="571448492" />
@@ -22641,12 +22803,13 @@
   <tag k="name:ko" v="서초대로74길" />
   <tag k="name:zh" v="瑞草大路74街" />
  </way>
- <way id="504231011" visible="true" version="13" changeset="183934431" timestamp="2026-06-10T17:08:33Z" user="ljc_jlyb" uid="14280033">
+ <way id="504231011" visible="true" version="14" changeset="189873913" timestamp="2026-10-02T11:45:07Z" user="wmxwu" uid="20503922">
   <nd ref="3089780844" />
   <nd ref="9711448901" />
   <nd ref="11245176923" />
   <nd ref="436854331" />
   <tag k="highway" v="primary" />
+  <tag k="lane_markings" v="yes" />
   <tag k="name" v="서초대로" />
   <tag k="name:en" v="Seocho-daero" />
   <tag k="name:ko" v="서초대로" />
@@ -25754,11 +25917,12 @@
   <tag k="building" v="commercial" />
   <tag k="building:levels" v="3.5" />
  </way>
- <way id="542367267" visible="true" version="7" changeset="183934431" timestamp="2026-06-10T17:08:33Z" user="ljc_jlyb" uid="14280033">
+ <way id="542367267" visible="true" version="8" changeset="189956668" timestamp="2026-10-04T01:12:24Z" user="wmxwu" uid="20503922">
   <nd ref="2281095533" />
   <nd ref="2281095534" />
   <nd ref="5237800470" />
   <tag k="highway" v="primary" />
+  <tag k="lane_markings" v="yes" />
   <tag k="name" v="사평대로" />
   <tag k="name:en" v="Sapyeong-daero" />
   <tag k="name:ja" v="砂坪大路" />
@@ -31374,7 +31538,7 @@
   <tag k="addr:subdistrict" v="역삼동" />
   <tag k="building" v="yes" />
  </way>
- <way id="800738379" visible="true" version="2" changeset="162523204" timestamp="2025-02-15T01:12:19Z" user="chiho_kang" uid="10604125">
+ <way id="800738379" visible="true" version="3" changeset="190720089" timestamp="2026-10-19T00:19:34Z" user="walkingandlooking" uid="23192044">
   <nd ref="7489570092" />
   <nd ref="7489570093" />
   <nd ref="7489570094" />
@@ -31384,6 +31548,8 @@
   <tag k="addr:district" v="강남구" />
   <tag k="addr:subdistrict" v="역삼동" />
   <tag k="building" v="yes" />
+  <tag k="name:en" v="Lumi House" />
+  <tag k="name:ko" v="루미하우스" />
  </way>
  <way id="800738380" visible="true" version="2" changeset="162523204" timestamp="2025-02-15T01:12:19Z" user="chiho_kang" uid="10604125">
   <nd ref="7489570096" />
@@ -34787,7 +34953,7 @@
   <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
  </way>
- <way id="1047544525" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979">
+ <way id="1047544525" visible="true" version="3" changeset="190062600" timestamp="2026-10-05T23:47:55Z" user="wmxwu" uid="20503922">
   <nd ref="9632500730" />
   <nd ref="9632500737" />
   <nd ref="9632500736" />
@@ -34795,6 +34961,7 @@
   <tag k="crossing:markings" v="yes" />
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="asphalt" />
  </way>
  <way id="1047544526" visible="true" version="2" changeset="182760315" timestamp="2026-05-16T21:36:30Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <nd ref="9632500736" />
@@ -34822,7 +34989,7 @@
   <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
  </way>
- <way id="1047544529" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979">
+ <way id="1047544529" visible="true" version="3" changeset="190062600" timestamp="2026-10-05T23:48:05Z" user="wmxwu" uid="20503922">
   <nd ref="9632500742" />
   <nd ref="9632500744" />
   <nd ref="9632500743" />
@@ -34830,6 +34997,7 @@
   <tag k="crossing:markings" v="yes" />
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="asphalt" />
  </way>
  <way id="1047544530" visible="true" version="2" changeset="138171049" timestamp="2023-07-06T05:07:33Z" user="adreamy" uid="2750856">
   <nd ref="9632500743" />
@@ -34847,13 +35015,14 @@
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
  </way>
- <way id="1047544532" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033">
+ <way id="1047544532" visible="true" version="2" changeset="190062600" timestamp="2026-10-05T23:48:06Z" user="wmxwu" uid="20503922">
   <nd ref="9632500746" />
   <nd ref="9632500748" />
   <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="paving_stones" />
  </way>
- <way id="1047544533" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979">
+ <way id="1047544533" visible="true" version="3" changeset="190062600" timestamp="2026-10-05T23:48:14Z" user="wmxwu" uid="20503922">
   <nd ref="9632500748" />
   <nd ref="9632500750" />
   <nd ref="9632500749" />
@@ -34861,8 +35030,9 @@
   <tag k="crossing:markings" v="yes" />
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="asphalt" />
  </way>
- <way id="1047544534" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033">
+ <way id="1047544534" visible="true" version="2" changeset="190062600" timestamp="2026-10-05T23:48:15Z" user="wmxwu" uid="20503922">
   <nd ref="9632500749" />
   <nd ref="8793714500" />
   <nd ref="9632500751" />
@@ -34873,6 +35043,7 @@
   <nd ref="8376423655" />
   <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="paving_stones" />
  </way>
  <way id="1047544535" visible="true" version="1" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033">
   <nd ref="3827606147" />
@@ -34938,7 +35109,7 @@
   <tag k="industrial" v="warehouse" />
   <tag k="landuse" v="industrial" />
  </way>
- <way id="1056882877" visible="true" version="13" changeset="175108941" timestamp="2025-11-25T12:50:54Z" user="LuxuryCoop" uid="7245212">
+ <way id="1056882877" visible="true" version="14" changeset="189873913" timestamp="2026-10-02T11:45:06Z" user="wmxwu" uid="20503922">
   <nd ref="9607816610" />
   <nd ref="9621002317" />
   <nd ref="10980505323" />
@@ -34959,6 +35130,7 @@
   <nd ref="11245194264" />
   <nd ref="436854331" />
   <tag k="highway" v="tertiary" />
+  <tag k="lane_markings" v="yes" />
   <tag k="name" v="서운로" />
   <tag k="name:en" v="Seoun-ro" />
   <tag k="name:ja" v="瑞雲路" />
@@ -35202,7 +35374,7 @@
   <nd ref="9711449011" />
   <tag k="landuse" v="commercial" />
  </way>
- <way id="1065786225" visible="true" version="2" changeset="182261375" timestamp="2026-05-05T17:45:12Z" user="aaei924" uid="10626814">
+ <way id="1065786225" visible="true" version="3" changeset="189873947" timestamp="2026-10-02T11:45:02Z" user="wmxwu" uid="20503922">
   <nd ref="9787444919" />
   <nd ref="732031137" />
   <nd ref="732031087" />
@@ -35212,6 +35384,7 @@
   <nd ref="732031209" />
   <nd ref="9787444922" />
   <nd ref="9787444919" />
+  <tag k="bridge:structure" v="beam" />
   <tag k="layer" v="1" />
   <tag k="man_made" v="bridge" />
   <tag k="name" v="서초1교" />
@@ -35451,7 +35624,7 @@
   <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
  </way>
- <way id="1206937175" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765">
+ <way id="1206937175" visible="true" version="2" changeset="190062600" timestamp="2026-10-05T23:47:30Z" user="wmxwu" uid="20503922">
   <nd ref="11183597713" />
   <nd ref="9889607761" />
   <nd ref="11183597714" />
@@ -35459,6 +35632,7 @@
   <tag k="crossing:markings" v="yes" />
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="asphalt" />
  </way>
  <way id="1206937176" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765">
   <nd ref="11183597715" />
@@ -35468,21 +35642,24 @@
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
  </way>
- <way id="1206937177" visible="true" version="2" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506">
+ <way id="1206937177" visible="true" version="4" changeset="190062600" timestamp="2026-10-05T23:47:10Z" user="wmxwu" uid="20503922">
   <nd ref="11183597715" />
   <nd ref="11183597717" />
   <nd ref="11183597714" />
   <tag k="bicycle" v="designated" />
   <tag k="foot" v="designated" />
+  <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="paving_stones" />
  </way>
- <way id="1206937178" visible="true" version="2" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506">
+ <way id="1206937178" visible="true" version="3" changeset="189570515" timestamp="2026-09-26T04:42:59Z" user="Nqye" uid="24581138">
   <nd ref="11183597713" />
   <nd ref="11183597718" />
   <nd ref="11183597719" />
   <nd ref="1430656071" />
   <tag k="bicycle" v="designated" />
   <tag k="foot" v="designated" />
+  <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
  </way>
  <way id="1206937179" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765">
@@ -35492,7 +35669,7 @@
   <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
  </way>
- <way id="1206937180" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765">
+ <way id="1206937180" visible="true" version="2" changeset="190062600" timestamp="2026-10-05T23:47:07Z" user="wmxwu" uid="20503922">
   <nd ref="11183597721" />
   <nd ref="9889607769" />
   <nd ref="11183597722" />
@@ -35500,8 +35677,9 @@
   <tag k="crossing:markings" v="yes" />
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="asphalt" />
  </way>
- <way id="1206937181" visible="true" version="2" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506">
+ <way id="1206937181" visible="true" version="4" changeset="190062600" timestamp="2026-10-05T23:47:08Z" user="wmxwu" uid="20503922">
   <nd ref="11183597716" />
   <nd ref="11183597727" />
   <nd ref="11183597725" />
@@ -35509,9 +35687,11 @@
   <nd ref="11183597721" />
   <tag k="bicycle" v="designated" />
   <tag k="foot" v="designated" />
+  <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="paving_stones" />
  </way>
- <way id="1206937182" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765">
+ <way id="1206937182" visible="true" version="2" changeset="189873843" timestamp="2026-10-02T11:45:11Z" user="wmxwu" uid="20503922">
   <nd ref="11183597717" />
   <nd ref="9889607766" />
   <nd ref="9889607765" />
@@ -35519,8 +35699,9 @@
   <tag k="crossing" v="traffic_signals" />
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="asphalt" />
  </way>
- <way id="1206937183" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765">
+ <way id="1206937183" visible="true" version="2" changeset="189873843" timestamp="2026-10-02T11:45:11Z" user="wmxwu" uid="20503922">
   <nd ref="11183597725" />
   <nd ref="9889607762" />
   <nd ref="9889607763" />
@@ -35528,6 +35709,7 @@
   <tag k="crossing" v="traffic_signals" />
   <tag k="footway" v="crossing" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="asphalt" />
  </way>
  <way id="1206937184" visible="true" version="1" changeset="141119514" timestamp="2023-09-11T15:27:21Z" user="Rombardo" uid="5605765">
   <nd ref="11183597730" />
@@ -36750,7 +36932,7 @@
   <nd ref="13392605228" />
   <tag k="building" v="yes" />
  </way>
- <way id="1472718291" visible="true" version="3" changeset="183934431" timestamp="2026-06-10T17:08:33Z" user="ljc_jlyb" uid="14280033">
+ <way id="1472718291" visible="true" version="4" changeset="189873914" timestamp="2026-10-02T11:45:10Z" user="wmxwu" uid="20503922">
   <nd ref="13512291956" />
   <nd ref="13512291957" />
   <nd ref="13512291953" />
@@ -36766,11 +36948,13 @@
   <tag k="highway" v="primary_link" />
   <tag k="lanes" v="1" />
   <tag k="oneway" v="yes" />
+  <tag k="surface" v="asphalt" />
  </way>
- <way id="1514900718" visible="true" version="1" changeset="182760315" timestamp="2026-05-16T21:36:30Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
+ <way id="1514900718" visible="true" version="3" changeset="189956859" timestamp="2026-10-04T01:20:21Z" user="wmxwu" uid="20503922">
   <nd ref="13836991253" />
   <nd ref="357840217" />
   <nd ref="13836991254" />
+  <tag k="bench" v="yes" />
   <tag k="bus" v="yes" />
   <tag k="highway" v="platform" />
   <tag k="name" v="지하철2호선강남역" />
@@ -36778,6 +36962,7 @@
   <tag k="name:ko" v="지하철2호선강남역" />
   <tag k="public_transport" v="platform" />
   <tag k="ref" v="22012" />
+  <tag k="shelter" v="yes" />
  </way>
  <way id="1528035967" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506">
   <nd ref="1430656071" />
@@ -36786,7 +36971,7 @@
   <tag k="foot" v="designated" />
   <tag k="highway" v="footway" />
  </way>
- <way id="1528035971" visible="true" version="1" changeset="183902722" timestamp="2026-06-10T04:28:58Z" user="dusrndnpdl" uid="23772506">
+ <way id="1528035971" visible="true" version="3" changeset="190062721" timestamp="2026-10-05T23:55:45Z" user="wmxwu" uid="20503922">
   <nd ref="13925231449" />
   <nd ref="13925231450" />
   <nd ref="13925231597" />
@@ -36802,8 +36987,11 @@
   <nd ref="9889607773" />
   <nd ref="13925231451" />
   <nd ref="13925231452" />
+  <nd ref="10100725126" />
   <nd ref="13925231453" />
+  <tag k="footway" v="sidewalk" />
   <tag k="highway" v="footway" />
+  <tag k="surface" v="paving_stones" />
  </way>
  <way id="1536794881" visible="true" version="3" changeset="185395288" timestamp="2026-07-09T09:32:03Z" user="brendan77" uid="193835">
   <nd ref="1430655016" />
@@ -36860,7 +37048,7 @@
   <tag k="smoothness" v="good" />
   <tag k="surface" v="asphalt" />
  </way>
- <relation id="2297418" visible="true" version="149" changeset="184736544" timestamp="2026-06-28T10:44:02Z" user="chiho_kang" uid="10604125">
+ <relation id="2297418" visible="true" version="150" changeset="190426139" timestamp="2026-10-12T22:50:31Z" user="L Leung" uid="24636355">
   <member type="way" ref="1412509513" role="outer" />
   <member type="way" ref="946212391" role="outer" />
   <member type="way" ref="292143579" role="outer" />
@@ -37124,6 +37312,7 @@
   <tag k="name:lv" v="Seula" />
   <tag k="name:lzh" v="首爾" />
   <tag k="name:mhr" v="Сеул" />
+  <tag k="name:mi" v="Houra" />
   <tag k="name:mk" v="Сеул" />
   <tag k="name:ml" v="സോൾ" />
   <tag k="name:mn" v="Сөүл" />
@@ -38208,7 +38397,7 @@
   <tag k="route" v="bus" />
   <tag k="type" v="route" />
  </relation>
- <relation id="2894769" visible="true" version="100" changeset="185127782" timestamp="2026-07-05T08:15:02Z" user="VinceFC" uid="18588888">
+ <relation id="2894769" visible="true" version="103" changeset="190199645" timestamp="2026-10-08T13:02:00Z" user="총체적 난국" uid="24629812">
   <member type="way" ref="494952007" role="" />
   <member type="way" ref="975332778" role="" />
   <member type="way" ref="990628460" role="" />
@@ -38301,8 +38490,14 @@
   <member type="way" ref="1478779813" role="" />
   <member type="way" ref="520023265" role="" />
   <member type="way" ref="712143669" role="" />
+  <member type="way" ref="1565695228" role="" />
   <member type="way" ref="706750741" role="" />
   <member type="way" ref="382009827" role="" />
+  <member type="way" ref="1566511640" role="" />
+  <member type="way" ref="1565601154" role="" />
+  <member type="way" ref="1566511639" role="" />
+  <member type="way" ref="1566511638" role="" />
+  <member type="way" ref="1565601152" role="" />
   <member type="way" ref="1515438271" role="" />
   <member type="way" ref="1515438274" role="" />
   <member type="way" ref="1487430387" role="" />
@@ -39295,7 +39490,7 @@
   <tag k="route" v="bus" />
   <tag k="type" v="route" />
  </relation>
- <relation id="2897216" visible="true" version="145" changeset="182261375" timestamp="2026-05-05T17:45:12Z" user="aaei924" uid="10626814">
+ <relation id="2897216" visible="true" version="146" changeset="189566241" timestamp="2026-09-25T23:40:38Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="way" ref="218722040" role="" />
   <member type="way" ref="218722037" role="" />
   <member type="way" ref="218722043" role="" />
@@ -39515,10 +39710,15 @@
   <member type="way" ref="45066519" role="" />
   <member type="way" ref="315423461" role="" />
   <member type="way" ref="919163601" role="" />
-  <tag k="name" v="서울 버스 462" />
+  <member type="node" ref="357842345" role="" />
+  <member type="node" ref="357841701" role="" />
+  <tag k="from" v="송파공영차고지" />
+  <tag k="name" v="서울 버스 452" />
+  <tag k="operator" v="남성버스" />
   <tag k="public_transport:version" v="1" />
-  <tag k="ref" v="462" />
+  <tag k="ref" v="452" />
   <tag k="route" v="bus" />
+  <tag k="to" v="중앙대학교" />
   <tag k="type" v="route" />
  </relation>
  <relation id="2897217" visible="true" version="143" changeset="185235337" timestamp="2026-07-07T00:32:15Z" user="brendan77" uid="193835">
@@ -40328,7 +40528,7 @@
   <tag k="route" v="bus" />
   <tag k="type" v="route" />
  </relation>
- <relation id="3836355" visible="true" version="508" changeset="189156171" timestamp="2026-09-17T11:27:27Z" user="R_A" uid="1109994">
+ <relation id="3836355" visible="true" version="510" changeset="190862466" timestamp="2026-10-22T04:04:43Z" user="rokuku" uid="24480308">
   <member type="way" ref="619342756" role="" />
   <member type="way" ref="919984683" role="" />
   <member type="way" ref="585341917" role="" />
@@ -42960,17 +43160,21 @@
   <member type="way" ref="236289407" role="" />
   <member type="way" ref="219571041" role="" />
   <member type="way" ref="1459978419" role="" />
+  <member type="way" ref="1570553752" role="" />
   <member type="way" ref="236276266" role="" />
   <member type="way" ref="236276275" role="" />
+  <member type="way" ref="1570553751" role="" />
   <member type="way" ref="236276262" role="" />
   <member type="way" ref="236276263" role="" />
   <member type="way" ref="236276267" role="" />
+  <member type="way" ref="1570553753" role="" />
   <member type="way" ref="236379731" role="" />
   <member type="way" ref="1459978420" role="" />
   <member type="way" ref="591081124" role="" />
   <member type="way" ref="236292168" role="" />
   <member type="way" ref="236292170" role="" />
   <member type="way" ref="219571555" role="" />
+  <member type="way" ref="1569582297" role="" />
   <member type="way" ref="219571552" role="" />
   <member type="way" ref="236276274" role="" />
   <member type="way" ref="1444278617" role="" />
@@ -43776,7 +43980,7 @@
   <tag k="route" v="bus" />
   <tag k="type" v="route" />
  </relation>
- <relation id="6060963" visible="true" version="64" changeset="179100169" timestamp="2026-02-26T19:08:36Z" user="Claudius Henrichs" uid="18069">
+ <relation id="6060963" visible="true" version="66" changeset="190639889" timestamp="2026-10-17T09:08:26Z" user="Bovi887" uid="17440526">
   <member type="node" ref="9776192973" role="stop" />
   <member type="node" ref="7287842392" role="stop" />
   <member type="node" ref="9776192970" role="stop" />
@@ -43808,16 +44012,11 @@
   <tag k="duration" v="00:42" />
   <tag k="from" v="신사" />
   <tag k="from:en" v="Sinsa" />
-  <tag k="name" v="수도권 전철 신분당선: 신사 → 광교" />
-  <tag k="name:en" v="Seoul Metropolitan Subway Shinbundang Line: Sinsa→ Gwangyo" />
+  <tag k="name" v="신분당선: 신사 → 광교" />
+  <tag k="name:en" v="Shinbundang Line: Sinsa → Gwangyo" />
   <tag k="name:es" v="Línea Shinbundang hacia Gwanggyo" />
-  <tag k="name:ko" v="수도권 전철 신분당선: 신사 → 광교" />
+  <tag k="name:ko" v="신분당선: 신사 → 광교" />
   <tag k="network" v="수도권 전철" />
-  <tag k="network:en" v="Seoul Metropolitan Subway" />
-  <tag k="network:ko" v="수도권 전철" />
-  <tag k="network:metro" v="neotrans" />
-  <tag k="network:wikidata" v="Q16950" />
-  <tag k="network:wikipedia" v="ko:수도권 전철" />
   <tag k="network:zh" v="韓國首都圈電鐵" />
   <tag k="note" v="광역전철은 기차로 간주됩니다. 지하철로 바꾸지 마십시오." />
   <tag k="official_ref" v="신분당" />
@@ -43830,7 +44029,7 @@
   <tag k="ref" v="신분당" />
   <tag k="ref:en" v="Shinbundang" />
   <tag k="ref:source" v="https://www.shinbundang.co.kr/eng/index.jsp" />
-  <tag k="route" v="subway" />
+  <tag k="route" v="train" />
   <tag k="service" v="commuter" />
   <tag k="to" v="광교(경기대)" />
   <tag k="to:en" v="Gwangyo (Kyonggi Univ.)" />
@@ -43970,7 +44169,7 @@
   <tag k="route" v="bus" />
   <tag k="type" v="route" />
  </relation>
- <relation id="6503601" visible="true" version="72" changeset="187130607" timestamp="2026-08-08T11:59:18Z" user="october13" uid="22393082">
+ <relation id="6503601" visible="true" version="73" changeset="189566241" timestamp="2026-09-25T23:40:38Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="node" ref="4356434937" role="platform" />
   <member type="node" ref="4356434936" role="platform" />
   <member type="node" ref="4356434933" role="platform" />
@@ -44155,8 +44354,8 @@
   <member type="way" ref="277593638" role="" />
   <member type="way" ref="154281595" role="" />
   <tag k="from" v="도촌동9단지앞" />
-  <tag k="name" v="9000 숭례문 행" />
-  <tag k="network" v="경기 성남시 직행좌석" />
+  <tag k="name" v="성남시 직행좌석버스" />
+  <tag k="network" v="경기 성남시" />
   <tag k="operator" v="KD transprot group" />
   <tag k="public_transport:version" v="2" />
   <tag k="ref" v="9300" />
@@ -44486,7 +44685,7 @@
   <tag k="route" v="bus" />
   <tag k="type" v="route" />
  </relation>
- <relation id="6946554" visible="true" version="84" changeset="189337561" timestamp="2026-09-21T09:34:45Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
+ <relation id="6946554" visible="true" version="86" changeset="189566752" timestamp="2026-09-26T00:18:05Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="node" ref="4547670374" role="platform" />
   <member type="node" ref="4547670375" role="platform" />
   <member type="node" ref="4547670376" role="platform" />
@@ -44666,7 +44865,7 @@
   <member type="way" ref="521766184" role="" />
   <member type="way" ref="913885172" role="" />
   <member type="way" ref="472042767" role="" />
-  <tag k="colour" v="blue" />
+  <tag k="colour" v="#3d5bab" />
   <tag k="from" v="월암종점" />
   <tag k="name" v="서울 시내버스 441" />
   <tag k="network" v="서울시 간선버스" />
@@ -44676,7 +44875,6 @@
   <tag k="route" v="bus" />
   <tag k="to" v="한강버스압구정선착장B" />
   <tag k="type" v="route" />
-  <tag k="via" v="한강버스압구정선착장B" />
  </relation>
  <relation id="7365608" visible="true" version="1" changeset="49944568" timestamp="2017-06-30T13:43:18Z" user="Lantian" uid="1765666">
   <member type="way" ref="504227065" role="from" />
@@ -46080,7 +46278,7 @@
   <tag k="route_master" v="bus" />
   <tag k="type" v="route_master" />
  </relation>
- <relation id="7547924" visible="true" version="48" changeset="187802123" timestamp="2026-08-21T15:08:26Z" user="YeongChan Lee" uid="14129147">
+ <relation id="7547924" visible="true" version="51" changeset="189566752" timestamp="2026-09-26T00:18:05Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="node" ref="357825988" role="platform" />
   <member type="node" ref="4867334986" role="platform" />
   <member type="node" ref="357840336" role="platform" />
@@ -46254,9 +46452,9 @@
   <member type="way" ref="472039933" role="" />
   <member type="way" ref="452597720" role="" />
   <member type="way" ref="1243964515" role="" />
-  <tag k="colour" v="blue" />
-  <tag k="from" v="월암종점" />
-  <tag k="name" v="서울 시내버스 441 (월암동 방면)" />
+  <tag k="colour" v="#3d5bab" />
+  <tag k="from" v="한강버스선착장B" />
+  <tag k="name" v="서울 시내버스 441" />
   <tag k="network" v="서울시 간선버스" />
   <tag k="operator" v="우신버스" />
   <tag k="public_transport:version" v="2" />
@@ -46264,7 +46462,6 @@
   <tag k="route" v="bus" />
   <tag k="to" v="월암종점" />
   <tag k="type" v="route" />
-  <tag k="via" v="신사사거리" />
  </relation>
  <relation id="7556509" visible="true" version="66" changeset="187130607" timestamp="2026-08-08T11:59:18Z" user="october13" uid="22393082">
   <member type="way" ref="466390188" role="backward" />
@@ -46792,7 +46989,7 @@
   <tag k="route_master" v="bus" />
   <tag k="type" v="route_master" />
  </relation>
- <relation id="7560227" visible="true" version="18" changeset="176202245" timestamp="2025-12-21T02:11:51Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
+ <relation id="7560227" visible="true" version="19" changeset="190656034" timestamp="2026-10-17T15:12:48Z" user="ljc_jlyb" uid="14280033">
   <member type="node" ref="9316453840" role="platform" />
   <member type="node" ref="357962158" role="platform" />
   <member type="node" ref="9316453831" role="platform" />
@@ -46818,6 +47015,7 @@
   <member type="way" ref="523144216" role="" />
   <member type="way" ref="230071181" role="" />
   <member type="way" ref="604527964" role="" />
+  <member type="way" ref="1569146467" role="" />
   <member type="way" ref="604527965" role="" />
   <member type="way" ref="218722041" role="" />
   <member type="way" ref="525738546" role="" />
@@ -46851,7 +47049,7 @@
   <tag k="to" v="강남역" />
   <tag k="type" v="route" />
  </relation>
- <relation id="7560228" visible="true" version="16" changeset="169984321" timestamp="2025-08-05T04:30:58Z" user="aaei924" uid="10626814">
+ <relation id="7560228" visible="true" version="17" changeset="190656034" timestamp="2026-10-17T15:12:48Z" user="ljc_jlyb" uid="14280033">
   <member type="node" ref="3139438432" role="platform" />
   <member type="node" ref="9316602733" role="platform" />
   <member type="node" ref="9316523346" role="platform" />
@@ -46896,6 +47094,7 @@
   <member type="way" ref="828782197" role="" />
   <member type="way" ref="218913526" role="" />
   <member type="way" ref="604527965" role="" />
+  <member type="way" ref="1569146467" role="" />
   <member type="way" ref="604527964" role="" />
   <member type="way" ref="230071181" role="" />
   <member type="way" ref="523144216" role="" />
@@ -47046,7 +47245,7 @@
   <tag k="route_master" v="bus" />
   <tag k="type" v="route_master" />
  </relation>
- <relation id="7561581" visible="true" version="62" changeset="184917232" timestamp="2026-07-01T14:21:05Z" user="뷁홀열역학" uid="5209015">
+ <relation id="7561581" visible="true" version="63" changeset="189566599" timestamp="2026-09-26T00:06:54Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="node" ref="357837088" role="platform" />
   <member type="node" ref="5918171211" role="platform" />
   <member type="node" ref="357959754" role="platform" />
@@ -47246,8 +47445,7 @@
   <member type="way" ref="186410768" role="forward" />
   <tag k="colour" v="#F72F08" />
   <tag k="from" v="구미동차고지" />
-  <tag k="name" v="서울 버스 9408 → 고속터미널" />
-  <tag k="name:ko" v="서울 버스 9408 → 고속터미널" />
+  <tag k="name" v="서울 버스 9408" />
   <tag k="network" v="서울특별시 시내버스" />
   <tag k="network:ko" v="서울특별시 시내버스" />
   <tag k="network:wikidata" v="Q3724007" />
@@ -47273,7 +47471,7 @@
   <tag k="route_master" v="bus" />
   <tag k="type" v="route_master" />
  </relation>
- <relation id="7570631" visible="true" version="81" changeset="185235337" timestamp="2026-07-07T00:32:15Z" user="brendan77" uid="193835">
+ <relation id="7570631" visible="true" version="82" changeset="189567013" timestamp="2026-09-26T00:32:30Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="way" ref="977107431" role="forward" />
   <member type="way" ref="554246843" role="forward" />
   <member type="way" ref="37414517" role="forward" />
@@ -47429,10 +47627,15 @@
   <member type="way" ref="1524793722" role="forward" />
   <member type="way" ref="476195141" role="forward" />
   <member type="way" ref="37414793" role="forward" />
+  <tag k="colour" v="#f72f08" />
+  <tag k="from" v="일산동부경찰서" />
+  <tag k="name" v="서울시 광역버스 9711번" />
+  <tag k="network" v="서울특별시" />
   <tag k="operator" v="서울매일버스" />
   <tag k="public_transport:version" v="2" />
   <tag k="ref" v="9711" />
   <tag k="route" v="bus" />
+  <tag k="to" v="시민의숲.양재꽃시장" />
   <tag k="type" v="route" />
  </relation>
  <relation id="7570632" visible="true" version="83" changeset="183424402" timestamp="2026-05-31T02:46:51Z" user="한창훈" uid="2281401">
@@ -47622,9 +47825,11 @@
   <tag k="route" v="bus" />
   <tag k="type" v="route" />
  </relation>
- <relation id="7570633" visible="true" version="3" changeset="111644798" timestamp="2021-09-24T12:09:05Z" user="minseo" uid="5186039">
+ <relation id="7570633" visible="true" version="4" changeset="189566960" timestamp="2026-09-26T00:30:21Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="relation" ref="7570631" role="" />
   <member type="relation" ref="7570632" role="" />
+  <tag k="colour" v="#f72f08" />
+  <tag k="name" v="서울시 광역버스" />
   <tag k="operator" v="서울매일버스" />
   <tag k="ref" v="9711" />
   <tag k="route_master" v="bus" />
@@ -48250,10 +48455,10 @@
   <tag k="wikidata" v="Q17501" />
   <tag k="wikipedia" v="en:Seoul Subway Line 2" />
  </relation>
- <relation id="7707449" visible="true" version="5" changeset="151061979" timestamp="2024-05-08T15:19:36Z" user="LuxuryCoop" uid="7245212">
+ <relation id="7707449" visible="true" version="6" changeset="189554823" timestamp="2026-09-25T17:06:22Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="relation" ref="6946554" role="" />
   <member type="relation" ref="7547924" role="" />
-  <tag k="colour" v="blue" />
+  <tag k="colour" v="#3d5bab" />
   <tag k="frequency" v="10" />
   <tag k="name" v="서울 버스 441" />
   <tag k="network" v="서울시 간선버스" />
@@ -48371,11 +48576,11 @@
   <tag k="building" v="commercial" />
   <tag k="type" v="multipolygon" />
  </relation>
- <relation id="7728256" visible="true" version="15" changeset="179100169" timestamp="2026-02-26T19:08:36Z" user="Claudius Henrichs" uid="18069">
+ <relation id="7728256" visible="true" version="16" changeset="190627170" timestamp="2026-10-16T21:42:16Z" user="aaei924" uid="10626814">
   <member type="relation" ref="6060963" role="" />
   <member type="relation" ref="12814871" role="" />
   <tag k="alt_name" v="DX Line" />
-  <tag k="alt_ref" v="S" />
+  <tag k="alt_ref" v="DX" />
   <tag k="colour" v="#B81B30" />
   <tag k="name" v="수도권 전철 신분당선" />
   <tag k="name:en" v="Seoul Metropolitan Subway Shinbundang Line" />
@@ -48384,16 +48589,15 @@
   <tag k="network" v="수도권 전철" />
   <tag k="network:en" v="Seoul Metropolitan Subway" />
   <tag k="network:ko" v="수도권 전철" />
-  <tag k="network:metro" v="neotrans" />
   <tag k="network:wikidata" v="Q16950" />
   <tag k="network:wikipedia" v="ko:수도권 전철" />
   <tag k="official_ref" v="신분당" />
   <tag k="operator" v="네오트랜스주식회사" />
   <tag k="operator:en" v="NeoTrans Co. Ltd." />
-  <tag k="ref" v="326" />
+  <tag k="ref" v="신분당" />
   <tag k="ref:en" v="Shinbundang" />
   <tag k="ref:source" v="https://www.shinbundang.co.kr/eng/index.jsp" />
-  <tag k="route_master" v="subway" />
+  <tag k="route_master" v="train" />
   <tag k="type" v="route_master" />
   <tag k="wikidata" v="Q20388" />
   <tag k="wikipedia" v="en:Shinbundang Line" />
@@ -49052,7 +49256,7 @@
   <tag k="to" v="강남역" />
   <tag k="type" v="route" />
  </relation>
- <relation id="8210701" visible="true" version="54" changeset="182789117" timestamp="2026-05-17T15:00:49Z" user="aaei924" uid="10626814">
+ <relation id="8210701" visible="true" version="57" changeset="190199645" timestamp="2026-10-08T13:02:00Z" user="총체적 난국" uid="24629812">
   <member type="way" ref="712133750" role="" />
   <member type="way" ref="218792402" role="" />
   <member type="way" ref="218792400" role="" />
@@ -49069,8 +49273,14 @@
   <member type="way" ref="1487430387" role="" />
   <member type="way" ref="1515438274" role="" />
   <member type="way" ref="1515438271" role="" />
+  <member type="way" ref="1565601152" role="" />
+  <member type="way" ref="1566511638" role="" />
+  <member type="way" ref="1566511639" role="" />
+  <member type="way" ref="1565601154" role="" />
+  <member type="way" ref="1566511640" role="" />
   <member type="way" ref="382009827" role="" />
   <member type="way" ref="706750741" role="" />
+  <member type="way" ref="1565695228" role="" />
   <member type="way" ref="712143669" role="" />
   <member type="way" ref="520023265" role="" />
   <member type="way" ref="1478779813" role="" />
@@ -49229,7 +49439,7 @@
   <tag k="public_transport" v="stop_area" />
   <tag k="type" v="public_transport" />
  </relation>
- <relation id="8234850" visible="true" version="31" changeset="187802123" timestamp="2026-08-21T15:08:26Z" user="YeongChan Lee" uid="14129147">
+ <relation id="8234850" visible="true" version="32" changeset="189566575" timestamp="2026-09-26T00:05:52Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="node" ref="357839304" role="platform" />
   <member type="node" ref="357960686" role="platform" />
   <member type="node" ref="4659625290" role="platform" />
@@ -49383,7 +49593,7 @@
   <tag k="alt_name" v="541번 버스" />
   <tag k="colour" v="#3d5bab" />
   <tag k="from" v="강남역" />
-  <tag k="name" v="서울 시내버스 541 (군포공영차고지 행)" />
+  <tag k="name" v="서울 시내버스 541" />
   <tag k="network" v="서울시 간선버스" />
   <tag k="operator" v="우신버스" />
   <tag k="public_transport:version" v="2" />
@@ -50188,7 +50398,7 @@
   <tag k="height" v="17" />
   <tag k="type" v="multipolygon" />
  </relation>
- <relation id="9724327" visible="true" version="23" changeset="187802123" timestamp="2026-08-21T15:08:26Z" user="YeongChan Lee" uid="14129147">
+ <relation id="9724327" visible="true" version="24" changeset="189412266" timestamp="2026-09-22T17:32:44Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="node" ref="357825988" role="platform" />
   <member type="node" ref="4867334986" role="platform" />
   <member type="node" ref="357840336" role="platform" />
@@ -50379,6 +50589,7 @@
   <member type="way" ref="552526821" role="" />
   <member type="way" ref="909818592" role="" />
   <member type="way" ref="568664996" role="" />
+  <tag k="colour" v="#3d5bab" />
   <tag k="from" v="신사동사거리.신사역" />
   <tag k="name" v="서울 시내버스 542 → 부곡버스공영차고지" />
   <tag k="network" v="서울시 간선버스" />
@@ -50851,7 +51062,7 @@
   <tag k="route_master" v="bus" />
   <tag k="type" v="route_master" />
  </relation>
- <relation id="11364978" visible="true" version="71" changeset="185343486" timestamp="2026-07-08T14:02:08Z" user="aaei924" uid="10626814">
+ <relation id="11364978" visible="true" version="72" changeset="189742981" timestamp="2026-09-29T18:49:23Z" user="aaei924" uid="10626814">
   <member type="node" ref="8778592318" role="platform" />
   <member type="way" ref="1124323977" role="" />
   <member type="way" ref="832141753" role="" />
@@ -51381,7 +51592,6 @@
   <tag k="network" v="고속버스" />
   <tag k="operator" v="금호고속;중앙고속" />
   <tag k="public_transport:version" v="2" />
-  <tag k="ref" v="광주to서울" />
   <tag k="route" v="bus" />
   <tag k="to" v="센트럴시티" />
   <tag k="type" v="route" />
@@ -51856,7 +52066,7 @@
   <tag k="restriction" v="no_u_turn" />
   <tag k="type" v="restriction" />
  </relation>
- <relation id="12814871" visible="true" version="10" changeset="179100169" timestamp="2026-02-26T19:08:36Z" user="Claudius Henrichs" uid="18069">
+ <relation id="12814871" visible="true" version="12" changeset="190639889" timestamp="2026-10-17T09:08:26Z" user="Bovi887" uid="17440526">
   <member type="node" ref="8808844423" role="stop" />
   <member type="node" ref="8808844447" role="stop" />
   <member type="node" ref="8808844470" role="stop" />
@@ -51889,33 +52099,31 @@
   <tag k="duration" v="0:43" />
   <tag k="from" v="광교" />
   <tag k="from:en" v="Gwangyo" />
-  <tag k="name" v="수도권 전철 신분당선: 광교 → 신사" />
-  <tag k="name:en" v="Seoul Metropolitan Subway Shinbundang Line: Gwangyo → Sinsa" />
-  <tag k="name:ko" v="수도권 전철 신분당선: 광교 → 신사" />
+  <tag k="name" v="신분당선: 광교 → 신사" />
+  <tag k="name:en" v="Shinbundang Line: Gwangyo → Sinsa" />
+  <tag k="name:ko" v="신분당선: 광교 → 신사" />
   <tag k="network" v="수도권 전철" />
   <tag k="network:en" v="Seoul Metropolitan Subway" />
   <tag k="network:ko" v="수도권 전철" />
-  <tag k="network:metro" v="neotrans" />
   <tag k="network:wikidata" v="Q16950" />
-  <tag k="network:wikipedia" v="ko:수도권 전철" />
   <tag k="network:zh" v="韓國首都圈電鐵" />
   <tag k="note" v="광역전철은 기차로 간주됩니다. 지하철로 바꾸지 마십시오." />
   <tag k="official_ref" v="신분당" />
   <tag k="operator" v="네오트랜스주식회사" />
-  <tag k="operator:en" v="NeoTrans Co. Ltd." />
+  <tag k="operator:en" v="NEO TRANS CO., LTD" />
   <tag k="operator:ko" v="네오트랜스주식회사" />
   <tag k="operator:type" v="private" />
   <tag k="operator:wikidata" v="Q13709959" />
   <tag k="public_transport:version" v="2" />
   <tag k="ref" v="신분당" />
   <tag k="ref:en" v="Shinbundang" />
-  <tag k="route" v="subway" />
+  <tag k="route" v="train" />
   <tag k="service" v="commuter" />
   <tag k="to" v="신사" />
   <tag k="to:en" v="Sinsa" />
   <tag k="type" v="route" />
  </relation>
- <relation id="12942360" visible="true" version="15" changeset="182762010" timestamp="2026-05-16T23:00:18Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
+ <relation id="12942360" visible="true" version="17" changeset="189566760" timestamp="2026-09-26T00:18:44Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
   <member type="node" ref="11641439375" role="stop" />
   <member type="node" ref="357959256" role="stop" />
   <member type="node" ref="357962592" role="stop" />
@@ -51979,9 +52187,7 @@
   <member type="node" ref="357957665" role="stop" />
   <tag k="colour" v="#F72F08" />
   <tag k="from" v="구반포역.세화고등학교" />
-  <tag k="name" v="서울 버스 9408 → 오리역" />
-  <tag k="name:en" v="Seoul Buses route 9408 → Ori Station" />
-  <tag k="name:ko" v="서울 버스 9408 → 오리역" />
+  <tag k="name" v="서울시 광역버스 9408번" />
   <tag k="network" v="서울특별시 시내버스" />
   <tag k="network:ko" v="서울특별시 시내버스" />
   <tag k="network:wikidata" v="Q3724007" />
@@ -51999,7 +52205,7 @@
   <tag k="restriction" v="no_left_turn" />
   <tag k="type" v="restriction" />
  </relation>
- <relation id="13113949" visible="true" version="27" changeset="187015059" timestamp="2026-08-06T07:23:33Z" user="Flynn Marquardt" uid="100357">
+ <relation id="13113949" visible="true" version="28" changeset="189579301" timestamp="2026-09-26T09:49:04Z" user="Nqye" uid="24581138">
   <member type="node" ref="8377470149" role="platform" />
   <member type="node" ref="357834833" role="platform" />
   <member type="node" ref="8427282121" role="platform" />
@@ -52200,8 +52406,6 @@
   <member type="way" ref="913885172" role="" />
   <member type="way" ref="472042767" role="" />
   <member type="way" ref="522490647" role="" />
-  <member type="way" ref="174699431" role="" />
-  <member type="way" ref="522490669" role="" />
   <tag k="colour" v="#ff0000" />
   <tag k="from" v="상산곡동.공영차고지" />
   <tag k="name" v="하남 버스 9202: 상산곡동.공영차고지 → 학동역" />
@@ -54816,5 +55020,33 @@
   <tag k="route" v="foot" />
   <tag k="to" v="서초IC" />
   <tag k="type" v="route" />
+ </relation>
+ <relation id="21443489" visible="true" version="1" changeset="189570728" timestamp="2026-09-26T04:57:45Z" user="Nqye" uid="24581138">
+  <member type="way" ref="117790044" role="from" />
+  <member type="node" ref="2477256602" role="via" />
+  <member type="way" ref="525738547" role="to" />
+  <tag k="restriction" v="only_right_turn" />
+  <tag k="type" v="restriction" />
+ </relation>
+ <relation id="21443490" visible="true" version="1" changeset="189570728" timestamp="2026-09-26T04:57:45Z" user="Nqye" uid="24581138">
+  <member type="way" ref="417746803" role="from" />
+  <member type="node" ref="2477256602" role="via" />
+  <member type="way" ref="1562434561" role="to" />
+  <tag k="restriction" v="only_right_turn" />
+  <tag k="type" v="restriction" />
+ </relation>
+ <relation id="21443491" visible="true" version="1" changeset="189570728" timestamp="2026-09-26T04:57:45Z" user="Nqye" uid="24581138">
+  <member type="way" ref="525738547" role="from" />
+  <member type="node" ref="2477256602" role="via" />
+  <member type="way" ref="117790044" role="to" />
+  <tag k="restriction" v="no_left_turn" />
+  <tag k="type" v="restriction" />
+ </relation>
+ <relation id="21443492" visible="true" version="1" changeset="189570728" timestamp="2026-09-26T04:57:45Z" user="Nqye" uid="24581138">
+  <member type="way" ref="1562434561" role="from" />
+  <member type="node" ref="2477256602" role="via" />
+  <member type="way" ref="417746803" role="to" />
+  <tag k="restriction" v="no_left_turn" />
+  <tag k="type" v="restriction" />
  </relation>
 </osm>
