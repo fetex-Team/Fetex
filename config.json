@@ -74,7 +74,7 @@
   "cnn_num_layers": 2,
   "cnn_kernel_size": 3,
   "cnn_epochs": 30,
-  "cnn_batch_size": 16,
+  "cnn_batch_size": 128,
   "cnn_lr": 0.001,
   "base_fare": 4800,
   "min_multiplier": 1.0,

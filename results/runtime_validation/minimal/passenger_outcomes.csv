@@ -1,0 +1,6 @@
+person_id,demand_type,depart_sec,pickup_sec,removed_sec,threshold_exceeded_sec,reserved_pending,status
+passenger_0,fixed,0.0,69.0,,,False,picked_up
+passenger_1,fixed,60.0,67.0,,,False,picked_up
+passenger_2,fixed,120.0,178.0,,,False,picked_up
+passenger_3,fixed,180.0,228.0,,,False,picked_up
+passenger_4,fixed,240.0,304.0,,,False,picked_up

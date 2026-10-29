@@ -59,7 +59,24 @@ class ProgressCallback(BaseCallback):
         return True
 
 
+def _ensure_traci_dispatch_cfg(cfg_path: str):
+    """HungarianDispatcher를 사용하는 RL 환경을 위해 SUMO dispatch-algorithm을 'traci'로 보장"""
+    import xml.etree.ElementTree as ET
+    if not os.path.exists(cfg_path):
+        return
+    tree = ET.parse(cfg_path)
+    root = tree.getroot()
+    changed = False
+    for elem in root.iter("device.taxi.dispatch-algorithm"):
+        if elem.get("value") != "traci":
+            elem.set("value", "traci")
+            changed = True
+    if changed:
+        tree.write(cfg_path)
+
+
 def main():
+    _ensure_traci_dispatch_cfg(SUMO_CFG)
     with open(META_PATH, "r", encoding="utf-8") as f:
         meta = json.load(f)
 

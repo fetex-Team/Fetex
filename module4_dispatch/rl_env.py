@@ -120,6 +120,7 @@ class TaxiRepositionEnv(gym.Env):
 
         self._close_sumo()
 
+        error_log = os.path.join(os.path.dirname(self.sumo_cfg_path), "sumo_errors.log")
         traci.start(
             [
                 self.sumo_binary,
@@ -129,6 +130,8 @@ class TaxiRepositionEnv(gym.Env):
                 "true",
                 "--no-warnings",
                 "true",
+                "--error-log",
+                error_log,
             ]
         )
 
@@ -305,11 +308,15 @@ class TaxiRepositionEnv(gym.Env):
             np.random.shuffle(candidates)
 
             success = False
+            attempts = 0
             for target_edge in candidates:
                 if target_edge == current_edge:
                     continue
                 if (current_edge, target_edge) in self._unreachable_edges:
                     continue  # 예전에 이미 도달 불가능으로 확인된 조합 - 재시도 안 함
+                attempts += 1
+                if attempts > 5:
+                    break  # 한 택시에서 5개 도로가 연속 실패하면 불필요한 시도 중단
                 try:
                     route = traci.simulation.findRoute(current_edge, target_edge)
                     if route is None or not route.edges:

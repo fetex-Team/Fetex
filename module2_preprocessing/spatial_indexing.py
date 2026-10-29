@@ -6,10 +6,13 @@
 - resolution별 셀 크기가 고정돼 지역이 바뀌어도 같은 기준으로 비교 가능.
 - Geohash도 함께 출력한다 (명세가 "Geohash 또는 H3"라 둘 다 제공, 문자열 prefix로 상위 격자 조회가 쉬움).
 
-resolution 9를 쓰는 근거 (data/eda/h3_resolution_summary.csv, 강남역 로그 7~10 비교)
-- res 8: 셀 7개, 최다 셀에 수요 35% 집중, 학습 행 42 → 공간 정보 부족 (too coarse)
-- res 10: 셀 70개, 수요 0인 칸 37%, 중앙값 1건/10분, lag-1 자기상관 0.17 → 노이즈 (too fine)
-- res 9: 셀 22개(변 201m), 0인 칸 20%, 출근 핫스팟 5~6셀 식별 → 채택
+resolution — config.json의 h3_resolution 값을 사용한다. 현재 팀 기준(develop, Data Specification v1.0)은 **8**
+(강남역 일대 8격자, 시뮬레이션 도로–격자 매핑·저장 모델의 cells 목록과 같은 해상도여야 함).
+참고: feat/3-preprocessing EDA(data/eda/h3_resolution_summary.csv, 강남역 로그 7~10 비교)에서는
+- res 8: 셀 7개, 최다 셀에 수요 35% 집중 → 공간 정보 적음
+- res 10: 셀 70개, 수요 0인 칸 37%, lag-1 자기상관 0.17 → 노이즈
+- res 9: 셀 22개(변 201m), 0인 칸 20%, 출근 핫스팟 5~6셀 식별
+로 9가 더 세밀했으나, 통합 시 지도·배차 모듈과 맞추기 위해 8을 채택했다. 해상도를 바꾸면 모델 재학습 필요.
 
 대용량 효율화 (명세 Q1/Q4)
 - 기존: df.apply(axis=1) — 행마다 파이썬 함수 호출 + Series 생성 → 10만 행에 수 초.
@@ -42,9 +45,9 @@ class SpatialIndexer:
     """GPS 위도/경도 → H3 셀 ID + Geohash 문자열."""
 
     def __init__(self, h3_resolution: int = None, geohash_precision: int = 7, coord_decimals: int = None):
-        # 근거는 모듈 docstring 참고. config.json 값(기본 9)을 우선 사용.
+        # 근거는 모듈 docstring 참고. config.json 값(현재 8)을 우선 사용.
         self.h3_resolution = h3_resolution if h3_resolution is not None else CFG["h3_resolution"]
-        self.geohash_precision = geohash_precision   # 7자리 ≈ 153m × 153m, res 9(201m)와 비슷한 크기
+        self.geohash_precision = geohash_precision   # 7자리 ≈ 153m × 153m (참고용 보조 인덱스)
         # coord_decimals: None이면 반올림 없이 '완전히 같은 좌표'만 캐시(결과가 apply 방식과 100% 동일).
         #   6을 주면 0.1m 단위로 묶어 캐시 적중률을 높이지만 셀 경계 0.1m 안의 점은 셀이 바뀔 수 있음.
         self.coord_decimals = coord_decimals

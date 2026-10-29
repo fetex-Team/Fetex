@@ -1,0 +1,16 @@
+{
+  "vehicles": {
+    "normal_type_0": 5,
+    "normal_type_1": 5,
+    "normal_type_2": 5,
+    "normal_type_3": 5,
+    "auto_type": 1,
+    "obstacle_type": 2,
+    "taxi_type": 3
+  },
+  "passengers": 5,
+  "blocks": [
+    3,
+    3
+  ]
+}
