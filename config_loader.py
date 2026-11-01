@@ -19,6 +19,11 @@ DEFAULT_CONFIG = {
     # build_env.py가 CFG['passenger_mode']로 직접 인덱싱하므로(.get() 아님) 기본값 필수 —
     # config.json에 이 키가 없으면 KeyError로 죽는 문제 방지.
     "passenger_mode": "replay",
+    # 수요 출처: "real" = TIMS 500m 격자 실측(2025) + 서울시 시간대별 택시 통계로 보정한 외생 수요(기본)
+    #            "synthetic" = 예전 카테고리 가정 모델(학교/회사/음식점 흡수→재스폰)
+    "demand_source": "real",
+    "real_demand_scale": 1.0,        # 실측 호출량 중 이 시뮬레이션 택시들이 맡는 비율 (1.0 = 영역 전체 실측량)
+    "real_internal_trip_km": 1.0,    # 이 거리보다 짧은 운행은 영역 안에서 하차 (나머지는 경계 도로로 나감)
     "taxi_strategy": "patrol",
     "depart_jitter_sec": 300.0,
     "sumo_time_to_teleport": 300,
@@ -175,6 +180,7 @@ def load_config(config_path=None):
     return merged
 
 def _apply_region_coords(merged, region):
+    merged.pop("region_unresolved", None)
     coords = None
     try:
         from geo_lookup import lookup_region
@@ -196,8 +202,12 @@ def _apply_region_coords(merged, region):
     elif region in REGION_PRESETS:
         merged.update(REGION_PRESETS[region])
     else:
-        print(f"[안내] '{region}' 프리셋 없음 — 홍대입구로 대체합니다.")
-        merged.update(REGION_PRESETS["홍대입구"]); merged["region"] = "홍대입구"
+        # 예전에는 조용히 홍대입구로 바꿔 돌렸다 -> 다른 지역 데이터가 정상 결과처럼 섞이는 문제.
+        # 설정 화면(GUI)은 계속 열 수 있게 값은 채워 두되, 표시를 남겨 build_env.py가 지도 생성을 거부한다.
+        print(f"[경고] '{region}' 좌표를 찾지 못했고 프리셋도 없습니다. 지역명을 확인하거나 네트워크를 연결하세요. "
+              f"(지도 생성은 중단됩니다)")
+        merged.update(REGION_PRESETS["홍대입구"])
+        merged["region_unresolved"] = region
 
 def _apply_live_weather(merged, region):
     try:

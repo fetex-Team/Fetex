@@ -127,6 +127,9 @@ def create_network_and_routes():
 
     if CFG.get("use_real_map"):
         _apply_region_coords(CFG, CFG["region"])
+        if CFG.get("region_unresolved"):
+            raise SystemExit(f"[중단] '{CFG['region_unresolved']}' 지역 좌표를 찾지 못했습니다. "
+                             "다른 지역 지도로 대신 돌리지 않도록 중단합니다. 지역명/네트워크를 확인하세요.")
         from real_map_fetch import build_real_map_network
         print(f"[안내] 실제 지도 모드 — '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
         net_file, raw_osm_path = build_real_map_network(
@@ -271,7 +274,7 @@ def create_network_and_routes():
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
     print(f"[안내] Digital Twin 시뮬레이션 환경 구성 완료 "
-          f"(호출 모드: {CFG['passenger_mode']}, 정적 승객: {len(trips)}명)")
+          f"(수요: {CFG.get('demand_source', 'real')}, 호출 모드: {CFG['passenger_mode']}, 정적 승객: {len(trips)}명)")
 
 
 if __name__ == "__main__":

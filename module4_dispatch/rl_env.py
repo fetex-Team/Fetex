@@ -137,6 +137,7 @@ class TaxiRepositionEnv(gym.Env):
             company_pop_base=self.meta.get("company_pop_base", 100),
             seed=passenger_seed,
             sim_date=episode_date.isoformat(),
+            meta=self.meta,
         )
 
         if self.demand_predictor is not None and hasattr(self.demand_predictor, "reset"):

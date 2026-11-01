@@ -36,6 +36,8 @@ NUMERIC_GROUPS = {
         ("num_passengers", "기본 승객 수", 0, 10000, 0, 1),
         ("sim_start_hour", "시뮬레이션 시작 시각", 0, 23, 0, 1), ("sim_end_hour", "시뮬레이션 종료 시각", 1, 24, 0, 1),
         ("passenger_wait_timeout", "승객 최대 대기시간(초)", 1, 7200, 0, 1),
+        ("real_demand_scale", "실측 수요 배율 (1.0=영역 실측 전체)", 0.01, 5, 2, 0),
+        ("real_internal_trip_km", "영역 안 하차 기준 거리(km)", 0.1, 10, 2, 0),
         ("depart_jitter_sec", "출발시간 분산 표준편차(초)", 0, 1800, 1, 0),
         ("sumo_time_to_teleport", "SUMO teleport 기준(초)", 0, 7200, 0, 1),
         ("taxi_remaining_edges_threshold", "택시 재타겟팅 잔여 edge 기준", 0, 20, 0, 1),
@@ -133,6 +135,7 @@ CHOICES = [
     ("taxi_dispatch_algorithm", "SUMO taxi dispatch algorithm", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
     ("taxi_idle_algorithm", "SUMO taxi idle algorithm", ["randomCircling", "stopOnRoad", "taxiStop"]),
     ("passenger_mode", "승객 생성 모드", ["replay", "legacy"]),
+    ("demand_source", "수요 출처 (real=실측보정)", ["real", "synthetic"]),
     ("holiday_mode", "공휴일 판정 모드", ["auto", "weekday", "holiday"]),
     ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
 ]

@@ -77,7 +77,8 @@ CATEGORY_MODEL_PATH = os.environ.get(
 # max_steps 기본값을 24시간 전체 스텝(86400초 이상)을 충분히 커버할 수 있도록 확장
 def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                      sumo_cfg_path: str = None, meta_path: str = None,
-                     strategy: str = None, algorithm: str = None, recorder=None) -> dict:
+                     strategy: str = None, algorithm: str = None, recorder=None,
+                     recorder_factory=None) -> dict:
     """
     시뮬레이션을 headless(sumo, GUI 없음)로 끝까지 돌리면서 승객별 대기시간을 측정.
     택시는 taxi_manager.TaxiFleetManager가 항상 target_count(=num_taxis)만큼 유지함
@@ -99,6 +100,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         set_dispatch_algorithm_in_config(algorithm)
     if strategy is not None or algorithm is not None:
         rebuild_env()
+    if recorder is None and recorder_factory is not None:
+        # 지도(map.json)를 방금 다시 만든 환경 기준으로 만들도록 기록기를 재빌드 이후에 생성
+        recorder = recorder_factory()
 
     depart_time = {}     # person_id -> depart 시각(초)
     pickup_time = {}     # person_id -> 탑승 확인된 시각(초)
@@ -201,6 +205,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         seed=meta.get("passenger_seed"),
         sim_date=run_date.isoformat(),
         holiday_mode=holiday_mode,
+        meta=meta,
     )
 
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
@@ -222,7 +227,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     # 위에서 이미 계산해둔 run_date(레거시 로그용 랜덤 과거 날짜, 실행마다 다름)를 그대로 넘겨서
     # 실행마다 서로 다른 달력 날짜를 쓰게 함 -> 시간칸 충돌 방지 + dayofweek/is_weekend 분산 확보.
     log_recorder = DemandLogRecorder(
-        sim_start_hour=sim_start_hour, zones=meta.get("zones", {}), sim_date=run_date.isoformat()
+        sim_start_hour=sim_start_hour, zones=meta.get("zones", {}), sim_date=run_date.isoformat(),
+        spawn_manager=spawn_manager,
     )
 
     traci.start([sumo_binary, "-c", _sumo_cfg])
@@ -302,6 +308,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                     now, depart_time, pickup_time, arrived_pids,
                     pax_manager.removed_pids, set(), rl_maintainer, teleport_count,
                     vehicle_ids=current_vids, idle_taxis=idle_taxis, person_ids=current_pids,
+                    is_last=sim_end_seconds is not None and now >= sim_end_seconds,
                 )
 
             # 설정한 시간대(sim_end_hour)에 도달하면 승객이 남아있어도 강제 종료.
@@ -352,7 +359,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         print(f"[진단] 소멸 확정 후 뒤늦게 태워진 승객 {len(overlap)}명 (소멸로만 집계, 대기시간 표본에서 제외)")
 
     # ---- 학습용 수요 로그 저장 (for 루프 밖, 시뮬레이션 1회당 한 번만) ----
-    if demand_log_rows:
+    # write_demand_logs=false: 도구(택시 대수 산정 등)가 학습 로그 폴더를 오염시키지 않게 저장 생략
+    _write_logs = bool(CFG.get("write_demand_logs", True))
+    if demand_log_rows and _write_logs:
         os.makedirs(os.path.dirname(DEMAND_LOG_PATH), exist_ok=True)
         file_exists = os.path.exists(DEMAND_LOG_PATH)
         with open(DEMAND_LOG_PATH, "a", newline="", encoding="utf-8") as f:
@@ -362,7 +371,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             writer.writerows(demand_log_rows)
         print(f"[안내] 학습용 수요 로그 {len(demand_log_rows)}건을 {DEMAND_LOG_PATH}에 남겼습니다.")
 
-    if log_recorder.records:
+    if log_recorder.records and _write_logs:
         # 파일명: demand_log_{구역}{전략}_{알고리즘}[공휴일]{yymmdd}.csv  (예: demand_log_강남역patrol_hungarian공휴일261003.csv)
         # demand_log_ 접두어는 train.py·pipeline.py의 demand_log_*.csv 글롭이 읽도록 유지.
         _region = re.sub(r'[\\/:*?"<>|\s]+', "", str(CFG.get("region", "")))
@@ -396,6 +405,16 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         "true_avg_wait_sec_with_penalty": round(sum(adjusted_waits) / len(adjusted_waits), 1) if adjusted_waits else None,
         "max_wait_sec": round(max(waits), 1) if waits else None,
         "min_wait_sec": round(min(waits), 1) if waits else None,
+        "p90_wait_sec": round(sorted(waits)[int(0.9 * (len(waits) - 1))], 1) if waits else None,
+        # 서비스율 = 제때 태운 손님 / 전체 호출 (운영 KPI)
+        "service_rate": round(n_measured / n_total, 4) if n_total else None,
+        "demand_source": getattr(spawn_manager, "demand_source", "synthetic"),
+        "n_scheduled_calls": len(getattr(spawn_manager, "schedule", []) or []) or None,
+        "spawn_failures": getattr(spawn_manager, "spawn_failures", 0),
+        "demand_summary": getattr(spawn_manager, "schedule_summary", None),
+        # 추정 매출 = 태운 손님 수 x TIMS 실측 평균 요금(이 영역 격자, 2025) — 실데이터 모드에서만
+        "est_revenue_won": (round(n_measured * spawn_manager.mean_fare_won)
+                            if getattr(spawn_manager, "mean_fare_won", None) else None),
         "waits": waits,
     }
 
