@@ -38,6 +38,12 @@ namespace Fetex
         public float avg_wait_sec;
         public float true_avg_wait_sec_with_penalty;
         public float max_wait_sec;
+        // v2 이후 추가 (없으면 기본값)
+        public float p90_wait_sec;
+        public float service_rate;
+        public float est_revenue_won;
+        public int n_scheduled_calls;
+        public string demand_source;
     }
 
     [Serializable]
@@ -45,6 +51,7 @@ namespace Fetex
     {
         public string id;
         public string kind;
+        public float len;   // v2: 차량 길이(m). 앞범퍼가 아니라 차 중심을 도로 위에 놓는 데 사용
     }
 
     [Serializable]
@@ -68,10 +75,15 @@ namespace Fetex
     public class VehicleState
     {
         public int i;
-        public float x;
+        public float x;     // 차 중심 x (v1 파일은 앞범퍼)
         public float z;
-        public float a;
+        public float a;     // 방향(도, 북쪽 0·시계방향)
         public int s;
+        // v2: 차선 기반 이동 정보
+        public int l;       // map.lanes 번호 (-1: 모름)
+        public float p;     // 차선 위 앞범퍼 위치(m)
+        public float v;     // 속도(m/s)
+        public int[] w;     // 이전 프레임 이후 지나온 차선 번호들
     }
 
     [Serializable]
@@ -92,8 +104,20 @@ namespace Fetex
         public float offsetY;
         public bool grid;
         public List<RoadData> roads;
+        public List<LaneData> lanes;     // v2: 교차로 내부 연결 차선까지 포함한 전체 차선 (차량 이동 경로용)
         public List<JunctionData> junctions;
         public List<CellData> cells;
+    }
+
+    [Serializable]
+    public class LaneData
+    {
+        public string id;
+        public string e;            // 소속 도로(edge) id — 같은 도로의 차선끼리는 차선 변경으로 처리
+        public float len;           // SUMO 차선 길이
+        public float w;             // 차선 폭
+        public bool isInternal;     // 교차로 안쪽 연결 차선 여부
+        public List<float> xz;      // 중심선 좌표 [x0, z0, x1, z1, ...]
     }
 
     [Serializable]
@@ -160,6 +184,11 @@ namespace Fetex
 
         private ReplayData replayData;
         private MapData mapData;
+        private List<MotionLane> motionLanes;   // v2 차선 경로 보간용 (map.json lanes)
+
+        // 프레임마다 새로 만들지 않고 재사용하는 작업용 컬렉션 (GC 부담 감소)
+        private readonly Dictionary<int, VehicleState> vLookupB = new Dictionary<int, VehicleState>();
+        private readonly HashSet<int> activeInCurrentFrame = new HashSet<int>();
         private GameObject roadNetworkObject;
         private GameObject buildingsContainerObject;
         private readonly List<GameObject> h3CellObjects = new List<GameObject>();
@@ -330,6 +359,10 @@ namespace Fetex
             {
                 BuildGangnamRoadNetwork(mapData);
             }
+            if (mapData != null && motionLanes == null)
+            {
+                BuildMotionLanes(mapData);
+            }
 
             string replayPath = Path.Combine(Application.streamingAssetsPath, fileName);
             if (!File.Exists(replayPath))
@@ -383,11 +416,78 @@ namespace Fetex
                 }
             }
 
-            Debug.Log($"[FetexReplayPlayer] Loaded {fileName} ({replayData.frames.Count} frames) | Real Gangnam roads: {mapData?.roads?.Count ?? 0}");
+            bool lanePath = UseLanePath;
+            Debug.Log($"[FetexReplayPlayer] Loaded {fileName} (v{replayData.version}, {replayData.frames.Count} frames, stride {replayData.stride}s) | " +
+                      $"roads {mapData?.roads?.Count ?? 0}, lanes {motionLanes?.Count ?? 0} | 이동 방식: {(lanePath ? "차선 경로 보간" : "직선 보간(구버전 파일)")}");
 
             ApplyCityVisibility();
             UpdateSimulation(0f);
             SelectTaxiForCamera(0);
+        }
+
+        /// <summary>map.json의 lanes를 차선 경로 보간용 구조로 변환 (교차로 내부 차선 포함).</summary>
+        private void BuildMotionLanes(MapData map)
+        {
+            if (map == null || map.lanes == null || map.lanes.Count == 0)
+            {
+                motionLanes = null;   // 구버전 map.json → 직선 보간으로 재생
+                return;
+            }
+            var edgeIndex = new Dictionary<string, int>();
+            motionLanes = new List<MotionLane>(map.lanes.Count);
+            for (int i = 0; i < map.lanes.Count; i++)
+            {
+                LaneData ld = map.lanes[i];
+                string edge = ld.e ?? ld.id ?? i.ToString();
+                if (!edgeIndex.TryGetValue(edge, out int ei))
+                {
+                    ei = edgeIndex.Count;
+                    edgeIndex[edge] = ei;
+                }
+                motionLanes.Add(new MotionLane(ld.id, ei, ld.len, ld.w, ld.xz));
+            }
+        }
+
+        /// <summary>v2 재생 파일 + 차선 정보가 있는 map.json일 때만 차선 경로 보간을 쓴다.</summary>
+        private bool UseLanePath
+        {
+            get { return replayData != null && replayData.version >= 2 && motionLanes != null && motionLanes.Count > 0; }
+        }
+
+        private static MotionState ToMotionState(VehicleState v)
+        {
+            return new MotionState { Lane = v.l, Pos = v.p, Speed = v.v, X = v.x, Z = v.z, Angle = v.a, Via = v.w };
+        }
+
+        private float EntityLength(int entityIndex)
+        {
+            if (replayData != null && replayData.entities != null && entityIndex >= 0 && entityIndex < replayData.entities.Count)
+            {
+                return replayData.entities[entityIndex].len;
+            }
+            return 0f;
+        }
+
+        private int FindFrameIndex(float time)
+        {
+            int count = replayData.frames.Count;
+            if (time <= replayData.frames[0].t) return 0;
+            if (time >= replayData.frames[count - 1].t) return count - 1;
+            int low = 0, high = count - 1, idx = 0;
+            while (low <= high)
+            {
+                int mid = (low + high) / 2;
+                if (replayData.frames[mid].t <= time)
+                {
+                    idx = mid;
+                    low = mid + 1;
+                }
+                else
+                {
+                    high = mid - 1;
+                }
+            }
+            return idx;
         }
 
         private void BuildGangnamRoadNetwork(MapData map)
@@ -735,47 +835,16 @@ namespace Fetex
             if (replayData == null || replayData.frames == null || replayData.frames.Count == 0) return;
 
             int count = replayData.frames.Count;
-
-            int idxA = 0;
-            int idxB = 0;
-            float factor = 0f;
-
-            if (time <= replayData.frames[0].t)
-            {
-                idxA = idxB = 0;
-                factor = 0f;
-            }
-            else if (time >= replayData.frames[count - 1].t)
-            {
-                idxA = idxB = count - 1;
-                factor = 0f;
-            }
-            else
-            {
-                int low = 0;
-                int high = count - 1;
-                while (low <= high)
-                {
-                    int mid = (low + high) / 2;
-                    if (replayData.frames[mid].t <= time)
-                    {
-                        idxA = mid;
-                        low = mid + 1;
-                    }
-                    else
-                    {
-                        high = mid - 1;
-                    }
-                }
-                idxB = Mathf.Min(idxA + 1, count - 1);
-                float span = replayData.frames[idxB].t - replayData.frames[idxA].t;
-                factor = span > 0.0001f ? Mathf.Clamp01((time - replayData.frames[idxA].t) / span) : 0f;
-            }
+            int idxA = FindFrameIndex(time);
+            int idxB = Mathf.Min(idxA + 1, count - 1);
+            float span = replayData.frames[idxB].t - replayData.frames[idxA].t;
+            float factor = (idxA != idxB && span > 0.0001f)
+                ? Mathf.Clamp01((time - replayData.frames[idxA].t) / span) : 0f;
 
             FrameData fA = replayData.frames[idxA];
             FrameData fB = replayData.frames[idxB];
 
-            Dictionary<int, VehicleState> vLookupB = new Dictionary<int, VehicleState>();
+            vLookupB.Clear();
             if (fB.vehicles != null)
             {
                 for (int i = 0; i < fB.vehicles.Count; i++)
@@ -784,7 +853,8 @@ namespace Fetex
                 }
             }
 
-            HashSet<int> activeInCurrentFrame = new HashSet<int>();
+            activeInCurrentFrame.Clear();
+            bool lanePath = UseLanePath;
 
             if (fA.vehicles != null)
             {
@@ -793,24 +863,28 @@ namespace Fetex
                     VehicleState vA = fA.vehicles[i];
                     activeInCurrentFrame.Add(vA.i);
 
-                    Vector3 posA = new Vector3(vA.x, groundY, vA.z);
-                    float rotA = vA.a;
-
-                    Vector3 finalPos = posA;
-                    float finalAngle = rotA;
+                    float px = vA.x, pz = vA.z, heading = vA.a;
                     int finalState = vA.s;
 
-                    if (vLookupB.TryGetValue(vA.i, out VehicleState vB))
+                    if (idxA != idxB && vLookupB.TryGetValue(vA.i, out VehicleState vB))
                     {
-                        Vector3 posB = new Vector3(vB.x, groundY, vB.z);
-                        finalPos = Vector3.Lerp(posA, posB, factor);
-                        finalAngle = Mathf.LerpAngle(rotA, vB.a, factor);
+                        MotionState mA = ToMotionState(vA);
+                        MotionState mB = ToMotionState(vB);
+                        if (lanePath)
+                        {
+                            // 두 프레임 사이에 실제로 지나간 차선(교차로 내부 포함)을 따라 이동
+                            ReplayMotion.Interpolate(motionLanes, mA, mB, factor, span, EntityLength(vA.i),
+                                                     out px, out pz, out heading);
+                        }
+                        else
+                        {
+                            ReplayMotion.Linear(mA, mB, factor, out px, out pz, out heading);
+                        }
                         finalState = factor >= 0.5f ? vB.s : vA.s;
                     }
 
                     GameObject vObj = GetOrCreateVehicle(vA.i);
-                    vObj.transform.position = finalPos;
-                    vObj.transform.rotation = Quaternion.Euler(0f, finalAngle, 0f);
+                    vObj.transform.SetPositionAndRotation(new Vector3(px, groundY, pz), Quaternion.Euler(0f, heading, 0f));
                     if (!vObj.activeSelf) vObj.SetActive(true);
 
                     UpdateStatusMarker(vA.i, finalState);
@@ -982,9 +1056,7 @@ namespace Fetex
         private FrameData GetCurrentFrameData()
         {
             if (replayData == null || replayData.frames == null || replayData.frames.Count == 0) return null;
-            int count = replayData.frames.Count;
-            int idx = Mathf.Clamp(Mathf.FloorToInt((currentTime / Mathf.Max(replayData.duration, 1f)) * count), 0, count - 1);
-            return replayData.frames[idx];
+            return replayData.frames[FindFrameIndex(currentTime)];
         }
 
         private void InitStyles()
@@ -1059,7 +1131,9 @@ namespace Fetex
                 int displayPicked = cur.picked;
                 float displayAvgWait = cur.avgWait;
 
-                if (replayData != null && replayData.metrics != null && replayData.metrics.n_measured > 0 && replayData.frames != null && replayData.frames.Count > 0)
+                // v1 파일은 프레임 집계와 최종 지표가 어긋나 비율로 보정했었다. v2는 기록 단계에서
+                // 같은 기준(타임아웃 승객 제외)으로 집계하므로 원래 값을 그대로 보여준다.
+                if (replayData != null && replayData.version < 2 && replayData.metrics != null && replayData.metrics.n_measured > 0 && replayData.frames != null && replayData.frames.Count > 0)
                 {
                     FrameData lastFrame = replayData.frames[replayData.frames.Count - 1];
                     float pickRatio = lastFrame.picked > 0 ? (float)replayData.metrics.n_measured / lastFrame.picked : 1f;
@@ -1077,6 +1151,17 @@ namespace Fetex
                 GUILayout.Label($"• 평균 대기 시간: <color=#FFDD44><b>{displayAvgWait:F1}</b></color> 초");
                 GUILayout.Label($"• AI 선제 재배치 누적 이동: <color=#00CCFF><b>{cur.moves}</b></color> 건");
                 GUILayout.Label($"• 호출 취소/타임아웃: <color=#FF6666><b>{cur.timedOut}</b></color> 명");
+            }
+
+            if (replayData != null && replayData.metrics != null && replayData.version >= 2)
+            {
+                MetricsData m = replayData.metrics;
+                string fp = string.IsNullOrEmpty(replayData.fingerprint) ? "-" : replayData.fingerprint;
+                GUILayout.Label($"• 수요: <b>{(m.demand_source == "real" ? "TIMS 실측 보정" : "가정값")}</b>  지문 <b>{fp}</b>");
+                if (m.service_rate > 0f)
+                {
+                    GUILayout.Label($"• 최종 서비스율 <b>{m.service_rate * 100f:F1}%</b> · 추정 매출 <b>{m.est_revenue_won / 1e6f:F1}</b>백만원");
+                }
             }
 
             GUILayout.Space(4);
