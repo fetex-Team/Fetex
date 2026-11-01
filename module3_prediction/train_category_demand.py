@@ -48,9 +48,10 @@ OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pk
 CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]
 
 
-def _load_all_demand_logs():
-    """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제)"""
-    paths = selected_log_paths(DEMAND_LOG_DIR)
+def _load_all_demand_logs(log_glob: str = None):
+    """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제).
+    log_glob을 주면 그 파일들만 쓴다 (예: 실데이터 보정 로그 data/real_demand_logs/demand_log_*.csv)."""
+    paths = sorted(glob.glob(log_glob)) if log_glob else selected_log_paths(DEMAND_LOG_DIR)
     if not paths:
         return None
     frames = [pd.read_csv(p, parse_dates=["pickup_datetime"]) for p in paths]
@@ -60,8 +61,8 @@ def _load_all_demand_logs():
     return merged
 
 
-def main():
-    df = _load_all_demand_logs()
+def main(log_glob: str = None):
+    df = _load_all_demand_logs(log_glob)
     if df is None:
         print("[에러] data/sim_logs/demand_log_*.csv 로그가 없습니다. "
               "먼저 `python measure_wait_time.py`를 한 번 이상 돌려주세요.")
@@ -118,4 +119,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 config_gui에서 고른 data/sim_logs 로그)")
+    main(ap.parse_args().logs)

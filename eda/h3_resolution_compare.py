@@ -20,8 +20,8 @@ import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from module2_preprocessing.sim_log_recorder import latest_log_path
 
-# 한글 폰트 (맥 기본)
-for f in ["AppleGothic", "Apple SD Gothic Neo", "NanumGothic"]:
+# 한글 폰트 (윈도우/맥/리눅스)
+for f in ["Malgun Gothic", "AppleGothic", "Apple SD Gothic Neo", "NanumGothic", "Noto Sans CJK KR", "Noto Sans CJK JP"]:
     if any(f == x.name for x in font_manager.fontManager.ttflist):
         plt.rcParams["font.family"] = f; break
 plt.rcParams["axes.unicode_minus"] = False

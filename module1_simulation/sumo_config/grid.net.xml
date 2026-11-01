@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<!-- generated on 2026-10-26T18:12:04.935269+09:00 by Eclipse SUMO netconvert 1.27.1
+<!-- generated on 2026-11-01T12:23:59.880803+00:00 by Eclipse SUMO netconvert 1.28.0
 <netconvertConfiguration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/netconvertConfiguration.xsd">
 
     <input>
-        <osm-files value="C:\Users\skrkt\Desktop\고급인공지능\2학기\12\20260916verMergeFinish\20260916verMergeFinish\module1_simulation\sumo_config\region_filtered.osm.xml"/>
+        <osm-files value="/home/claude/fx/module1_simulation/sumo_config/region_filtered.osm.xml"/>
     </input>
 
     <output>
-        <output-file value="C:\Users\skrkt\Desktop\고급인공지능\2학기\12\20260916verMergeFinish\20260916verMergeFinish\module1_simulation\sumo_config\grid.net.xml"/>
+        <output-file value="/home/claude/fx/module1_simulation/sumo_config/grid.net.xml"/>
     </output>
 
     <projection>
@@ -4136,7 +4136,7 @@
     </edge>
     <edge id=":cluster_10220955574_11245176923_11245176924_11245176925_#3more_30" function="internal">
         <lane id=":cluster_10220955574_11245176923_11245176924_11245176925_#3more_30_0" index="0" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="10.43" length="15.37" shape="295.89,612.46 299.55,607.07 303.47,604.31 307.53,604.39"/>
-        <lane id=":cluster_10220955574_11245176923_11245176924_11245176925_#3more_30_1" index="0" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="9.82" length="13.88" shape="295.42,613.79 298.73,609.32 302.45,607.13 306.44,607.40"/>
+        <lane id=":cluster_10220955574_11245176923_11245176924_11245176925_#3more_30_1" index="1" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="9.82" length="13.88" shape="295.42,613.79 298.73,609.32 302.45,607.13 306.44,607.40"/>
     </edge>
     <edge id=":cluster_10220955574_11245176923_11245176924_11245176925_#3more_31" function="internal">
         <lane id=":cluster_10220955574_11245176923_11245176924_11245176925_#3more_31_0" index="0" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="3.65" length="3.23" shape="293.27,620.23 294.16,620.13 294.77,620.78 295.11,622.18"/>
@@ -4429,7 +4429,7 @@
     </edge>
     <edge id=":cluster_2280678667_2280678672_9889607765_9889607766_25" function="internal">
         <lane id=":cluster_2280678667_2280678672_9889607765_9889607766_25_0" index="0" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="11.79" length="25.81" shape="910.38,813.42 908.91,816.30 903.39,821.39 896.65,823.18 888.69,821.69"/>
-        <lane id=":cluster_2280678667_2280678672_9889607765_9889607766_25_1" index="0" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="11.31" length="24.14" shape="910.71,812.53 909.39,814.99 904.22,819.13 897.68,820.37 889.79,818.69"/>
+        <lane id=":cluster_2280678667_2280678672_9889607765_9889607766_25_1" index="1" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="11.31" length="24.14" shape="910.71,812.53 909.39,814.99 904.22,819.13 897.68,820.37 889.79,818.69"/>
     </edge>
     <edge id=":cluster_2280678667_2280678672_9889607765_9889607766_26" function="internal">
         <lane id=":cluster_2280678667_2280678672_9889607765_9889607766_26_0" index="0" disallow="tram rail_urban rail rail_electric rail_fast ship container cable_car subway aircraft wheelchair scooter drone" speed="3.65" length="3.23" shape="912.03,808.78 911.14,808.88 910.52,808.23 910.19,806.83"/>
