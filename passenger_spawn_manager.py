@@ -34,6 +34,7 @@ traci.person.getIDList()를 매 스텝 비교해서, "이전 스텝엔 있었는
         spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids)
 """
 
+import math
 import random
 import traci
 from config_loader import CFG
@@ -197,6 +198,8 @@ class PassengerSpawnManager:
         self.demand_source = str(CFG.get("demand_source", "real")).lower()
         self.schedule = []
         self.schedule_summary = None
+        self.call_by_pid = {}       # pid -> Call (실데이터 모드)
+        self._real_model = None
         self._schedule_idx = 0
         self.spawn_failures = 0
         if self.demand_source == "real":
@@ -218,19 +221,44 @@ class PassengerSpawnManager:
         date = _dt.date.fromisoformat(str(sim_date)) if sim_date else _dt.date.fromisoformat(
             str(CFG.get("sim_date", "2026-09-07")))
         model = RealDemandModel(meta, CFG)
-        # 날씨 보정(기존 기능 유지): 택시 선택 확률 가산값을 호출량 배율로 바꿔 적용
-        weather_factor = 1.0 + self.weather_bonus
+        self._real_model = model
+        # 날씨: 그날의 실측 시간별 강수(Open-Meteo Archive, data/external/weather_<지역>_*.csv)가 있으면
+        # 시간마다 1 + 1.99%/mm 배율. 없으면 기존 '날씨적용'(실행 시점 실시간 날씨 가산값)을 하루 전체에 적용.
+        hist = None
+        if CFG.get("weather_bonus_enabled", False) or CFG.get("use_historical_weather", True):
+            from weather_history import load_hourly_weather
+            hist = load_hourly_weather(date, CFG.get("region")) if CFG.get("use_historical_weather", True) else None
+        weather_factor = 1.0 if hist else 1.0 + self.weather_bonus
+        precip = hist["precipitation"] if hist else None
         self.schedule = model.build_schedule(date, self.sim_start_hour, self.sim_end_hour,
                                              seed if seed is not None else 42,
-                                             is_holiday=self.is_holiday, weather_factor=weather_factor)
+                                             is_holiday=self.is_holiday, weather_factor=weather_factor,
+                                             hourly_precip_mm=precip)
         self.schedule_summary = model.summary(date, self.sim_start_hour, self.sim_end_hour, self.is_holiday)
         self.schedule_summary["weather_factor"] = round(weather_factor, 3)
+        self.schedule_summary["weather_source"] = hist["source"] if hist else (
+            "live" if self.weather_bonus else "none")
+        if hist:
+            hrs = range(int(self.sim_start_hour), int(math.ceil(self.sim_end_hour)))
+            self.schedule_summary["precip_mm_in_window"] = round(sum(precip[h % 24] for h in hrs), 1)
         self.schedule_summary["n_calls"] = len(self.schedule)
         self.mean_fare_won = model.mean_fare()
+        wtxt = (f"실측 날씨 {hist['source']} (구간 강수 {self.schedule_summary['precip_mm_in_window']}mm)"
+                if hist else f"날씨 {weather_factor:.2f}")
         print(f"[실데이터 수요] {date} {'공휴일/주말' if self.is_holiday or date.weekday() >= 5 else '평일'} | "
               f"영역 실측 하루 {self.schedule_summary['area_daily_calls_real']:.0f}건 x 배율 {model.scale} "
-              f"x 날씨 {weather_factor:.2f} -> {self.sim_start_hour:g}~{self.sim_end_hour:g}시 호출 {len(self.schedule)}건 "
-              f"(TIMS 2025 + 서울시 시간대 통계)")
+              f"x {wtxt} -> {self.sim_start_hour:g}~{self.sim_end_hour:g}시 호출 {len(self.schedule)}건 "
+              f"(TIMS 2025 + 서울시 2025 시간대 통계)")
+
+    def cell_mean_time_min(self, cell: str) -> float:
+        """TIMS 격자 평균 운행시간(분). 모르면 영역 평균."""
+        m = self._real_model
+        if m is None:
+            return 21.0
+        if cell in m.cells:
+            return m.cells[cell].mean_time_min
+        act = list(m.active.values())
+        return sum(c.mean_time_min for c in act) / max(len(act), 1)
 
     def _maintain_real(self, now_seconds: float):
         """미리 만든 스케줄에서 now 이전 호출을 모두 생성. 실패해도 다음 호출은 그대로 진행."""
@@ -250,6 +278,7 @@ class PassengerSpawnManager:
                     pass
                 continue
             self.total_spawned += 1
+            self.call_by_pid[pid] = call
             self._dest_category[pid] = call.kind if call.kind == "external" else call.category
             if self._current_pids is not None:
                 self._current_pids.add(pid)

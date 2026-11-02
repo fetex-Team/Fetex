@@ -64,6 +64,27 @@
 
 남은 0.1%대는 차선 폭+1m 띠 바로 바깥(최대 2.2m)으로, 갓길 정차 위치와 차선 사이를 오가는 구간이다.
 
+### 4-4. 파일 압축 (gzip)
+재생 파일은 전략당 약 48MB(JSON)라 git·전달이 무겁다. 기본 출력을 `<전략>.json.gz`로 바꿨다.
+
+| | JSON | json.gz |
+|---|---:|---:|
+| patrol (14시간, 5초 간격) | 47.9MB | **8.3MB** (17%) |
+
+- 내보내기: `export_unity_replay.py`가 `.json.gz`로 저장(`--no-gzip`이면 예전처럼 `.json`). 같은 이름의 다른 형식 파일은 지워 헷갈리지 않게 한다.
+- Unity: `FetexReplayPlayer`가 `<파일>.gz`가 있으면 그것을 `GZipStream`으로 풀어 읽고, 없으면 `.json`을 읽는다(예전 파일도 그대로 재생).
+  `map.json`은 0.5MB라 압축하지 않는다.
+- 검증 도구 `tools/verify_replay_motion.py`도 `.gz`를 바로 읽는다.
+
+### 4-5. 2026-11 재생성 (2025 수요·카카오 몫·실측 날씨, 재학습 RL)
+| 파일 | 도로 밖 (전체) | 도로 밖 (회전 구간) | 3m 넘는 이탈 | 크기 |
+|---|---:|---:|---:|---:|
+| patrol.json.gz | 0.12% | 0.43% | 0% | 8.7MB |
+| prepositioned.json.gz | 0.11% | 0.46% | 0% | 8.6MB |
+| rl_prepositioned.json.gz | 0.11% | 0.46% | 0% | 9.0MB |
+
+수요 지문 `efa4eb669cd5c7dd`(세 파일 동일). 같은 파일을 직선 보간했다면 patrol 기준 전체 10.9% / 회전 39.2%가 도로 밖이다.
+
 ## 5. 남은 한계
 - 텔레포트(정체로 SUMO가 차를 순간이동시킴) 구간은 직선 보간으로 대체된다(전체 표본의 1% 미만).
 - 교차로 안에서 두 차선이 겹치는 곳은 실제 SUMO처럼 차가 겹쳐 보일 수 있다(충돌 회피는 SUMO가 이미 처리).
@@ -72,6 +93,6 @@
 ## 6. 재현
 ```bash
 python export_unity_replay.py --stride 5 --unity-dir <Unity 프로젝트>/Assets/StreamingAssets
-python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json
+python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz
 python tests/test_replay_motion.py
 ```

@@ -1,9 +1,16 @@
 import random
 import traci
+import traci.constants as tc
+
+import vehicle_subscriptions
 
 from collections import Counter
 
 from config_loader import CFG
+
+# 택시 매니저가 매 스텝 쓰는 값 (구독으로 스텝당 왕복 1번)
+# 경로 전체(VAR_EDGES)는 순찰 택시에서 수천 개로 길어져 매 스텝 받으면 오히려 느려진다 → 필요할 때만 직접 조회
+TAXI_SUBSCRIBE_VARS = (tc.LAST_STEP_PERSON_ID_LIST, tc.VAR_ROAD_ID, tc.VAR_ROUTE_INDEX)
 
 CATEGORY_PEAK_HOURS = {
     "company": [CFG.get("lunch_start_hour", 12.0), CFG.get("evening_start_hour", 18.0), CFG.get("late_evening_start_hour", 23.0)],
@@ -57,6 +64,7 @@ class TaxiFleetManager:
         self.lock_initial = bool(CFG.get("taxi_lock_initial_count", False))
         self._init_reported = False
         self._pending_cache = (None, None)
+        self._away_until = []   # [시나리오] 영역 밖 운행으로 빠진 택시들의 복귀 시각 (그동안 목표 대수에서 제외)
 
     def _current_hour(self, now_seconds: float) -> float:
         return self.sim_start_hour + (now_seconds / 3600.0)
@@ -247,6 +255,19 @@ class TaxiFleetManager:
             self._last_summary = now
             print(f"[택시 진단] t={now:.0f}s 소멸 누계 {dict(self.vanish_counts)} | 스폰 {dict(self.spawn_stats)} | 살아있음 {len(taxis_now)}/{self.target_count}", flush=True)
 
+    def send_away(self, vid: str, return_at: float):
+        """택시를 운행에서 잠시 뺀다 (영역 밖으로 손님을 태우고 나간 시나리오). return_at이 지나면
+        목표 대수가 회복되어 경계 도로에서 다시 투입된다."""
+        try:
+            traci.vehicle.remove(vid)
+        except traci.exceptions.TraCIException:
+            return
+        self._our_removed.add(vid)
+        self._removed_this_step.append(vid)
+        self.fail_counts.pop(vid, None)
+        self._away_until.append(float(return_at))
+        self.spawn_stats["sent_away"] += 1
+
     def vanish_summary(self) -> str:
         return f"소멸 {dict(self.vanish_counts)} | 스폰 {dict(self.spawn_stats)}"
 
@@ -270,7 +291,9 @@ class TaxiFleetManager:
                     self.target_count = len(taxis_now)
 
             pending = self._update_spawned(now_seconds, current_ids)
-            shortage = self.target_count - (len(taxis_now) + len(pending))
+            if self._away_until:
+                self._away_until = [t for t in self._away_until if t > now_seconds]
+            shortage = self.target_count - len(self._away_until) - (len(taxis_now) + len(pending))
             if shortage > 0:
                 api = self._pending_ids()
                 if api:
@@ -278,6 +301,8 @@ class TaxiFleetManager:
             for _ in range(min(max(0, shortage), self.max_spawn_per_step)):
                 self._spawn_new_taxi()
 
+            vehicle_subscriptions.forget(current_ids)
+            vehicle_subscriptions.ensure(taxis_now, TAXI_SUBSCRIBE_VARS)
             for vid in taxis_now:
                 try:
                     self._maintain_one(vid, now_seconds)
@@ -308,7 +333,12 @@ class TaxiFleetManager:
 
     # [수정] 클래스 외부로 빠져나갔던 들여쓰기를 완벽 복구
     def _maintain_one(self, vid: str, now_seconds: float):
-        if traci.vehicle.getPersonIDList(vid):
+        # [성능] 탑승 승객·현재 도로·경로·경로 위치는 구독 값(직전 simulationStep 시점)을 쓴다 (vehicle_subscriptions.py).
+        # 이 함수는 스텝 맨 앞에서 불리고, 같은 스텝에 이 택시의 상태를 바꾼 코드가 아직 없으므로 직접 묻는 값과 같다.
+        res = vehicle_subscriptions.get(vid)
+        persons = res[tc.LAST_STEP_PERSON_ID_LIST] if tc.LAST_STEP_PERSON_ID_LIST in res \
+            else traci.vehicle.getPersonIDList(vid)
+        if persons:
             self._last_info[vid] = ("승객 탑승", None, None)
             return
 
@@ -319,12 +349,12 @@ class TaxiFleetManager:
         except traci.exceptions.TraCIException:
             return
 
-        current_edge = traci.vehicle.getRoadID(vid)
+        current_edge = res[tc.VAR_ROAD_ID] if tc.VAR_ROAD_ID in res else traci.vehicle.getRoadID(vid)
         if current_edge.startswith(":"):
             return
 
         route = traci.vehicle.getRoute(vid)
-        route_idx = traci.vehicle.getRouteIndex(vid)
+        route_idx = res[tc.VAR_ROUTE_INDEX] if tc.VAR_ROUTE_INDEX in res else traci.vehicle.getRouteIndex(vid)
         remaining = len(route) - route_idx - 1
         self._last_info[vid] = ("빈 택시", current_edge, remaining)
 

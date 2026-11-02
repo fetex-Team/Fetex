@@ -49,7 +49,7 @@ def run_one(base_cfg: dict, n: int, strategy: str, date: str, log_dir: Path):
         with open(log, "w", encoding="utf-8") as lf:
             proc = subprocess.run([sys.executable, __file__, "--worker", path, f"sumo_config_fleet{n}"],
                                   cwd=str(ROOT), stdout=subprocess.PIPE, stderr=lf, text=True,
-                                  env={**os.environ, "PYTHONUTF8": "1", "PYTHONHASHSEED": "0"})
+                                  env={**os.environ, "PYTHONUTF8": "1", "PYTHONHASHSEED": "0"})  # 실행 재현성
             lf.write(proc.stdout)
         line = next((l for l in proc.stdout.splitlines() if l.startswith("@@RESULT@@")), None)
         if line is None:

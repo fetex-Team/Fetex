@@ -44,6 +44,7 @@ import csv
 import re
 import hashlib
 import traci
+import vehicle_subscriptions
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from taxi_manager import TaxiFleetManager
@@ -51,10 +52,11 @@ from passenger_manager import PassengerTimeoutManager, riding_map
 from passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
 from holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
-from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
+from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
 from step_snapshot import fetch_idle_taxis
 from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer  # 추가
 from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 2] 호출 로그 기록 (feat3, 병합)
+from external_trip_model import ExternalTripAwayModel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
@@ -108,6 +110,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     pickup_time = {}     # person_id -> 탑승 확인된 시각(초)
     arrived_pids = set()  # 목적지까지 도착 완료(정상 하차)한 person_id
     in_taxi = set()      # 이미 탑승 처리된 person_id (중복 계산 방지)
+    onboard = {}         # 지금 택시에 타고 있는 person_id -> taxi id (하차 감지용, 최대 택시 대수만큼만 유지)
     seen_persons = set()
     teleport_count = 0
 
@@ -130,7 +133,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     # 매칭 알고리즘을 바꾸지 않는다.
     taxi_strategy = meta.get("taxi_strategy")
     dispatch_algo = meta.get("taxi_dispatch_algorithm")
-    hungarian_dispatcher = HungarianDispatcher() if dispatch_algo == "hungarian" else None
+    hungarian_dispatcher = build_hungarian_dispatcher(_sumo_cfg) if dispatch_algo == "hungarian" else None
 
     # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
     # dispatcher를 넘겨주면, 이미 Hungarian이 예약을 배정한 승객의 강제제거를 한 스텝
@@ -208,6 +211,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         meta=meta,
     )
 
+    # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
+    away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))
+
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
     if sim_end_seconds is None:
         print("[경고] sim_end_hour를 어디서도 찾지 못해 안전상 24시간 분량으로 자동 종료합니다.")
@@ -231,6 +237,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         spawn_manager=spawn_manager,
     )
 
+    vehicle_subscriptions.reset()   # 새 SUMO 실행: 구독 기록 초기화
     traci.start([sumo_binary, "-c", _sumo_cfg])
 
     step = 0
@@ -293,15 +300,21 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                     if vid:  # 빈 문자열이 아니면 = 어떤 택시에 탑승함
                         pickup_time[pid] = now
                         in_taxi.add(pid)
+                        onboard[pid] = vid
 
             # 탑승했던 사람이 이번 스텝에 더 이상 안 보이면(=목적지 도착해서 SUMO가 자동
             # 제거함) "정상 도착"으로 기록. 타임아웃으로 소멸한 사람과 구분하기 위함
             # (recorder.capture()의 arrived 인자 및 최종 검증용, 없어도 측정 결과엔 영향 없음)
+            # 하차 감지: 타고 있던 손님이 이번 스텝에 사라졌으면 정상 도착 (택시 대수만큼만 확인)
+            for pid in [p for p in onboard if p not in current_pids]:
+                vid = onboard.pop(pid)
+                if pid in pax_manager.removed_pids:
+                    continue
+                arrived_pids.add(pid)
+                if away_model is not None:
+                    away_model.on_dropoff(now, pid, vid, pickup_time.get(pid))
+
             if recorder is not None:
-                active_now = current_pids
-                for pid in in_taxi:
-                    if pid not in active_now and pid not in arrived_pids and pid not in pax_manager.removed_pids:
-                        arrived_pids.add(pid)
 
                 teleport_count += traci.simulation.getStartingTeleportNumber()
                 recorder.capture(
@@ -415,6 +428,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         # 추정 매출 = 태운 손님 수 x TIMS 실측 평균 요금(이 영역 격자, 2025) — 실데이터 모드에서만
         "est_revenue_won": (round(n_measured * spawn_manager.mean_fare_won)
                             if getattr(spawn_manager, "mean_fare_won", None) else None),
+        "external_away": away_model.summary() if away_model is not None else None,
+        "dispatch_cost": (hungarian_dispatcher.cost_mode if hungarian_dispatcher is not None else None),
+        "dispatch_cost_stats": (dict(hungarian_dispatcher.cost_stats) if hungarian_dispatcher is not None else None),
         "waits": waits,
     }
 
@@ -523,6 +539,8 @@ def compare_dispatch_algorithms(algo_a: str = "greedy", algo_b: str = "hungarian
 
 
 if __name__ == "__main__":
+    from reproducibility import ensure_fixed_hash_seed
+    ensure_fixed_hash_seed()
     mode = sys.argv[1] if len(sys.argv) > 1 else "current"
 
     if mode == "compare":

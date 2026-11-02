@@ -52,7 +52,10 @@ def nb_eda():
 | 데이터 | 출처 | 단위 |
 |---|---|---|
 | TIMS 격자별 영업통계 | 국토교통부 택시운행정보관리시스템, 2025년 | 500m 격자 × 월 |
-| 택시 시간대·요일별 이용 | 서울시 「서울 교통이용 통계보고서」 2022년 1월 | 서울 전체, 1시간 |
+| 택시 시간대별 이용 | 서울시 「2025 서울 교통이용 통계보고서」 | 서울 전체, 1시간 (평일/주말) |
+| 강남구 월별 승차 | 같은 보고서 자치구 통계 | 강남구 × 월 (평일/주말) |
+| 요일 배율 | 서울시 「서울 교통이용 통계보고서」 2022년 1월 | 서울 전체, 평일 안·주말 안 상대값 |
+| 시간별 실측 날씨 | Open-Meteo 과거 날씨 (`scripts/fetch_weather_history.py`) | 강남역 좌표, 1시간 |
 | 실데이터 보정 호출 로그 | `scripts/generate_demand_logs.py` (8주, 24시간) | 호출 1건 |
 """),
         code(SETUP),
@@ -95,9 +98,9 @@ fig, axes = plt.subplots(1, 3, figsize=(16, 4))
 (monthly / monthly.mean()).plot(kind="bar", ax=axes[0], color="#4C72B0"); axes[0].axhline(1, color="k", lw=0.8)
 axes[0].set_title("월별 배율 (영역 합계, 2025)"); axes[0].set_xlabel("월")
 pd.Series(model.dow).plot(kind="bar", ax=axes[1], color="#55A868"); axes[1].axhline(1, color="k", lw=0.8)
-axes[1].set_title("요일 배율 (서울, 2022.1)")
+axes[1].set_title("요일 배율 (평일 안·주말 안, 서울 2022.1)")
 pd.DataFrame(model.hourly).mul(100).plot(ax=axes[2]); axes[2].axvspan(9, 23, color="gray", alpha=0.1, label="시뮬 구간")
-axes[2].set_title("시간대별 비중 % (서울, 2022.1)"); axes[2].set_xlabel("시"); axes[2].legend()
+axes[2].set_title("시간대별 비중 % (서울, 2025)"); axes[2].set_xlabel("시"); axes[2].legend()
 plt.tight_layout(); plt.show()
 print("월별 최대/최소: %.3f / %.3f" % ((monthly / monthly.mean()).max(), (monthly / monthly.mean()).min()))
 print("평일 9~23시 비중: %.1f%%" % (100 * sum(model.hourly["weekday"][9:23])))
@@ -112,7 +115,7 @@ d = pd.DataFrame(summary["days"])
 print(f"{len(files)}일, {len(logs):,}건, {logs.pickup_datetime.min()} ~ {logs.pickup_datetime.max()}")
 fig, ax = plt.subplots(figsize=(14, 3.5))
 ax.plot(pd.to_datetime(d.date), d.calls, marker="o", ms=3, label="생성")
-ax.plot(pd.to_datetime(d.date), d.expected, ls="--", label="기대값 (TIMS 월평균 × 요일 배율)")
+ax.plot(pd.to_datetime(d.date), d.expected, ls="--", label="기대값 (TIMS 월평균 × 강남구 평일/주말 × 요일 × 날씨 × 카카오 몫)")
 ax.set_title("일별 호출 수"); ax.legend(); plt.show()
 err = (d.calls - d.expected) / np.sqrt(d.expected)
 print("일별 (생성-기대)/√기대 : 평균 %.2f, 표준편차 %.2f  (포아송이면 ≈ 0, 1)" % (err.mean(), err.std()))
@@ -151,9 +154,9 @@ pd.DataFrame(rows)
 '''),
         md("""
 **결론: H3 resolution 8**
-- res 7: 셀 3개, 한 칸이 85% — 공간 구분이 거의 없다(재배치 대상 구역이 사실상 1개).
-- res 9·10: 0인 칸이 절반 이상, 자기상관 0.2 이하 — 10분 단위 예측이 노이즈가 된다.
-- res 8: 셀 8~9개, 신호(자기상관 0.35)와 구분력의 균형. 그리고 **실측 원천(TIMS)이 500m 격자**라 그보다 잘게 나누면
+- res 7: 셀 3개, 한 칸이 86% — 공간 구분이 거의 없다(재배치 대상 구역이 사실상 1개).
+- res 9·10: 0인 칸 47~65%, 자기상관 0.13 이하 — 10분 단위 예측이 노이즈가 된다.
+- res 8: 셀 8개, 신호(자기상관 0.27)와 구분력의 균형. 그리고 **실측 원천(TIMS)이 500m 격자**라 그보다 잘게 나누면
   실측이 아니라 POI 가정에서 나온 차이를 학습하게 된다 → 데이터 해상도와 맞는 res 8(변 531m)을 쓴다.
 """),
     ]
@@ -167,7 +170,7 @@ def nb_model():
         md("""
 # 02. 수요 예측 모델 실험 — 30분(10분 × 6칸) 앞 H3 격자별 호출 수
 
-- 데이터: 실데이터 보정 호출 8주(2026-07-13 ~ 09-06, 24시간), H3 res 8 격자, 10분 칸
+- 데이터: 실데이터 보정 호출 8주(2026-07-13 ~ 09-06, 24시간, 카카오 T 몫 0.77, 실측 날씨 반영), H3 res 8 격자, 10분 칸
 - 분할: **시간순** 앞 80% 학습 / 뒤 20% 시험 (`scripts/train_dispatch_model.py`와 동일. 하이퍼파라미터는 config 고정값이라 검증 구간을 따로 두지 않음)
 - 비교: 나이브(직전 칸 유지), 계절 나이브(지난주 같은 칸), 이동평균(1시간), XGBoost(MultiOutput, 34개 피처)
 - 지표: RMSE, MAE, **WAPE**(희소 카운트에서 MAPE 대신 사용)
@@ -201,6 +204,12 @@ rows = []
 for name, p in base.items():
     m = calculate_metrics(Y.ravel(), p.ravel())
     rows.append({"모델": name, "RMSE": round(m["RMSE"], 3), "MAE": round(m["MAE"], 3), "WAPE(%)": round(m["WAPE (%)"], 1)})
+# 이론 하한: 호출은 포아송 과정이라 진짜 기대값을 알아도 오차가 남는다.
+# 포아송 평균절대편차 E|Y-λ| = 2·e^(-λ)·λ^(⌊λ⌋+1)/⌊λ⌋!  (λ는 XGBoost 예측으로 근사)
+from scipy.special import gammaln
+lam = np.maximum(pred_xgb, 1e-6); kf = np.floor(lam)
+floor_wape = (2 * np.exp(-lam + (kf + 1) * np.log(lam) - gammaln(kf + 1))).sum() / Y.sum() * 100
+rows.append({"모델": "(참고) 포아송 잡음 하한", "RMSE": round(float(np.sqrt(lam.mean())), 3), "MAE": None, "WAPE(%)": round(floor_wape, 1)})
 res = pd.DataFrame(rows).set_index("모델"); res
 '''),
         code(r'''
@@ -223,7 +232,9 @@ s[::-1].plot(kind="barh", figsize=(7, 5), title="XGBoost 피처 중요도 (6개 
         md("""
 ## 결론
 - XGBoost가 나이브·계절 나이브·이동평균보다 모든 지표에서 낫다(위 표).
-- 예전(가정 수요, H3 res 7, 셀 3개, 8일) WAPE 44.6% → 지금 **약 23%**. 실측 보정 데이터는 일·주 주기가 뚜렷하고 8주라 계절 피처가 실제 값을 갖는다.
+- WAPE 약 26%. 호출 자체가 무작위(포아송)라 진짜 기대값을 알아도 남는 오차(위 표 '포아송 잡음 하한', 약 25%)와 1~2%p 차이다 → 이 데이터에서 더 줄일 여지가 거의 없다.
+- 카카오 T 몫(0.77)만 쓰면서 칸당 호출이 줄어 상대 오차가 커졌다(전체 실측량 기준일 때 약 23%). 모델이 나빠진 것이 아니라 잡음 하한이 올라간 것이다.
+- 날씨는 실측 시간별 강수(Open-Meteo)를 붙였다. 강수 1mm당 +2%라 10분 단위 잡음에 비해 작아 피처 중요도는 낮다.
 - 이 모델은 `scripts/convert_v2_to_category.py`로 RL 재배치용 카테고리 예측(`category_demand_from_v2.pkl`)으로도 변환된다.
 - 한계: 시간대 분포가 서울 전체 비율이라 실제보다 매끈하다 → 실제 카카오 호출 로그가 있으면 오차가 커질 수 있다(보수적으로 해석).
 """),

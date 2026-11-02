@@ -138,6 +138,7 @@ def launch_workers(combos: list) -> list:
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
+    env["PYTHONHASHSEED"] = "0"  # 실행 재현성: 같은 조건이면 같은 결과 (reproducibility.py)
 
     result_paths = []
     print(f"[오케스트레이터] 조합 {len(combos)}개를 새 창에서 동시 측정 시작...")

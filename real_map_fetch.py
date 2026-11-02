@@ -10,14 +10,37 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
+OSM_API_URL = "https://api.openstreetmap.org/api/0.6/map?bbox={lng_min},{lat_min},{lng_max},{lat_max}"
+OVERPASS_URL = "https://overpass-api.de/api/map?bbox={lng_min},{lat_min},{lng_max},{lat_max}"
+
+
+def _download(url):
+    req = urllib.request.Request(url, headers={'User-Agent': 'fetex-digital-twin/1.0'})
+    with urllib.request.urlopen(req, timeout=120) as response:
+        return response.read()
+
+
+def _ensure_bounds(payload: bytes, lat_min, lat_max, lng_min, lng_max) -> bytes:
+    """Overpass 결과에는 <bounds>가 없을 수 있어, 캐시 재사용 판정용으로 요청 범위를 넣어 둔다."""
+    head = payload[:4000]
+    if b"<bounds" in head:
+        return payload
+    i = payload.find(b">", payload.find(b"<osm")) + 1
+    tag = (f'\n <bounds minlat="{lat_min:.7f}" minlon="{lng_min:.7f}" '
+           f'maxlat="{lat_max:.7f}" maxlon="{lng_max:.7f}"/>').encode()
+    return payload[:i] + tag + payload[i:]
+
+
 def fetch_osm_data(lat_min, lat_max, lng_min, lng_max, output_path):
-    """Overpass API / OpenStreetMap API를 사용하여 위경도 영역 OSM 데이터 다운로드"""
-    url = f"https://api.openstreetmap.org/api/0.6/map?bbox={lng_min},{lat_min},{lng_max},{lat_max}"
+    """OpenStreetMap API로 영역 OSM 데이터 다운로드. 영역이 커서 거절되면(노드 5만 개 제한 등) Overpass로 대체."""
+    bbox = dict(lat_min=lat_min, lat_max=lat_max, lng_min=lng_min, lng_max=lng_max)
     print(f"[안내] OSM 실제 지도 데이터 다운로드 중... (bbox={lng_min},{lat_min},{lng_max},{lat_max})")
-    
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req) as response:
-        payload = response.read()
+    try:
+        payload = _download(OSM_API_URL.format(**bbox))
+    except Exception as exc:  # noqa: BLE001 — 400(범위 초과)·509(과부하) 등은 Overpass로 재시도
+        print(f"[안내] OSM API 실패({exc}) — Overpass API로 다시 받습니다.")
+        payload = _download(OVERPASS_URL.format(**bbox))
+    payload = _ensure_bounds(payload, lat_min, lat_max, lng_min, lng_max)
 
     # Windows에서 기존 region.osm.xml을 직접 'wb'로 열면, Explorer 미리 보기나
     # 백신의 순간 검사 때문에 간헐적으로 [Errno 22] Invalid argument가 난다.
@@ -98,7 +121,6 @@ def convert_to_sumo_net(filtered_path, net_path):
         # [핵심] 교차로 꽉 막힘 방지를 위해 주요 교차로에 신호등 자동 배치
         '--tls.guess', 'true',
         '--tls.join', 'true'
-        
     ]
     print("[안내] netconvert로 SUMO 네트워크 변환 중...")
     subprocess.run(cmd, check=True)

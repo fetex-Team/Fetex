@@ -22,8 +22,21 @@ DEFAULT_CONFIG = {
     # 수요 출처: "real" = TIMS 500m 격자 실측(2025) + 서울시 시간대별 택시 통계로 보정한 외생 수요(기본)
     #            "synthetic" = 예전 카테고리 가정 모델(학교/회사/음식점 흡수→재스폰)
     "demand_source": "real",
-    "real_demand_scale": 1.0,        # 실측 호출량 중 이 시뮬레이션 택시들이 맡는 비율 (1.0 = 영역 전체 실측량)
+    # 실측 호출량 중 카카오 T 플랫폼이 배차하는 비율 = 앱 호출 비율 약 80%(서울시, 2024 시민만족도 조사)
+    #   x 카카오 일반호출 점유율 96%(공정위, 2022) ≈ 0.77. 영역 전체 택시 수요를 보려면 1.0.
+    "real_demand_scale": 0.77,
     "real_internal_trip_km": 1.0,    # 이 거리보다 짧은 운행은 영역 안에서 하차 (나머지는 경계 도로로 나감)
+    # 그날의 실측 시간별 날씨(data/external/weather_<지역>_*.csv)가 있으면 수요에 반영 (없으면 실시간 '날씨적용')
+    "use_historical_weather": True,
+    "weather_precip_coef_per_mm": 0.0199,   # 강수 1mm당 호출 +1.99% (docs/weather_coefficient.md)
+    "weather_precip_cap_mm": 30.0,
+    # [시나리오] 영역 밖으로 나간 택시 복귀 지연 (external_trip_model.py). 기본 꺼짐.
+    "taxi_external_away": False,
+    "external_replacement_ratio": 0.918,   # 강남구 2025 하차/승차 = 85,218/92,858
+    "external_return_factor": 2.0,         # 운행시간(TIMS 격자 평균) x 2 = 갔다 오는 시간
+    # RL 학습 에피소드 날짜 범위 (평가 날짜와 겹치지 않게; 수요예측 학습 8주와 동일)
+    "rl_train_start": "2026-07-13",
+    "rl_train_end": "2026-09-06",
     "taxi_strategy": "patrol",
     "depart_jitter_sec": 300.0,
     "sumo_time_to_teleport": 300,

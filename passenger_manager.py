@@ -1,4 +1,7 @@
 import traci
+import traci.constants as tc
+
+import vehicle_subscriptions
 
 
 _RIDING_CACHE = {"t": None, "map": {}}
@@ -12,7 +15,10 @@ def riding_map(now_seconds: float, vehicle_ids=None) -> dict:
         if not vid.startswith("taxi"):
             continue
         try:
-            for pid in traci.vehicle.getPersonIDList(vid):
+            res = vehicle_subscriptions.get(vid)   # 택시 매니저가 건 구독 (탑승은 simulationStep 안에서만 바뀜)
+            pids = res[tc.LAST_STEP_PERSON_ID_LIST] if tc.LAST_STEP_PERSON_ID_LIST in res \
+                else traci.vehicle.getPersonIDList(vid)
+            for pid in pids:
                 m[pid] = vid
         except traci.exceptions.TraCIException:
             continue

@@ -511,6 +511,7 @@ class ConfigGUI:
         e = os.environ.copy()
         e["PYTHONIOENCODING"] = "utf-8"
         e["PYTHONUTF8"] = "1"
+        e["PYTHONHASHSEED"] = "0"  # 실행 재현성 (reproducibility.py 참고)
         return e
 
     def _run(self, script, args=(), blocking=False, env_extra=None):

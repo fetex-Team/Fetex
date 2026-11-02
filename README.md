@@ -2,30 +2,30 @@
 
 과제 12 「카카오모빌리티 택시 수요 예측 및 동적 배차」 (FeTex 6팀)
 
-SUMO로 만든 **강남역 1km² 디지털 트윈**에 **실측 택시 승차 통계(TIMS 2025)로 보정한 호출**을 흘려 보내고,
+SUMO로 만든 **강남역 1km² 디지털 트윈**에 **실측 택시 승차 통계(TIMS 2025)·서울시 2025 통계·실측 날씨로 보정한 호출**을 흘려 보내고,
 H3 격자별 30분 앞 수요를 XGBoost로 예측해 빈 택시를 미리 보내는 전략(시간표 선배치 / 강화학습 재배치)을
 **같은 손님 목록**에서 공정하게 비교한다. 결과는 Unity(카카오 3D 에셋)에서 차선을 따라 재생한다.
 
 ```
 OSM 강남역 지도 ─ build_env ─▶ SUMO 도로망 + POI 구역 + H3(res 8) 칸
-TIMS 500m 격자 + 서울 시간대 통계 ─ demand_model ─▶ 하루 호출 스케줄(시드 고정, 외생 수요)
+TIMS 500m 격자 + 서울 2025 통계 + 실측 날씨 ─ demand_model ─▶ 하루 호출 스케줄(시드 고정, 외생 수요)
             │                                  └─▶ 학습용 8주 호출 로그 ─ Module 2 ─▶ XGBoost 30분 예측
             ▼
 measure_wait_time: SUMO 실행 · 헝가리안 배차 · 전략(patrol / prepositioned / rl_prepositioned)
             ▼
-export_unity_replay ─▶ map.json + 전략별 재생 파일(v2) ─▶ Unity FetexReplayPlayer + ReplayMotion
+export_unity_replay ─▶ map.json + 전략별 재생 파일(v2, .json.gz) ─▶ Unity FetexReplayPlayer + ReplayMotion
 ```
 
 ## 과제 요구사항 대응
 | 요구사항 | 구현 | 위치 |
 |---|---|---|
 | 디지털 트윈(실제 지역) | 강남역 OSM → SUMO, 회전·차선·신호, POI 구역 | `module1_simulation/`, `real_map_fetch.py`, `poi_extractor.py` |
-| 수요 데이터 | **TIMS 2025 격자별 승차 실측 + 서울시 시간대·요일 통계로 보정**(가정값 모드도 유지) | `demand_model.py`, `data/external/` |
+| 수요 데이터 | **TIMS 2025 격자별 승차 실측 + 서울시 2025 시간대·강남구 월별 통계 + 실측 시간별 날씨, 카카오 T 몫 0.77**(가정값 모드도 유지) | `demand_model.py`, `weather_history.py`, `data/external/` |
 | 공간 인덱싱 | H3 res 8(실측 500m 해상도와 일치) + Geohash | `module2_preprocessing/spatial_indexing.py` |
 | 시계열 전처리·외부 데이터 | 10분 칸, lag/이동평균/지난주 동일 칸, 날씨·공휴일 병합, 누수 방지 | `module2_preprocessing/` |
 | 수요 예측 | MultiOutput XGBoost(t+1~t+6), 기준선 대비 평가 | `scripts/train_dispatch_model.py`, `notebooks/02_Model_Experiments.ipynb` |
 | 동적 배차 | 헝가리안 매칭 + 수요 예측 기반 선배치/RL 재배치 + 할증 계산 | `module4_dispatch/` |
-| 성능 비교 | 같은 손님 목록(수요 지문)에서 전략 비교, 서비스율·대기·추정 매출, 택시 대수 산정 | `export_unity_replay.py`, `tools/fleet_sizing.py` |
+| 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `tools/repeat_experiments.py`, `tools/check_determinism.py`, `export_unity_replay.py` |
 | 시각화 | Unity 3D 재생(차선 경로 보간), 대시보드 | Unity 브랜치 `KJS-UNITY` |
 
 ## 빠른 시작 (Windows PowerShell 기준)
@@ -46,35 +46,42 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 |---|---|
 | 전략 3개 공정 비교 + Unity 재생 파일 | `python export_unity_replay.py --stride 5 --unity-dir <Unity>/Assets/StreamingAssets` |
 | 택시 대수 산정 | `python tools/fleet_sizing.py --taxis 50 70 --strategy prepositioned` |
+| 실측 날씨 받기(네트워크 필요) | `python scripts/fetch_weather_history.py 2026-07-01 2026-10-27` |
 | 학습용 8주 호출 생성(SUMO 불필요, 약 10초) | `python scripts/generate_demand_logs.py` |
 | 예측 모델 학습 | `python scripts/train_dispatch_model.py "data/real_demand_logs/demand_log_*.csv"` |
 | RL용 카테고리 예측 | `python scripts/convert_v2_to_category.py` · `python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` |
-| 차량 궤적 검사 | `python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json` |
+| RL 재배치 정책 학습(약 3시간) | `python module4_dispatch/rl_train.py` |
+| 7일 x 3전략 반복 실험 + 통계 | `python tools/repeat_experiments.py --jobs 2` (`--scenario full_demand` / `external_away`) |
+| 결과 재현성 검사 | `python tools/check_determinism.py --hours 1` |
+| 차량 궤적 검사 | `python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz` |
 | 노트북 재생성(실행 결과 포함) | `python notebooks/build_notebooks.py` |
-| 테스트 | `python tests/test_demand_model.py` · `python tests/test_replay_motion.py` · `python tests/test_module2.py` · `python tools/verify_region_fallback.py` |
+| 테스트 | `python tests/test_demand_model.py` · `python tests/test_weather_history.py` · `python tests/test_replay_motion.py` · `python tests/test_module2.py` · `python tools/verify_region_fallback.py` |
 
 ## 주요 설정 (`config.json`)
 | 키 | 기본 | 의미 |
 |---|---|---|
 | `demand_source` | `real` | `real` = TIMS 실측 보정 외생 수요 / `synthetic` = 예전 카테고리 가정 모델 |
-| `real_demand_scale` | 1.0 | 영역 실측 호출량 중 시뮬레이션 택시가 맡는 비율 |
+| `real_demand_scale` | 0.77 | 영역 실측 호출량 중 카카오 T 몫 (앱 호출 80% × 카카오 점유율 96%) |
+| `use_historical_weather` | true | 그날의 실측 시간별 강수로 호출량 조정 (1mm당 +1.99%) |
+| `taxi_external_away` | false | true면 밖으로 나간 택시가 늦게 돌아오는 민감도 시나리오 |
 | `real_internal_trip_km` | 1.0 | 이보다 짧은 운행만 영역 안 하차(나머지는 경계 도로로 나감) |
 | `h3_resolution` | 8 | 예측·재배치 격자 (근거: `docs/real_data_calibration.md` 4절) |
-| `num_taxis` | 50 | 택시 대수 (실측 수요 기준 50대 서비스율 95.3%, 70대 98.9%) |
+| `num_taxis` | 50 | 택시 대수 (카카오 몫 수요에서 서비스율 99% 이상) |
 | `taxi_strategy` | `prepositioned` | `patrol` / `prepositioned` / `rl_prepositioned` |
 | `taxi_dispatch_algorithm` | `hungarian` | 현재 호출 매칭 방식 |
 | `sim_date`, `run_date_mode` | 2026-09-07, `alternate` | 비교 실험은 `sim_date`로 날짜 고정 |
 
-## 결과 요약 (2026-09-07 월, 9~23시, 택시 50대, 실측 보정 호출 6,620건 — 세 전략 같은 손님 목록)
-| 전략 | 서비스율 | 타임아웃 | 평균 대기(타임아웃 포함) | 추정 매출 |
+## 결과 요약 (7일 반복, 9~23시, 택시 50대, 카카오 몫 수요 — 날짜마다 세 전략 같은 손님 목록)
+| 전략 | 서비스율 | 타임아웃(명/일) | 평균 대기 | 추정 매출(원/일) |
 |---|---:|---:|---:|---:|
-| patrol | 94.3% | 352 | 162.1초 | 1억 176만 원 |
-| prepositioned | 94.8% | 324 | 162.3초 | 1억 227만 원 |
-| **rl_prepositioned** | **96.0%** | **249** | **161.2초** | **1억 354만 원** |
+| patrol | 99.2% | 27.3 | **80.6초** | 7,621만 |
+| prepositioned | 99.3% | 25.0 | 86.5초 | 7,627만 |
+| rl_prepositioned | **99.4%** | **22.7** | 91.2초 | **7,631만** |
 
-- 수요 예측(H3 res 8, 30분 앞) WAPE **23.0%** — 나이브 32.5%, 지난주 같은 칸 32.1%
-- Unity 재생 회전 구간 도로 이탈 **56.0% → 0.6%**
-- 같은 전략 재실행 간 변동(타임아웃 ±약 13건)이 있어 prepositioned vs patrol 차이는 변동 범위 안, RL 개선은 그보다 큼
+- 선배치·RL은 타임아웃을 줄이는 경향(통계적으로 확실하지 않음), 평균 대기는 7일 모두 순찰보다 길다(확실)
+- 손님 100%(택시 부족) 7일: 서비스율 순찰 95.1% · 선배치 95.1% · RL 95.0%, RL 평균 대기 +9.4초(7일 모두) → **이 환경에서는 순찰 + 헝가리안이 가장 낫다**. 수요가 많은 날의 해법은 재배치보다 택시 대수
+- 수요 예측(H3 res 8, 30분 앞) WAPE **26.4%** — 포아송 잡음 하한 24.8%, 나이브 36.2%
+- Unity 재생 회전 구간 도로 이탈 **56.0% → 0.6%**, 재생 파일 48MB → 8MB(gzip)
 
 자세한 수치·한계는 [`REPORT.md`](REPORT.md).
 
@@ -95,10 +102,10 @@ demand_model.py / passenger_spawn_manager.py       수요(실측 보정 스케�
 measure_wait_time.py / export_unity_replay.py      실행·측정 / Unity 내보내기
 module1_simulation/  module2_preprocessing/  module3_prediction/  module4_dispatch/
 scripts/   tools/   tests/   notebooks/   eda/   docs/
-data/external/        실측 데이터 (TIMS, 서울시 시간대·요일 통계)
+data/external/        실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
 data/real_demand_logs/ 학습용 8주 호출 (scripts/generate_demand_logs.py로 재생성 가능)
 saved_models/         demand_v2.joblib, category_demand_*.pkl, (기존) xgboost/cnn
-results/              unity_replay/, fleet_sizing/, motion_eval/, ab_results/
+results/              repeat/(반복 실험), unity_replay/, fleet_sizing/, motion_eval/, ab_results/
 ```
 
 ## 역할
