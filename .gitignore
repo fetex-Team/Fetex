@@ -47,3 +47,9 @@ tripinfo*.xml
 vehroutes*.xml
 *.dump
 
+push_*.bat
+# 재생성 가능한 대용량 산출물 (scripts/generate_demand_logs.py, tools/record_motion_truth.py, tools/fleet_sizing.py)
+data/real_demand_logs/
+results/motion_eval/truth_stride1.json
+results/motion_eval/map.json
+results/fleet_sizing/*.log

@@ -32,7 +32,7 @@ def get_current_weather(lat: float, lon: float) -> dict:
 
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "ai-mobility-project-weather/1.0"})
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=3) as response:  # 예전 5초 -> 3초
             data = json.loads(response.read().decode("utf-8"))
 
         current = data.get("current_weather", {})

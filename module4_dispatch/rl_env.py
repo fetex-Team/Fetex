@@ -168,6 +168,7 @@ class TaxiRepositionEnv(gym.Env):
             school_pop_base=self.meta.get("school_pop_base", 400),
             company_pop_base=self.meta.get("company_pop_base", 100),
             seed=self.meta.get("passenger_seed"),
+            meta=self.meta,
         )
 
         # 초기 워밍업 1구간

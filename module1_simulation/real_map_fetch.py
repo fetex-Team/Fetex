@@ -75,6 +75,27 @@ def convert_to_sumo_net(filtered_path, net_path):
     subprocess.run(cmd, check=True)
 
 
+def _cached_osm_matches(raw_osm, lat_min, lat_max, lng_min, lng_max, tol=1e-6):
+    """이미 받아 둔 OSM 원본의 <bounds>가 요청 범위와 같으면 True.
+
+    매 실행마다 OSM API에서 다시 받으면 (1) 네트워크가 없을 때 실행이 멈추고
+    (2) 그 사이 OSM이 수정되면 지도(도로 수·edge id)가 바뀌어 실험 재현이 깨진다.
+    그래서 같은 범위면 기존 파일을 재사용하고, FETEX_REFRESH_OSM=1일 때만 새로 받는다."""
+    if os.environ.get("FETEX_REFRESH_OSM") == "1" or not os.path.exists(raw_osm):
+        return False
+    try:
+        for _event, elem in ET.iterparse(raw_osm, events=("start",)):
+            if elem.tag == "bounds":
+                got = [float(elem.get(k)) for k in ("minlat", "maxlat", "minlon", "maxlon")]
+                want = [lat_min, lat_max, lng_min, lng_max]
+                return all(abs(a - b) <= tol for a, b in zip(got, want))
+            if elem.tag in ("node", "way"):
+                return False  # bounds 없이 바로 데이터가 시작되면 범위를 확인할 수 없음
+    except ET.ParseError:
+        return False
+    return False
+
+
 def build_real_map_network(lat_min, lat_max, lng_min, lng_max, output_dir):
     """전체 매핑 파이프라인 수행.
     반환값이 (net_path, raw_osm_path) 튜플로 바뀌었습니다.
@@ -87,7 +108,22 @@ def build_real_map_network(lat_min, lat_max, lng_min, lng_max, output_dir):
     filtered_osm = os.path.join(output_dir, "region_filtered.osm.xml")
     net_path = os.path.join(output_dir, "grid.net.xml")
 
-    fetch_osm_data(lat_min, lat_max, lng_min, lng_max, raw_osm)
+    if _cached_osm_matches(raw_osm, lat_min, lat_max, lng_min, lng_max):
+        print(f"[안내] 같은 범위의 OSM 원본이 이미 있어 재사용합니다: {raw_osm} "
+              "(새로 받으려면 환경변수 FETEX_REFRESH_OSM=1)")
+    else:
+        # 다른 설정 폴더(sumo_config, sumo_config_A ...)에 같은 범위 원본이 있으면 복사해서 쓴다
+        import glob
+        import shutil
+        sibling = next((p for p in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(output_dir)),
+                                                                 "*", "region.osm.xml")))
+                        if os.path.abspath(p) != os.path.abspath(raw_osm)
+                        and _cached_osm_matches(p, lat_min, lat_max, lng_min, lng_max)), None)
+        if sibling:
+            shutil.copyfile(sibling, raw_osm)
+            print(f"[안내] 같은 범위의 OSM 원본을 다른 설정 폴더에서 복사해 재사용합니다: {sibling}")
+        else:
+            fetch_osm_data(lat_min, lat_max, lng_min, lng_max, raw_osm)
     filter_osm_data(raw_osm, filtered_osm)
     convert_to_sumo_net(filtered_osm, net_path)
 

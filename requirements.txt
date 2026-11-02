@@ -26,5 +26,9 @@ matplotlib
 seaborn
 tqdm
 
-
 stable-baselines3
+psutil
+rtree
+# 지도 POI 좌표 변환 / 공휴일 판정 / 실측 수요(TIMS) 격자 좌표 변환
+pyproj
+holidays

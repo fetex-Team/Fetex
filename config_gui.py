@@ -23,6 +23,7 @@ FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
 STRATEGIES = ["patrol", "prepositioned"]
 DISPATCH_ALGORITHMS = ["traci", "greedy", "hungarian", "routeExtension", "rl_reposition"]
 IDLE_ALGORITHMS = ["randomCircling", "stopOnRoad", "taxiStop"]
+DEMAND_SOURCES = ["synthetic", "real"]
 
 FACTOR_OPTIONS = {
     "taxi_strategy": ("택시 전략", STRATEGIES),
@@ -369,6 +370,14 @@ class ConfigGUI:
         v_idle = tk.StringVar(value=DEFAULT_CONFIG.get("taxi_idle_algorithm", "randomCircling"))
         self.choice_vars["taxi_idle_algorithm"] = v_idle
         ttk.Combobox(r, textvariable=v_idle, values=IDLE_ALGORITHMS, state="readonly", width=20).pack(side="right")
+
+        # 수요 출처 (synthetic: 카테고리 가정 모델, real: TIMS 실측 보정 외생 수요)
+        r_dem = ttk.Frame(box1)
+        r_dem.pack(fill="x", pady=6)
+        ttk.Label(r_dem, text="승객 수요 출처 (demand_source)", width=36).pack(side="left")
+        v_dem = tk.StringVar(value=DEFAULT_CONFIG.get("demand_source", "synthetic"))
+        self.choice_vars["demand_source"] = v_dem
+        ttk.Combobox(r_dem, textvariable=v_dem, values=DEMAND_SOURCES, state="readonly", width=20).pack(side="right")
 
         # 시드 설정
         box2 = ttk.LabelFrame(f, text="재현성 시드 (Seed)", padding=10)

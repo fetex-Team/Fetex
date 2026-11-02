@@ -21,6 +21,14 @@ DEFAULT_CONFIG = {
     "sim_start_hour": 8, "sim_end_hour": 10,
     "passenger_wait_timeout": 500,
     "passenger_seed": None,
+    # build_env.py가 CFG['passenger_mode']로 직접 인덱싱하므로(.get() 아님) 기본값 필수 —
+    # config.json에 이 키가 없으면 KeyError로 죽는 문제 방지.
+    "passenger_mode": "replay",
+    # 수요 출처: "real" = TIMS 500m 격자 실측(2025) + 서울시 시간대별 택시 통계로 보정한 외생 수요
+    #            "synthetic" = 카테고리 가정 모델(학교/회사/음식점 흡수→재스폰, 기본)
+    "demand_source": "synthetic",
+    "real_demand_scale": 1.0,        # 실측 호출량 중 이 시뮬레이션 택시들이 맡는 비율 (1.0 = 영역 전체 실측량)
+    "real_internal_trip_km": 1.0,    # 이 거리보다 짧은 운행은 영역 안에서 하차 (나머지는 경계 도로로 나감)
     "taxi_strategy": "patrol",
     "depart_jitter_sec": 300.0,
     "sumo_time_to_teleport": 300,
@@ -96,7 +104,11 @@ def load_config(config_path=None, live_api=False, verbose=False):
     - live_api=False(기본값): 외부 네트워크 API(지오코딩, 실시간날씨) 호출 없이 로컬 프리셋과 JSON 값만 읽어 0초 만에 완결 (독립 실행 및 재현성 보장).
     - live_api=True: 실시간 Nominatim/Open-Meteo API를 명시적으로 조회하여 좌표/기온을 갱신.
     """
-    path = config_path or CONFIG_PATH
+    # 우선순위: 명시 경로 > MOBILITY_CONFIG(build_env.py --config-path가 설정) > 기본 config.json
+    env_path = os.environ.get("MOBILITY_CONFIG")
+    path = config_path or env_path or CONFIG_PATH
+    if path != CONFIG_PATH and not os.path.exists(path):
+        raise FileNotFoundError(f"지정한 설정 파일이 없습니다: {path}")
     user_cfg = {}
     if os.path.exists(path):
         try:
@@ -155,6 +167,7 @@ def get_module_config(module_name: str) -> dict:
 
 
 def _apply_region_coords(merged, region, verbose=False):
+    merged.pop("region_unresolved", None)
     coords = None
     try:
         from geo_lookup import lookup_region
@@ -179,11 +192,12 @@ def _apply_region_coords(merged, region, verbose=False):
     elif region in REGION_PRESETS:
         merged.update(REGION_PRESETS[region])
     else:
-        if verbose:
-            print(f"[안내] '{region}' 프리셋 없음 - 강남역으로 대체합니다.")
+        # 예전에는 조용히 홍대입구로 바꿔 돌렸다 -> 다른 지역 데이터가 정상 결과처럼 섞이는 문제.
+        # 설정 화면(GUI)은 계속 열 수 있게 값은 채워 두되, 표시를 남겨 build_env.py가 지도 생성을 거부한다.
+        print(f"[경고] '{region}' 좌표를 찾지 못했고 프리셋도 없습니다. 지역명을 확인하거나 네트워크를 연결하세요. "
+              f"(지도 생성은 중단됩니다)")
         merged.update(REGION_PRESETS["강남역"])
-        merged["region"] = "강남역"
-
+        merged["region_unresolved"] = region
 
 def _apply_live_weather(merged, region):
     try:

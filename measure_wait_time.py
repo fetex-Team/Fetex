@@ -50,6 +50,7 @@ for _sub in ("module1_simulation", "module2_preprocessing", "module3_prediction"
     _sub_path = os.path.join(ROOT, _sub)
     if os.path.exists(_sub_path) and _sub_path not in sys.path:
         sys.path.insert(0, _sub_path)
+from config_loader import CFG
 from taxi_manager import TaxiFleetManager
 from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
@@ -135,6 +136,14 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             sim_end_hour = None
 
     # 학교/회사/음식점 승객을 실시간으로 생성·소멸(흡수→재스폰)시키는 매니저
+    # 실행마다 날짜를 과거 90일 내에서 배정 -> 여러 번 돌릴수록 요일 다양성 확보.
+    # 스폰 매니저보다 먼저 정해야 실측 수요 모드가 이 날짜의 요일 통계를 쓰고, 시드가 있으면 날짜도 재현됨.
+    # run_date_mode="sim_date"(tools/fleet_sizing.py 등): 설정의 sim_date로 고정해 같은 날 수요로 비교.
+    if CFG.get("run_date_mode") == "sim_date" and CFG.get("sim_date"):
+        run_date = datetime.date.fromisoformat(str(CFG["sim_date"]))
+    else:
+        run_date = datetime.date.today() - datetime.timedelta(
+            days=random.Random(meta.get("passenger_seed")).randint(0, 90))
     spawn_manager = PassengerSpawnManager(
         zones=meta.get("zones", {}),
         sim_start_hour=sim_start_hour,
@@ -142,6 +151,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         school_pop_base=meta.get("school_pop_base", 400),
         company_pop_base=meta.get("company_pop_base", 100),
         seed=meta.get("passenger_seed"),
+        sim_date=run_date.isoformat(),
+        meta=meta,
     )
 
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
@@ -152,8 +163,6 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
     # ---- 학습용 수요 로그 준비 ----
     demand_log_rows = []  # (pickup_datetime_iso, latitude, longitude) 누적 버퍼
-    # 실행마다 날짜를 과거 90일 내에서 랜덤 배정 -> 여러 번 돌릴수록 요일 다양성 확보
-    run_date = datetime.date.today() - datetime.timedelta(days=random.randint(0, 90))
 
     traci.start([sumo_binary, "-c", _sumo_cfg])
 
@@ -222,7 +231,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         adjusted_waits.append(max_penalty_sec)
 
     # ---- 학습용 수요 로그 저장 (for 루프 밖, 시뮬레이션 1회당 한 번만) ----
-    if demand_log_rows:
+    # write_demand_logs=false: 도구(택시 대수 산정 등)가 학습 로그 폴더를 오염시키지 않게 저장 생략
+    _write_logs = bool(CFG.get("write_demand_logs", True))
+    if demand_log_rows and _write_logs:
         os.makedirs(os.path.dirname(DEMAND_LOG_PATH), exist_ok=True)
         file_exists = os.path.exists(DEMAND_LOG_PATH)
         with open(DEMAND_LOG_PATH, "a", newline="", encoding="utf-8") as f:
@@ -241,6 +252,16 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         "true_avg_wait_sec_with_penalty": round(sum(adjusted_waits) / len(adjusted_waits), 1) if adjusted_waits else None,
         "max_wait_sec": round(max(waits), 1) if waits else None,
         "min_wait_sec": round(min(waits), 1) if waits else None,
+        "p90_wait_sec": round(sorted(waits)[int(0.9 * (len(waits) - 1))], 1) if waits else None,
+        # 서비스율 = 제때 태운 손님 / 전체 호출 (운영 KPI)
+        "service_rate": round(n_measured / n_total, 4) if n_total else None,
+        "demand_source": getattr(spawn_manager, "demand_source", "synthetic"),
+        "n_scheduled_calls": len(getattr(spawn_manager, "schedule", []) or []) or None,
+        "spawn_failures": getattr(spawn_manager, "spawn_failures", 0),
+        "demand_summary": getattr(spawn_manager, "schedule_summary", None),
+        # 추정 매출 = 태운 손님 수 x TIMS 실측 평균 요금(이 영역 격자, 2025) — 실데이터 모드에서만
+        "est_revenue_won": (round(n_measured * spawn_manager.mean_fare_won)
+                            if getattr(spawn_manager, "mean_fare_won", None) else None),
         "waits": waits,
     }
     return result
