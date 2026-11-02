@@ -24,7 +24,7 @@ export_unity_replay ─▶ map.json + 전략별 재생 파일(v2, .json.gz) ─�
 | 공간 인덱싱 | H3 res 8(실측 500m 해상도와 일치) + Geohash | `module2_preprocessing/spatial_indexing.py` |
 | 시계열 전처리·외부 데이터 | 10분 칸, lag/이동평균/지난주 동일 칸, 날씨·공휴일 병합, 누수 방지 | `module2_preprocessing/` |
 | 수요 예측 | MultiOutput XGBoost(t+1~t+6), 기준선 대비 평가 | `scripts/train_dispatch_model.py`, `notebooks/02_Model_Experiments.ipynb` |
-| 동적 배차 | 헝가리안 매칭 + 수요 예측 기반 선배치/RL 재배치 + 할증 계산 | `module4_dispatch/` |
+| 동적 배차 | 헝가리안 매칭(비용 = 다익스트라 도로 이동시간) + 시간표 선배치/RL 재배치 + 할증 계산 | `module4_dispatch/`, `module4_dispatch/network_cost.py` |
 | 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `tools/repeat_experiments.py`, `tools/check_determinism.py`, `export_unity_replay.py` |
 | 시각화 | Unity 3D 재생(차선 경로 보간), 대시보드 | Unity 브랜치 `KJS-UNITY` |
 
@@ -51,11 +51,11 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | 예측 모델 학습 | `python scripts/train_dispatch_model.py "data/real_demand_logs/demand_log_*.csv"` |
 | RL용 카테고리 예측 | `python scripts/convert_v2_to_category.py` · `python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` |
 | RL 재배치 정책 학습(약 3시간) | `python module4_dispatch/rl_train.py` |
-| 7일 x 3전략 반복 실험 + 통계 | `python tools/repeat_experiments.py --jobs 2` (`--scenario full_demand` / `external_away`) |
+| 7일 x 3전략 반복 실험 + 통계 | `python tools/repeat_experiments.py --jobs 2` (`--scenario full_demand` / `network_dispatch` / `network_dispatch_full` / `external_away`) |
 | 결과 재현성 검사 | `python tools/check_determinism.py --hours 1` |
 | 차량 궤적 검사 | `python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz` |
 | 노트북 재생성(실행 결과 포함) | `python notebooks/build_notebooks.py` |
-| 테스트 | `python tests/test_demand_model.py` · `python tests/test_weather_history.py` · `python tests/test_replay_motion.py` · `python tests/test_module2.py` · `python tools/verify_region_fallback.py` |
+| 테스트 | `python tests/test_demand_model.py` · `python tests/test_weather_history.py` · `python tests/test_network_cost.py` · `python tests/test_replay_motion.py` · `python tests/test_module2.py` · `python tools/verify_region_fallback.py` |
 
 ## 주요 설정 (`config.json`)
 | 키 | 기본 | 의미 |
@@ -66,20 +66,21 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | `taxi_external_away` | false | true면 밖으로 나간 택시가 늦게 돌아오는 민감도 시나리오 |
 | `real_internal_trip_km` | 1.0 | 이보다 짧은 운행만 영역 안 하차(나머지는 경계 도로로 나감) |
 | `h3_resolution` | 8 | 예측·재배치 격자 (근거: `docs/real_data_calibration.md` 4절) |
+| `dispatch_cost` | `network` | 헝가리안 비용: 도로망 최단 이동시간(다익스트라) / `euclidean` = 예전 직선 거리 |
 | `num_taxis` | 50 | 택시 대수 (카카오 몫 수요에서 서비스율 99% 이상) |
 | `taxi_strategy` | `prepositioned` | `patrol` / `prepositioned` / `rl_prepositioned` |
 | `taxi_dispatch_algorithm` | `hungarian` | 현재 호출 매칭 방식 |
 | `sim_date`, `run_date_mode` | 2026-09-07, `alternate` | 비교 실험은 `sim_date`로 날짜 고정 |
 
-## 결과 요약 (7일 반복, 9~23시, 택시 50대, 카카오 몫 수요 — 날짜마다 세 전략 같은 손님 목록)
-| 전략 | 서비스율 | 타임아웃(명/일) | 평균 대기 | 추정 매출(원/일) |
-|---|---:|---:|---:|---:|
-| patrol | 99.2% | 27.3 | **80.6초** | 7,621만 |
-| prepositioned | 99.3% | 25.0 | 86.5초 | 7,627만 |
-| rl_prepositioned | **99.4%** | **22.7** | 91.2초 | **7,631만** |
+## 결과 요약 (7일 반복, 9~23시, 택시 50대 — 날짜마다 세 전략 같은 손님 목록)
+| 전략 | 평균 대기 (카카오 몫)<br>직선 거리 → **도로 이동시간** | 타임아웃/일 (손님 100%)<br>직선 거리 → **도로 이동시간** |
+|---|---|---|
+| **patrol** | 80.6초 → **60.1초** | 306 → **266명** |
+| prepositioned | 86.5초 → 69.6초 | 306 → 315명 |
+| rl_prepositioned | 91.2초 → 75.5초 | 316 → 330명 |
 
-- 선배치·RL은 타임아웃을 줄이는 경향(통계적으로 확실하지 않음), 평균 대기는 7일 모두 순찰보다 길다(확실)
-- 손님 100%(택시 부족) 7일: 서비스율 순찰 95.1% · 선배치 95.1% · RL 95.0%, RL 평균 대기 +9.4초(7일 모두) → **이 환경에서는 순찰 + 헝가리안이 가장 낫다**. 수요가 많은 날의 해법은 재배치보다 택시 대수
+- **헝가리안 매칭 비용을 직선 거리 → 다익스트라 도로 이동시간으로 바꿔 세 전략 모두 평균 대기 10~20초 단축** (`"dispatch_cost": "network"`, 기본값)
+- 가장 좋은 조합: **순찰 + 헝가리안(도로 이동시간)**. 미리 옮겨 두는 전략(선배치·RL)은 7일 모두 평균 대기가 더 길다
 - 수요 예측(H3 res 8, 30분 앞) WAPE **26.4%** — 포아송 잡음 하한 24.8%, 나이브 36.2%
 - Unity 재생 회전 구간 도로 이탈 **56.0% → 0.6%**, 재생 파일 48MB → 8MB(gzip)
 

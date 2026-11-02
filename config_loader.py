@@ -46,6 +46,8 @@ DEFAULT_CONFIG = {
     "taxi_fail_threshold": 5,
     "taxi_respawn_prefix": "taxi_respawn",
     "taxi_dispatch_algorithm": "greedy",
+    # 헝가리안 비용: "network" = 도로망 최단 이동시간(다익스트라, 권장·config.json 기본) / "euclidean" = 예전 직선 거리
+    "dispatch_cost": "euclidean",
     "taxi_idle_algorithm": "randomCircling",
     "suppress_sumo_warnings": False,
     # "학습만 실행" 시 data/sim_logs/demand_log_*.csv를 새로 채우기 위해

@@ -28,6 +28,7 @@
   "taxi_primary_prob": 0.7,
   "taxi_fail_threshold": 5,
   "taxi_respawn_prefix": "taxi_respawn",
+  "dispatch_cost": "network",
   "taxi_dispatch_algorithm": "hungarian",
   "taxi_idle_algorithm": "randomCircling",
   "suppress_sumo_warnings": true,
