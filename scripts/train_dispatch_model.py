@@ -64,7 +64,14 @@ def external_to_weather_csv(external_csv: str) -> str:
 def main(log_paths=None, external_csv=None):
     logs = log_paths or [os.path.join(ROOT, "data", "sim_logs", "demand_log_*.csv")]
     weather_path = external_to_weather_csv(external_csv) if external_csv else None
-    feat = build_feature_table(logs, weather_path=weather_path)
+    # 지도(runtime_meta)의 전체 셀로 학습해야 forecast_dispatcher의 셀 목록 검사를 통과함
+    # (실측 로그는 호출이 없는 셀이 빠질 수 있음)
+    meta_path = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
+    all_cells = None
+    if os.path.exists(meta_path):
+        with open(meta_path, encoding="utf-8") as f:
+            all_cells = sorted(set(json.load(f)["edge_cells"].values()))
+    feat = build_feature_table(logs, weather_path=weather_path, all_cells=all_cells)
     features = feat.attrs["feature_cols"]
     targets = feat.attrs["target_cols"]
     if len(targets) < 6:

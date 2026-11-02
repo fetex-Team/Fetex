@@ -48,9 +48,10 @@ DEFAULT_OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_m
 CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]
 
 
-def _load_all_demand_logs():
-    """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제)"""
-    paths = sorted(glob.glob(DEMAND_LOG_GLOB)) + sorted(glob.glob(LEGACY_DEMAND_LOG_GLOB))
+def _load_all_demand_logs(log_glob: str = None):
+    """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제).
+    log_glob을 주면 그 파일들만 쓴다 (예: 실데이터 보정 로그 data/real_demand_logs/demand_log_*.csv)."""
+    paths = sorted(glob.glob(log_glob)) if log_glob else sorted(glob.glob(DEMAND_LOG_GLOB)) + sorted(glob.glob(LEGACY_DEMAND_LOG_GLOB))
     if not paths:
         return None
     frames = [pd.read_csv(p, parse_dates=["pickup_datetime"]) for p in paths]
@@ -60,8 +61,8 @@ def _load_all_demand_logs():
     return merged
 
 
-def main(out_path=DEFAULT_OUT_PATH):
-    df = _load_all_demand_logs()
+def main(out_path=DEFAULT_OUT_PATH, log_glob=None):
+    df = _load_all_demand_logs(log_glob)
     if df is None:
         print("[에러] data/sim_logs/demand_log_*.csv 또는 data/raw/simulation_demand_log*.csv "
               "로그가 없습니다. 먼저 `python measure_wait_time.py`를 한 번 이상 돌려주세요.")
@@ -115,5 +116,6 @@ def main(out_path=DEFAULT_OUT_PATH):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=DEFAULT_OUT_PATH, help="카테고리 모델 저장 경로")
+    ap.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 data/sim_logs + data/raw 로그)")
     args = ap.parse_args()
-    main(args.out)
+    main(args.out, args.logs)

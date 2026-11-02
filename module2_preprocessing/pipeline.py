@@ -80,7 +80,8 @@ def _time_range(df: pd.DataFrame):
 
 def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizons: int = None,
                         weather_path: str = None, h3_resolution: int = None, dropna: bool = True,
-                        verbose: bool = True, max_missing_ratio: float = None) -> pd.DataFrame:
+                        verbose: bool = True, max_missing_ratio: float = None, all_cells=None) -> pd.DataFrame:
+    """all_cells: 지도 전체 H3 셀 목록. 주면 호출이 없는 셀도 0 수요로 포함 (서빙 시 셀 목록 일치용)."""
     df = load_logs(log_paths)
     start, end = _time_range(df)
 
@@ -89,7 +90,7 @@ def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizo
 
     # 2) (셀 × 칸) 집계 + 0 채움
     prep = TimeSeriesPreprocessor(freq=freq, max_lag=max_lag, horizons=horizons)
-    agg = prep.aggregate_demands(df, start=start, end=end)
+    agg = prep.aggregate_demands(df, start=start, end=end, all_cells=all_cells)
 
     # 3) 외부 데이터 (5분 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
     # 학습 경로: 날씨 결측률 상한 검사 (Data Spec 5장 5% 미만). config weather_missing_max_ratio 로 조절, None이면 끔

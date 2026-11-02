@@ -21,6 +21,7 @@ DEFAULT_CONFIG = {
     "sim_start_hour": 8, "sim_end_hour": 10,
     "passenger_wait_timeout": 500,
     "passenger_seed": None,
+    "sim_date": "2026-09-07",  # 실측 수요·학습 로그 기준일 (scripts/generate_demand_logs.py는 이 전날까지 생성)
     # build_env.py가 CFG['passenger_mode']로 직접 인덱싱하므로(.get() 아님) 기본값 필수 —
     # config.json에 이 키가 없으면 KeyError로 죽는 문제 방지.
     "passenger_mode": "replay",

@@ -33,6 +33,7 @@ is_rain = precipitation > 0 (Data Spec 3장).
 import sys
 import os
 import glob
+import re
 import warnings
 import numpy as np
 import pandas as pd
@@ -46,11 +47,18 @@ WEATHER_COLS = ["temperature", "precipitation", "wind_speed"]
 
 
 def find_weather_file(region: str = None) -> str:
-    """data/external/weather_<지역>_*.csv 중 가장 최근 파일 (없으면 None)."""
+    """data/external/weather_<지역>_<시작>_<종료>.csv 중 종료일이 가장 늦고, 같으면 기간이 가장 긴 파일 (없으면 None).
+    (이름순 정렬은 시작일이 늦은 짧은 파일을 고르는 문제가 있어 날짜로 비교)"""
     region = region or CFG.get("region", "")
-    files = sorted(glob.glob(os.path.join(EXTERNAL_DIR, f"weather_{region}_*.csv"))) or \
-            sorted(glob.glob(os.path.join(EXTERNAL_DIR, "weather_*.csv")))
-    return files[-1] if files else None
+    files = glob.glob(os.path.join(EXTERNAL_DIR, f"weather_{region}_*.csv")) or \
+            glob.glob(os.path.join(EXTERNAL_DIR, "weather_*.csv"))
+
+    def _key(path):
+        dates = [pd.Timestamp(d) for d in re.findall(r"\d{4}-\d{2}-\d{2}", os.path.basename(path))]
+        if not dates:
+            return (pd.Timestamp.min, 0)
+        return (dates[-1], (dates[-1] - dates[0]).days)
+    return max(files, key=_key) if files else None
 
 
 def load_weather(path: str) -> pd.DataFrame:
