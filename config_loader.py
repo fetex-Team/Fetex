@@ -1,4 +1,4 @@
-"""프로젝트 전체 설정의 단일 원본."""
+"""프로젝트 전체 설정의 단일 원본 (Single Source of Truth)."""
 import json
 import os
 import sys
@@ -68,7 +68,7 @@ DEFAULT_CONFIG = {
     "xgb_n_estimators": 100, "xgb_max_depth": 6, "xgb_learning_rate": 0.1,
     "test_size": 0.2,
     "cnn_hidden_dim": 64, "cnn_num_layers": 2, "cnn_kernel_size": 3,
-    "cnn_epochs": 30, "cnn_batch_size": 16, "cnn_lr": 0.001,
+    "cnn_epochs": 30, "cnn_batch_size": 128, "cnn_lr": 0.001,
     # Module 4
     "base_fare": 4800, "min_multiplier": 1.0, "max_multiplier": 3.0,
     "surge_coefficient": 0.4,
@@ -89,23 +89,72 @@ REGION_PRESETS = {
     "NYC(맨해튼)": {"lat_min": 40.755, "lat_max": 40.765, "lng_min": -73.990, "lng_max": -73.975, "temp_min": 5.0, "temp_max": 20.0},
 }
 
-def load_config(config_path=None):
+
+def load_config(config_path=None, live_api=False, verbose=False):
+    """
+    config.json에서 설정을 안전하고 신속하게 불러옵니다.
+    - live_api=False(기본값): 외부 네트워크 API(지오코딩, 실시간날씨) 호출 없이 로컬 프리셋과 JSON 값만 읽어 0초 만에 완결 (독립 실행 및 재현성 보장).
+    - live_api=True: 실시간 Nominatim/Open-Meteo API를 명시적으로 조회하여 좌표/기온을 갱신.
+    """
     path = config_path or CONFIG_PATH
     user_cfg = {}
     if os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as f: user_cfg = json.load(f)
-            print("[안내] config.json에서 설정값을 불러왔습니다.")
+            with open(path, "r", encoding="utf-8") as f:
+                user_cfg = json.load(f)
+            if verbose:
+                print(f"[안내] {os.path.basename(path)}에서 설정값을 불러왔습니다.")
         except (json.JSONDecodeError, OSError) as e:
-            print(f"[경고] config.json을 읽지 못해 기본값을 사용합니다: {e}")
+            if verbose:
+                print(f"[경고] config.json을 읽지 못해 기본값을 사용합니다: {e}")
     else:
-        print("[안내] config.json이 없어 기본값을 사용합니다.")
+        if verbose:
+            print("[안내] config.json이 없어 기본값을 사용합니다.")
+
     merged = {**DEFAULT_CONFIG, **user_cfg}
-    _apply_region_coords(merged, merged.get("region", "홍대입구"))
-    _apply_live_weather(merged, merged.get("region", "홍대입구"))
+    region = merged.get("region", "강남역")
+
+    if live_api:
+        _apply_region_coords(merged, region, verbose=verbose)
+        _apply_live_weather(merged, region)
+    else:
+        # 오프라인/테스트 모드: 좌표/날씨 키가 비어있으면 안전하게 로컬 프리셋으로 채움 (무부작용)
+        if "lat_min" not in merged or "lng_min" not in merged:
+            preset = REGION_PRESETS.get(region, REGION_PRESETS.get("강남역", {}))
+            for k, v in preset.items():
+                if k not in merged:
+                    merged[k] = v
+
     return merged
 
-def _apply_region_coords(merged, region):
+
+def get_config(overrides=None, **kwargs):
+    """
+    단위 테스트 및 모듈별 격리 실행을 위해 특정 파라미터만 오버라이드한 설정 딕셔너리를 반환합니다.
+    예: cfg = get_config(h3_resolution=9, max_lag=3)
+    """
+    cfg = load_config(live_api=False, verbose=False).copy()
+    if overrides and isinstance(overrides, dict):
+        cfg.update(overrides)
+    if kwargs:
+        cfg.update(kwargs)
+    return cfg
+
+
+def get_module_config(module_name: str) -> dict:
+    """특정 모듈에 연관된 설정값만 추출하여 반환 (모듈 독립 테스트 지원)"""
+    cfg = load_config(live_api=False, verbose=False)
+    prefix_map = {
+        "module1": ["grid_", "num_", "sim_", "passenger_", "taxi_", "school_", "company_", "residential_", "lunch_", "evening_", "restaurant_"],
+        "module2": ["h3_", "freq", "max_lag", "rolling_", "weather_"],
+        "module3": ["xgb_", "cnn_", "test_size", "train_random_state"],
+        "module4": ["base_fare", "min_multiplier", "max_multiplier", "surge_", "dispatch_", "mock_"],
+    }
+    prefixes = prefix_map.get(module_name.lower(), [])
+    return {k: v for k, v in cfg.items() if any(k.startswith(p) or k == p for p in prefixes)}
+
+
+def _apply_region_coords(merged, region, verbose=False):
     coords = None
     try:
         from geo_lookup import lookup_region
@@ -116,19 +165,25 @@ def _apply_region_coords(merged, region):
         grid_height_m = merged.get("grid_y", 3) * merged.get("grid_length", 200)
         margin_m = max(grid_width_m, grid_height_m) / 2
         result = lookup_region(region, margin_m=margin_m)
-        coords = {k: result[k] for k in ("lat_min","lat_max","lng_min","lng_max")}
-        print(f"[안내] '{region}' 좌표를 실시간 API(Nominatim)로 조회했습니다.")
+        coords = {k: result[k] for k in ("lat_min", "lat_max", "lng_min", "lng_max")}
+        if verbose:
+            print(f"[안내] '{region}' 좌표를 실시간 API(Nominatim)로 조회했습니다.")
     except Exception as e:
-        print(f"[안내] 좌표 API 조회 실패({type(e).__name__}) - 프리셋으로 대체합니다.")
+        if verbose:
+            print(f"[안내] 좌표 API 조회 실패({type(e).__name__}) - 프리셋으로 대체합니다.")
     if coords:
         merged.update(coords)
         temp = REGION_PRESETS.get(region, {})
-        merged["temp_min"] = temp.get("temp_min", 15.0); merged["temp_max"] = temp.get("temp_max", 25.0)
+        merged["temp_min"] = temp.get("temp_min", 15.0)
+        merged["temp_max"] = temp.get("temp_max", 25.0)
     elif region in REGION_PRESETS:
         merged.update(REGION_PRESETS[region])
     else:
-        print(f"[안내] '{region}' 프리셋 없음 - 홍대입구로 대체합니다.")
-        merged.update(REGION_PRESETS["홍대입구"]); merged["region"] = "홍대입구"
+        if verbose:
+            print(f"[안내] '{region}' 프리셋 없음 - 강남역으로 대체합니다.")
+        merged.update(REGION_PRESETS["강남역"])
+        merged["region"] = "강남역"
+
 
 def _apply_live_weather(merged, region):
     try:
@@ -138,9 +193,13 @@ def _apply_live_weather(merged, region):
         weather = get_current_weather(lat, lng)
         if weather:
             temp = weather["temperature"]
-            merged["temp_min"] = round(temp - 2.0, 1); merged["temp_max"] = round(temp + 2.0, 1)
-            merged["current_temperature"] = round(temp, 1); merged["current_precipitation"] = round(weather["precipitation"], 2)
+            merged["temp_min"] = round(temp - 2.0, 1)
+            merged["temp_max"] = round(temp + 2.0, 1)
+            merged["current_temperature"] = round(temp, 1)
+            merged["current_precipitation"] = round(weather["precipitation"], 2)
     except Exception:
         pass
 
-CFG = load_config()
+
+# 전역 설정 싱글톤 (사이드이펙트 없이 조용하고 빠르게 로드)
+CFG = load_config(live_api=False, verbose=False)
