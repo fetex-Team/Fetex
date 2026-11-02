@@ -24,6 +24,7 @@ STRATEGIES = ["patrol", "prepositioned"]
 DISPATCH_ALGORITHMS = ["traci", "greedy", "hungarian", "routeExtension", "rl_reposition"]
 IDLE_ALGORITHMS = ["randomCircling", "stopOnRoad", "taxiStop"]
 DEMAND_SOURCES = ["synthetic", "real"]
+HOLIDAY_MODES = ["auto", "weekday", "holiday"]
 
 FACTOR_OPTIONS = {
     "taxi_strategy": ("택시 전략", STRATEGIES),
@@ -106,6 +107,20 @@ ADVANCED_SIM_NUMERICS = [
     ("restaurant_window2_start", "음식점 시간대2 시작", 0, 24, 2, 0),
     ("restaurant_window2_end", "음식점 시간대2 종료", 0, 24, 2, 0),
     ("restaurant_civilian_taxi_probability", "음식점 시민 택시확률", 0, 1, 3, 0),
+    ("department_pop_base", "백화점 한 곳당 인구", 0, 5000, 0, 1),
+    ("department_window_start", "백화점 방문 시작", 0, 24, 2, 0),
+    ("department_window_end", "백화점 방문 종료", 0, 24, 2, 0),
+    ("department_taxi_probability", "백화점 택시확률", 0, 1, 3, 0),
+    ("department_stay_sec", "백화점 체류시간(초)", 0, 86400, 0, 1),
+    ("weather_rain_taxi_bonus", "비 올 때 택시확률 가산", -0.5, 0.5, 3, 0),
+    ("weather_cool_taxi_bonus", "쌀쌀할 때 택시확률 가산", -0.5, 0.5, 3, 0),
+    ("weather_sunny_taxi_bonus", "맑을 때 택시확률 가산", -0.5, 0.5, 3, 0),
+    ("weather_rain_threshold_mm", "비 판정 강수량(mm)", 0, 50, 2, 0),
+    ("weather_cool_threshold_c", "쌀쌀함 판정 기온(℃)", -20, 30, 1, 0),
+    ("weather_strong_wind_threshold_kmh", "강풍 판정 풍속(km/h)", 0, 150, 1, 0),
+    ("weather_strong_wind_taxi_bonus", "강풍 시 택시확률 가산", -0.5, 0.5, 3, 0),
+    ("weather_typhoon_wind_threshold_kmh", "태풍 판정 풍속(km/h)", 0, 200, 1, 0),
+    ("weather_typhoon_taxi_bonus", "태풍 시 택시확률 가산", -0.5, 0.5, 3, 0),
 ]
 
 # -------------------------------------------------------------
@@ -136,6 +151,8 @@ BOOLS = [
     ("use_real_map", "실제 OSM 지도 도로망 사용 (True: 강남역 OSM, False: 합성 그리드)"),
     ("dispatch_use_euclidean", "거리 계산 시 유클리드 좌표 사용 (테스트 전용)"),
     ("suppress_sumo_warnings", "SUMO 콘솔 경고 로그 숨기기 (시뮬레이션 속도 향상)"),
+    ("weather_bonus_enabled", "날씨 보정 적용 (현재 날씨 조회 → 택시확률 가산)"),
+    ("department_enabled", "백화점/쇼핑몰 방문 승객 생성 (실제 지도에 백화점이 있을 때)"),
 ]
 
 # -------------------------------------------------------------
@@ -378,6 +395,14 @@ class ConfigGUI:
         v_dem = tk.StringVar(value=DEFAULT_CONFIG.get("demand_source", "synthetic"))
         self.choice_vars["demand_source"] = v_dem
         ttk.Combobox(r_dem, textvariable=v_dem, values=DEMAND_SOURCES, state="readonly", width=20).pack(side="right")
+
+        # 평일/공휴일 판정 (auto: 실행 날짜로 판정, weekday/holiday: 강제)
+        r_hol = ttk.Frame(box1)
+        r_hol.pack(fill="x", pady=6)
+        ttk.Label(r_hol, text="평일/공휴일 판정 (holiday_mode)", width=36).pack(side="left")
+        v_hol = tk.StringVar(value=DEFAULT_CONFIG.get("holiday_mode", "auto"))
+        self.choice_vars["holiday_mode"] = v_hol
+        ttk.Combobox(r_hol, textvariable=v_hol, values=HOLIDAY_MODES, state="readonly", width=20).pack(side="right")
 
         # 시드 설정
         box2 = ttk.LabelFrame(f, text="재현성 시드 (Seed)", padding=10)

@@ -152,6 +152,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         company_pop_base=meta.get("company_pop_base", 100),
         seed=meta.get("passenger_seed"),
         sim_date=run_date.isoformat(),
+        department_edges=meta.get("department_store_edges", []),
+        holiday_mode=meta.get("holiday_mode") or CFG.get("holiday_mode", "auto"),
         meta=meta,
     )
 

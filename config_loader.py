@@ -87,6 +87,44 @@ DEFAULT_CONFIG = {
     "demo_data_rows": 1000, "demo_data_minutes": 500,
     "demo_data_start": "2026-08-28 18:00:00",
     "xgb_random_state": 42, "train_random_state": 42,
+    "weather_bonus_enabled": False,   # 체크박스 — 켜야 날씨 보정 로직이 실제로 동작
+    "weather_rain_taxi_bonus": 0.10,
+    "weather_cool_taxi_bonus": 0.10,
+    "weather_sunny_taxi_bonus": 0.0,
+    "weather_rain_threshold_mm": 0.1,
+    "weather_cool_threshold_c": 10.0,
+    # 풍속 2단계 판정 (기상청 기준. km/h = m/s * 3.6):
+    #   강풍주의보 육상 14m/s  = 50.4km/h
+    #   태풍(중심 최대풍속 17m/s 이상) = 61.2km/h
+    # 풍속이 두 임계값 모두 넘으면 더 높은 단계(태풍)만 적용됨(중복 합산 아님).
+    # 가산값은 수요 증가/감소 방향을 알 수 없어 0.0(무효과)이 기본값. GUI 슬라이더에서 직접 정할 것.
+    "weather_strong_wind_threshold_kmh": 50.4,
+    "weather_strong_wind_taxi_bonus": 0.0,
+    "weather_typhoon_wind_threshold_kmh": 61.2,
+    "weather_typhoon_taxi_bonus": 0.0,
+
+    # ---- 공휴일(주말 포함) 반영 ----
+    # holiday_mode: "auto"=sim_date(실행 날짜)로 평일/공휴일 자동 판정, "weekday"=무조건 평일, "holiday"=무조건 공휴일
+    "holiday_mode": "auto",
+    # run_date_mode: 이번 실행의 날짜를 정하는 방식
+    #   "sim_date"=위 sim_date 고정(평가·A/B용, 날짜가 같아야 비교가 공정함)
+    #   "alternate"=과거 90일 중 평일/공휴일을 번갈아 뽑음(학습 로그 생성용)
+    #   "random"=과거 90일 중 랜덤
+    "run_date_mode": "random",
+    # 공휴일일 때 택시 선택 확률에 곱하는 배율 (평일은 항상 1.0). 날씨 가산 후에 곱함.
+    #   school: 등교 / company: 출근 / restaurant: 음식점 방문 / general: 기본 수요(num_passengers 가챠)
+    #   lunch, evening: 점심 이동, 퇴근은 "아침에 회사가 흡수한 인원"에서 파생되므로 1.0 권장(이중 감소 방지)
+    "holiday_multipliers": {
+        "school": 0.0, "company": 0.25, "lunch": 1.0,
+        "evening": 1.0, "restaurant": 1.5, "general": 1.3, "department": 2.0,
+    },
+    # ---- 백화점/쇼핑몰 방문 승객 (OSM의 shop=department_store/mall, 버스정류장·지하철입구 -> 백화점 -> 체류 후 주거) ----
+    # 지도에서 백화점을 못 찾으면 자동으로 꺼짐. 평일 기준 값이며 공휴일엔 holiday_multipliers["department"]가 곱해짐.
+    "department_enabled": True,
+    "department_pop_base": 40,                 # 백화점 한 곳당 인구
+    "department_window_start": 11.0, "department_window_end": 21.0,
+    "department_taxi_probability": 0.10,
+    "department_stay_sec": 5400.0,             # 체류 시간(초) 후 주거로 귀가
 }
 
 REGION_PRESETS = {
@@ -136,6 +174,9 @@ def load_config(config_path=None, live_api=False, verbose=False):
             for k, v in preset.items():
                 if k not in merged:
                     merged[k] = v
+        if merged.get("weather_bonus_enabled"):
+            # 날씨 보정을 켠 경우에만 현재 날씨(기온·강수·풍속)를 조회 (실패하면 보정 없이 진행)
+            _apply_live_weather(merged, region)
 
     return merged
 
@@ -211,6 +252,8 @@ def _apply_live_weather(merged, region):
             merged["temp_max"] = round(temp + 2.0, 1)
             merged["current_temperature"] = round(temp, 1)
             merged["current_precipitation"] = round(weather["precipitation"], 2)
+            if weather.get("wind_speed") is not None:
+                merged["current_wind_speed"] = round(weather["wind_speed"], 1)
     except Exception:
         pass
 

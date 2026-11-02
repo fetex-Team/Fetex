@@ -35,7 +35,7 @@ sys.path.insert(0, ROOT)
 
 from config_loader import CFG                     # noqa: E402
 from demand_model import RealDemandModel          # noqa: E402
-import holidays                                  # noqa: E402
+from holiday_utils import is_holiday_date         # noqa: E402
 
 META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 OUT_DIR = os.path.join(ROOT, "data", "real_demand_logs")
@@ -66,7 +66,7 @@ def main(days: int, end: dt.date, seed, out_dir: str):
     total = 0
     for i in range(days):
         date = start + dt.timedelta(days=i)
-        holiday = date in holidays.KR(years=date.year)
+        holiday = bool(is_holiday_date(date))
         calls = model.build_schedule(date, 0, 24, seed, is_holiday=holiday)
         base = dt.datetime.combine(date, dt.time(0, 0))
         path = os.path.join(out_dir, f"demand_log_{region}실데이터{date.strftime('%y%m%d')}.csv")

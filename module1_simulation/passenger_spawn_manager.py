@@ -37,12 +37,19 @@ traci.person.getIDList()를 매 스텝 비교해서, "이전 스텝엔 있었는
 import random
 import traci
 from config_loader import CFG
+from holiday_utils import resolve_is_holiday
 
 
 class PassengerSpawnManager:
+    _weather_logged = False  # 날씨 보정 로그를 프로세스당 1번만 찍기 위한 플래그
+    _holiday_logged_for = None  # 공휴일 로그를 같은 날짜에 대해 1번만 찍기 위한 플래그
+    _HOLIDAY_DEFAULTS = {"school": 0.0, "company": 0.25, "lunch": 1.0,
+                         "evening": 1.0, "restaurant": 1.5, "general": 1.3, "department": 2.0}
+
     def __init__(self, zones: dict, sim_start_hour: float, sim_end_hour: float = None,
                  school_pop_base: int = None, company_pop_base: int = None,
-                 seed: int = None, sim_date=None, meta: dict = None):
+                 seed: int = None, sim_date=None, department_edges: list = None,
+                 holiday_mode: str = None, meta: dict = None):
         if seed is not None:
             # 택시 매니저 등 다른 모듈이 쓰는 전역 random의 재현성은 예전처럼 유지한다.
             random.seed(seed)
@@ -51,6 +58,21 @@ class PassengerSpawnManager:
         self._rng = random.Random(f"fetex-spawn|{seed}")
 
         self.sim_start_hour = sim_start_hour
+        # [날씨 보정] GUI "날씨적용" 체크 시 오늘 날씨로 모든 택시 선택 확률에 가산값을 더함.
+        self.weather_bonus = self._compute_weather_bonus()
+        # [공휴일 보정] sim_date(없으면 평일 취급)와 holiday_mode로 평일/공휴일을 판정하고,
+        # 공휴일이면 카테고리별 배율을 택시확률에 곱함. 평일이면 모든 배율이 1.0이라 기존과 동일.
+        self.sim_date = sim_date
+        # holiday_mode를 직접 넘기면(A/B의 평일/공휴일 비교) config.json 값보다 우선.
+        _hmode = holiday_mode or CFG.get("holiday_mode", "auto")
+        self.is_holiday = resolve_is_holiday(sim_date, _hmode) if (
+            sim_date is not None or _hmode != "auto") else False
+        user_mult = CFG.get("holiday_multipliers") or {}
+        self.holiday_mult = {k: float(user_mult.get(k, v)) for k, v in self._HOLIDAY_DEFAULTS.items()}
+        if PassengerSpawnManager._holiday_logged_for != (str(sim_date), self.is_holiday):
+            PassengerSpawnManager._holiday_logged_for = (str(sim_date), self.is_holiday)
+            print(f"[공휴일 보정] 날짜 {sim_date} -> {'공휴일/주말' if self.is_holiday else '평일'}"
+                  f"{' | 배율 ' + str(self.holiday_mult) if self.is_holiday else ''}")
         self.school_pop_base = int(CFG.get("school_pop_base", 400) if school_pop_base is None else school_pop_base)
         self.company_pop_base = int(CFG.get("company_pop_base", 100) if company_pop_base is None else company_pop_base)
         self.school_start_hour = float(CFG.get("school_start_hour", 7.0))
@@ -82,6 +104,25 @@ class PassengerSpawnManager:
         self.restaurant_civilian_taxi_probability = float(CFG.get("restaurant_civilian_taxi_probability", 0.10))
         self._restaurant_civilian_accumulator = 0.0
         self._restaurant_civilian_last_second = -1
+
+        # -------------------------------------------------------------
+        # 기본 승객 수(num_passengers) 기반 독립 가챠 생성
+        # 기존 시간대별(school/company/residential 스케줄) 로직과는 완전히 별개로,
+        # sim 구간을 num_passengers로 나눈 간격마다 1틱씩 체크하며
+        # residential_taxi_probability 확률로 "택시 승객"만 생성한다.
+        # 확률에 당첨되지 않으면 그 틱은 그냥 소멸(생성 자체를 안 함).
+        # -------------------------------------------------------------
+        # 백화점/쇼핑몰 (스폰 전용 후보 edge. zones/카테고리에는 없음 -> RL 관측/행동 크기 영향 없음)
+        self.department_edges = list(department_edges or [])
+        self.department_enabled = bool(CFG.get("department_enabled", True)) and len(self.department_edges) > 0
+        self.department_pop_base = float(CFG.get("department_pop_base", 40))
+        self.department_window_start = float(CFG.get("department_window_start", 11.0))
+        self.department_window_end = float(CFG.get("department_window_end", 21.0))
+        self.department_taxi_probability = float(CFG.get("department_taxi_probability", 0.10))
+        self.department_stay_sec = float(CFG.get("department_stay_sec", 5400.0))
+        self._department_accumulator = 0.0
+        self._department_last_second = -1
+        self._department_pending = []  # 체류 후 귀가 트리거 시각 목록
 
         # -------------------------------------------------------------
         # 기본 승객 수(num_passengers) 기반 독립 가챠 생성
@@ -139,7 +180,7 @@ class PassengerSpawnManager:
             "school_morning": 0, "company_morning": 0,
             "lunch_release": 0, "lunch_return": 0,
             "school_afternoon": 0, "evening": 0,
-            "residential_gacha": 0, "restaurant_civilian": 0,
+            "residential_gacha": 0, "department": 0, "department_return": 0, "restaurant_civilian": 0,
         }
         # 각 이벤트가 "한 번만" 실행되도록 하는 트리거 플래그/스냅샷
         self._lunch_12_done = False
@@ -183,21 +224,19 @@ class PassengerSpawnManager:
             raise ValueError("실데이터 수요(demand_source=real)는 sim_end_hour가 필요합니다.")
         date = _dt.date.fromisoformat(str(sim_date)) if sim_date else _dt.date.fromisoformat(
             str(CFG.get("sim_date", "2026-09-07")))
-        # 평일 공휴일만 따로 판정 (주말은 RealDemandModel이 요일로 처리)
-        try:
-            import holidays
-            self.is_holiday = date in holidays.KR(years=date.year)
-        except ImportError:
-            self.is_holiday = False
         model = RealDemandModel(meta, CFG)
+        # 날씨 보정: 택시 선택 확률 가산값을 호출량 배율로 바꿔 적용
+        weather_factor = 1.0 + self.weather_bonus
         self.schedule = model.build_schedule(date, self.sim_start_hour, self.sim_end_hour,
-                                             seed if seed is not None else 42, is_holiday=self.is_holiday)
+                                             seed if seed is not None else 42,
+                                             is_holiday=self.is_holiday, weather_factor=weather_factor)
         self.schedule_summary = model.summary(date, self.sim_start_hour, self.sim_end_hour, self.is_holiday)
+        self.schedule_summary["weather_factor"] = round(weather_factor, 3)
         self.schedule_summary["n_calls"] = len(self.schedule)
         self.mean_fare_won = model.mean_fare()
         print(f"[실데이터 수요] {date} {'공휴일/주말' if self.is_holiday or date.weekday() >= 5 else '평일'} | "
               f"영역 실측 하루 {self.schedule_summary['area_daily_calls_real']:.0f}건 x 배율 {model.scale} "
-              f"-> {self.sim_start_hour:g}~{self.sim_end_hour:g}시 호출 {len(self.schedule)}건 "
+              f"x 날씨 {weather_factor:.2f} -> {self.sim_start_hour:g}~{self.sim_end_hour:g}시 호출 {len(self.schedule)}건 "
               f"(TIMS 2025 + 서울시 시간대 통계)")
 
     def _maintain_real(self, now_seconds: float):
@@ -269,6 +308,10 @@ class PassengerSpawnManager:
             # 정상 도착 처리
             self.absorbed[category] = self.absorbed.get(category, 0) + 1
 
+            # 백화점 도착 -> 체류 후 주거로 귀가 예약
+            if category == "department":
+                self._department_pending.append(now_seconds + self.department_stay_sec)
+
             # 음식점 도착이고 점심 왕복이 아니면 -> 1시간 뒤 개인 재스폰 예약
             if category == "restaurant" and not was_lunch:
                 self._restaurant_pending.append((now_seconds + self.restaurant_stay_sec, None))
@@ -281,7 +324,7 @@ class PassengerSpawnManager:
             if self._rng.random() < rate:
                 peak = min(max(self.school_taxi_peak_hour, self.school_start_hour), self.school_end_hour)
                 taxi_prob = 0.0 if now_hour <= self.school_start_hour else min(1.0, (now_hour - self.school_start_hour) / max(peak - self.school_start_hour, 1e-9))
-                if self._rng.random() < taxi_prob:
+                if self._rng.random() < self._tp(taxi_prob, "school"):
                     start_e = self._pick_edge(self.transit_edges)
                     end_e = self._pick_edge(self.school_edges)
                     self._spawn_person(now_seconds, start_e, end_e, dest_category="school")
@@ -305,7 +348,7 @@ class PassengerSpawnManager:
             for _ in range(attempts):
                 peak = min(max(self.company_taxi_peak_hour, self.company_start_hour), self.company_end_hour)
                 taxi_prob = 0.0 if now_hour <= self.company_start_hour else min(1.0, (now_hour - self.company_start_hour) / max(peak - self.company_start_hour, 1e-9))
-                if self._rng.random() < taxi_prob:
+                if self._rng.random() < self._tp(taxi_prob, "company"):
                     start_e = self._pick_edge(self.transit_edges)
                     end_e = self._pick_edge(self.company_edges)
                     self._spawn_person(now_seconds, start_e, end_e, dest_category="company")
@@ -316,7 +359,7 @@ class PassengerSpawnManager:
         if not self._lunch_12_done and now_hour >= self.lunch_start_hour:
             self._lunch_12_done = True
             release_total = int(self.absorbed.get("company", 0) * self.lunch_company_release_fraction)
-            self._lunch_release_taxi_count = int(release_total * self.lunch_taxi_fraction)
+            self._lunch_release_taxi_count = int(release_total * self._tp(self.lunch_taxi_fraction, "lunch"))
             for _ in range(self._lunch_release_taxi_count):
                 start_e = self._pick_edge(self.company_edges)
                 end_e = self._pick_edge(self.restaurant_edges)
@@ -362,7 +405,7 @@ class PassengerSpawnManager:
         if self.evening_start_hour <= now_hour < self.evening_end_hour:
             rate = self._evening_pool_snapshot / max((self.evening_end_hour - self.evening_start_hour) * 3600.0, 1.0)
             if self._rng.random() < rate:
-                if self._rng.random() < self.evening_taxi_fraction:  # 버스35%+지하철35% 제외 -> 30%만 택시
+                if self._rng.random() < self._tp(self.evening_taxi_fraction, "evening"):  # 버스35%+지하철35% 제외 -> 30%만 택시
                     dest_pool = self.residential_edges if self._rng.random() < self.evening_residential_fraction else self.restaurant_edges
                     start_e = self._pick_edge(self.company_edges)
                     end_e = self._pick_edge(dest_pool)
@@ -418,11 +461,99 @@ class PassengerSpawnManager:
         self._restaurant_civilian_accumulator -= attempts
 
         for _ in range(attempts):
-            if self._rng.random() < self.restaurant_civilian_taxi_probability:
+            if self._rng.random() < self._tp(self.restaurant_civilian_taxi_probability, "restaurant"):
                 start_e = self._pick_edge(self.transit_edges)
                 end_e = self._pick_edge(self.restaurant_edges)
                 self._spawn_person(now_seconds, start_e, end_e, dest_category="restaurant")
                 self.spawn_counts["restaurant_civilian"] += 1
+
+    # ---------- 백화점 방문 시민 (버스정류장/지하철입구 -> 백화점, 체류 후 주거 귀가) ----------
+    def _maintain_department(self, now_seconds: float, now_hour: float):
+        if not self.department_enabled:
+            return
+        # 체류가 끝난 사람은 시간대와 무관하게 주거로 귀가
+        still = []
+        for trigger_time in self._department_pending:
+            if now_seconds >= trigger_time:
+                start_e = self._pick_edge(self.department_edges)
+                end_e = self._pick_edge(self.residential_edges)
+                if self._spawn_person(now_seconds, start_e, end_e, dest_category="residential"):
+                    self.spawn_counts["department_return"] += 1
+            else:
+                still.append(trigger_time)
+        self._department_pending = still
+
+        if not (self.department_window_start <= now_hour < self.department_window_end):
+            return
+        total_pop = self.department_pop_base * len(self.department_edges)
+        rate = total_pop / max((self.department_window_end - self.department_window_start) * 3600.0, 1.0)
+        cur_second = int(now_seconds)
+        if cur_second != self._department_last_second:
+            self._department_last_second = cur_second
+            self._department_accumulator += rate
+        attempts = int(self._department_accumulator)
+        self._department_accumulator -= attempts
+        for _ in range(attempts):
+            if self._rng.random() < self._tp(self.department_taxi_probability, "department"):
+                start_e = self._pick_edge(self.transit_edges)
+                end_e = self._pick_edge(self.department_edges)
+                if self._spawn_person(now_seconds, start_e, end_e, dest_category="department"):
+                    self.spawn_counts["department"] += 1
+
+    # ---------- 날씨 보정 ----------
+    @staticmethod
+    def _compute_weather_bonus() -> float:
+        """weather_bonus_enabled가 켜져 있을 때 택시확률에 더할 가산값을 반환 (꺼져 있으면 0.0).
+
+        비(강수량>=임계) 가산 + 쌀쌀함(기온<임계) 가산 + 풍속 2단계(강풍/태풍, 둘 중 높은 단계만
+        적용) 가산은 해당되는 것끼리 합산, 아무것도 해당 안 되면 맑음 가산.
+        날씨 조회에 실패해서 current_temperature/precipitation 값이 없으면 보정하지 않음.
+        풍속(current_wind_speed)만 없으면 풍속 판정만 건너뜀.
+        """
+        if not CFG.get("weather_bonus_enabled", False):
+            return 0.0
+        temp = CFG.get("current_temperature")
+        precip = CFG.get("current_precipitation")
+        if temp is None or precip is None:
+            print("[경고] 날씨적용이 켜져 있지만 현재 날씨 조회 값이 없어 보정을 건너뜁니다.")
+            return 0.0
+        rainy = float(precip) >= float(CFG.get("weather_rain_threshold_mm", 0.1))
+        cool = float(temp) < float(CFG.get("weather_cool_threshold_c", 10.0))
+        bonus = 0.0
+        if rainy:
+            bonus += float(CFG.get("weather_rain_taxi_bonus", 0.10))
+        if cool:
+            bonus += float(CFG.get("weather_cool_taxi_bonus", 0.10))
+        wind = CFG.get("current_wind_speed")
+        wind_level = None  # None / "strong" / "typhoon" — 풍속 조회 실패 시 판정 자체를 건너뜀
+        if wind is not None:
+            wind = float(wind)
+            if wind >= float(CFG.get("weather_typhoon_wind_threshold_kmh", 61.2)):
+                wind_level = "typhoon"
+            elif wind >= float(CFG.get("weather_strong_wind_threshold_kmh", 50.4)):
+                wind_level = "strong"
+        if wind_level == "typhoon":
+            bonus += float(CFG.get("weather_typhoon_taxi_bonus", 0.0))
+        elif wind_level == "strong":
+            bonus += float(CFG.get("weather_strong_wind_taxi_bonus", 0.0))
+        if not rainy and not cool and wind_level is None:
+            bonus += float(CFG.get("weather_sunny_taxi_bonus", 0.0))
+        # rl_env는 에피소드(reset)마다 매니저를 새로 만들므로, 프로세스당 1번만 출력
+        if not PassengerSpawnManager._weather_logged:
+            PassengerSpawnManager._weather_logged = True
+            wind_label = {"typhoon": " (태풍급)", "strong": " (강풍급)"}.get(wind_level, "")
+            print(f"[날씨 보정] 기온 {temp}°C / 강수 {precip}mm / 풍속 {wind if wind is not None else '-'}km/h"
+                  f"{wind_label} -> 택시확률 {bonus:+.3f}")
+        return bonus
+
+    def _tp(self, p: float, category: str = None) -> float:
+        """기본 택시확률 p에 날씨 가산값을 더한 뒤, 공휴일이면 카테고리 배율을 곱해 0~1로 자른 값.
+
+        배율을 가산 뒤에 곱하므로 배율 0(예: 공휴일 등교)이면 날씨 가산이 있어도 확실히 0이 됨.
+        평일이거나 category가 None이면 배율은 1.0 (기존 동작과 동일).
+        """
+        mult = self.holiday_mult.get(category, 1.0) if (self.is_holiday and category) else 1.0
+        return min(1.0, max(0.0, (p + self.weather_bonus) * mult))
 
     # ---------- 기본 승객 수(num_passengers) 독립 가챠 ----------
     def _maintain_residential_gacha(self, now_seconds: float):
@@ -438,7 +569,7 @@ class PassengerSpawnManager:
         self._gacha_accumulator -= attempts
 
         for _ in range(attempts):
-            if self._rng.random() < self.residential_taxi_probability:
+            if self._rng.random() < self._tp(self.residential_taxi_probability, "general"):
                 start_e = self._pick_edge(self.all_edges)
                 end_e = self._pick_edge(self.all_edges, exclude=start_e)
                 self._spawn_person(now_seconds, start_e, end_e, dest_category=None)
@@ -460,4 +591,5 @@ class PassengerSpawnManager:
         self._maintain_evening(now_seconds, now_hour)
         self._maintain_restaurant_timers(now_seconds)
         self._maintain_restaurant_civilian(now_seconds, now_hour)
+        self._maintain_department(now_seconds, now_hour)
         self._maintain_residential_gacha(now_seconds)

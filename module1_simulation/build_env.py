@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _args.config_path:
     os.environ["MOBILITY_CONFIG"] = os.path.abspath(_args.config_path)
 from config_loader import CFG, ROOT, _apply_region_coords
-from poi_extractor import get_zones, get_boundary_edges, CATEGORIES
+from poi_extractor import get_zones, get_boundary_edges, get_department_store_edges, CATEGORIES
 from largest_component_filter import filter_to_largest_scc
 DEPART_JITTER_SEC = float(CFG.get("depart_jitter_sec", 300.0))
 
@@ -174,6 +174,10 @@ def create_network_and_routes():
     for category in CATEGORIES:
         print(f"  - {category}: {len(zones.get(category, []))}개 도로 구역 배정")
 
+    # [백화점] 카테고리를 늘리지 않고 스폰 전용 후보 edge 목록만 따로 만든다 (runtime_meta.json에 저장)
+    department_store_edges = [e for e in get_department_store_edges(CFG, net, raw_osm_path=raw_osm_path) if e in allowed]
+    print(f"  - department_store(스폰 전용): {len(department_store_edges)}개 도로 구역 배정")
+
     boundary_edges = get_boundary_edges(net, edges)
     print(f"  - 택시 스폰 후보(길 끝): {len(boundary_edges)}개 도로")
 
@@ -274,6 +278,7 @@ def create_network_and_routes():
         "coordinate_mapping": "OSM projection" if CFG.get("use_real_map") else "synthetic bbox mapping",
         "edges": edges,
         "boundary_edges": boundary_edges,
+        "department_store_edges": department_store_edges,
         "taxi_strategy": taxi_strategy,
         "num_taxis": CFG['num_taxis'],
         "sim_start_hour": sim_start_hour,

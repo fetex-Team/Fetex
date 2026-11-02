@@ -18,8 +18,8 @@ OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
 
 def get_current_weather(lat: float, lon: float) -> dict:
     """
-    현재 기온(섭씨)과 강수량(mm/h)을 조회.
-    반환: {"temperature": float, "precipitation": float} / 실패 시 None
+    현재 기온(섭씨), 강수량(mm/h), 풍속(km/h)을 조회.
+    반환: {"temperature": float, "precipitation": float, "wind_speed": float|None} / 실패 시 None
     """
     params = urllib.parse.urlencode({
         "latitude": lat,
@@ -51,7 +51,9 @@ def get_current_weather(lat: float, lon: float) -> dict:
         except (KeyError, ValueError, IndexError):
             pass
 
-        return {"temperature": float(temp), "precipitation": precip}
+        wind = current.get("windspeed")  # Open-Meteo 기본 단위 km/h (과거 데이터 wind_speed_10m과 동일)
+        return {"temperature": float(temp), "precipitation": precip,
+                "wind_speed": float(wind) if wind is not None else None}
 
     except Exception:
         return None

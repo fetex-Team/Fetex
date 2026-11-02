@@ -168,6 +168,7 @@ class TaxiRepositionEnv(gym.Env):
             school_pop_base=self.meta.get("school_pop_base", 400),
             company_pop_base=self.meta.get("company_pop_base", 100),
             seed=self.meta.get("passenger_seed"),
+            department_edges=self.meta.get("department_store_edges", []),
             meta=self.meta,
         )
 
