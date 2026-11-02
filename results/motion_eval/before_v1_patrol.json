@@ -1,0 +1,22 @@
+{
+  "offroad": {
+    "patrol.json (직선 보간(v1 방식))": {
+      "all": {
+        "n": 501318,
+        "offroad_pct": 26.3,
+        "offroad_over_3m_pct": 17.85,
+        "p90_offroad_m": 7.53,
+        "max_offroad_m": 67.45
+      },
+      "turns": {
+        "n": 187890,
+        "offroad_pct": 56.01,
+        "offroad_over_3m_pct": 39.83,
+        "p90_offroad_m": 12.2,
+        "max_offroad_m": 67.45
+      },
+      "path_used_pct": 0.0
+    }
+  },
+  "truth": []
+}

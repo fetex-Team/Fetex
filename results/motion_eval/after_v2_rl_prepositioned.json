@@ -1,0 +1,39 @@
+{
+  "offroad": {
+    "rl_prepositioned.json (차선 경로 보간(v2))": {
+      "all": {
+        "n": 1061199,
+        "offroad_pct": 0.14,
+        "offroad_over_3m_pct": 0.0,
+        "p90_offroad_m": 0.0,
+        "max_offroad_m": 1.85
+      },
+      "turns": {
+        "n": 196632,
+        "offroad_pct": 0.63,
+        "offroad_over_3m_pct": 0.0,
+        "p90_offroad_m": 0.0,
+        "max_offroad_m": 1.41
+      },
+      "path_used_pct": 100.0
+    },
+    "rl_prepositioned.json (직선 보간(v1 방식))": {
+      "all": {
+        "n": 1061199,
+        "offroad_pct": 9.72,
+        "offroad_over_3m_pct": 3.22,
+        "p90_offroad_m": 0.0,
+        "max_offroad_m": 22.0
+      },
+      "turns": {
+        "n": 196632,
+        "offroad_pct": 43.92,
+        "offroad_over_3m_pct": 15.48,
+        "p90_offroad_m": 3.94,
+        "max_offroad_m": 17.67
+      },
+      "path_used_pct": 0.0
+    }
+  },
+  "truth": []
+}

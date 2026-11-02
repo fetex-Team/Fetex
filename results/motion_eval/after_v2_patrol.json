@@ -1,0 +1,39 @@
+{
+  "offroad": {
+    "patrol.json (차선 경로 보간(v2))": {
+      "all": {
+        "n": 1055763,
+        "offroad_pct": 0.14,
+        "offroad_over_3m_pct": 0.0,
+        "p90_offroad_m": 0.0,
+        "max_offroad_m": 2.23
+      },
+      "turns": {
+        "n": 197013,
+        "offroad_pct": 0.63,
+        "offroad_over_3m_pct": 0.0,
+        "p90_offroad_m": 0.0,
+        "max_offroad_m": 2.23
+      },
+      "path_used_pct": 100.0
+    },
+    "patrol.json (직선 보간(v1 방식))": {
+      "all": {
+        "n": 1055763,
+        "offroad_pct": 9.75,
+        "offroad_over_3m_pct": 3.2,
+        "p90_offroad_m": 0.0,
+        "max_offroad_m": 30.09
+      },
+      "turns": {
+        "n": 197013,
+        "offroad_pct": 43.7,
+        "offroad_over_3m_pct": 15.18,
+        "p90_offroad_m": 3.87,
+        "max_offroad_m": 17.08
+      },
+      "path_used_pct": 0.0
+    }
+  },
+  "truth": []
+}
