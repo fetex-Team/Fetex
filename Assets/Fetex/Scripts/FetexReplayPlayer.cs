@@ -364,15 +364,15 @@ namespace Fetex
                 BuildMotionLanes(mapData);
             }
 
-            string replayPath = Path.Combine(Application.streamingAssetsPath, fileName);
-            if (!File.Exists(replayPath))
+            string replayPath = ResolveReplayPath(fileName);
+            if (replayPath == null)
             {
-                Debug.LogError($"[FetexReplayPlayer] File not found: {replayPath}");
+                Debug.LogError($"[FetexReplayPlayer] File not found: {Path.Combine(Application.streamingAssetsPath, fileName)} (.gz 포함)");
                 yield break;
             }
 
             string replayJson = null;
-            var replayTask = System.Threading.Tasks.Task.Run(() => File.ReadAllText(replayPath, System.Text.Encoding.UTF8));
+            var replayTask = System.Threading.Tasks.Task.Run(() => ReadReplayText(replayPath));
             while (!replayTask.IsCompleted) yield return null;
 
             if (replayTask.IsFaulted)
@@ -423,6 +423,31 @@ namespace Fetex
             ApplyCityVisibility();
             UpdateSimulation(0f);
             SelectTaxiForCamera(0);
+        }
+
+        /// <summary>
+        /// 재생 파일 경로 찾기. "patrol.json"을 요청하면 압축본 "patrol.json.gz"를 먼저 찾고, 없으면 원본 .json.
+        /// (export_unity_replay.py 기본 출력이 .json.gz — 48MB → 약 8MB)
+        /// </summary>
+        private static string ResolveReplayPath(string fileName)
+        {
+            string basePath = Path.Combine(Application.streamingAssetsPath, fileName);
+            if (!fileName.EndsWith(".gz", StringComparison.OrdinalIgnoreCase) && File.Exists(basePath + ".gz"))
+                return basePath + ".gz";
+            return File.Exists(basePath) ? basePath : null;
+        }
+
+        /// <summary>.json 또는 .json.gz를 UTF-8 문자열로 읽기 (백그라운드 스레드에서 호출).</summary>
+        private static string ReadReplayText(string path)
+        {
+            if (!path.EndsWith(".gz", StringComparison.OrdinalIgnoreCase))
+                return File.ReadAllText(path, System.Text.Encoding.UTF8);
+            using (var file = File.OpenRead(path))
+            using (var gz = new System.IO.Compression.GZipStream(file, System.IO.Compression.CompressionMode.Decompress))
+            using (var reader = new StreamReader(gz, System.Text.Encoding.UTF8))
+            {
+                return reader.ReadToEnd();
+            }
         }
 
         /// <summary>map.json의 lanes를 차선 경로 보간용 구조로 변환 (교차로 내부 차선 포함).</summary>
