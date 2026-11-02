@@ -1,0 +1,50 @@
+{
+  "title": "공정 비교 — 같은 손님 목록(수요 지문 동일), 2026-09-07 월 9~23시, 택시 50대, 헝가리안 매칭",
+  "demand": "TIMS 2025 실측 보정 (demand_source=real, scale 1.0)",
+  "same_demand": true,
+  "noise_note": "같은 전략·같은 손님 목록 재실행 시 타임아웃 298 vs 324건(서비스율 약 ±0.4%p) 차이 관찰 — 파이썬 해시 순서에 따른 배차 동률 처리 차이",
+  "results": [
+    {
+      "strategy": "patrol",
+      "algorithm": "hungarian",
+      "demand_fingerprint": "21d16aac157600d3",
+      "run_date": "2026-09-07",
+      "n_total_passengers": 6620,
+      "n_measured": 6245,
+      "n_timeout_removed": 352,
+      "service_rate": 0.9434,
+      "avg_wait_sec": 143.1,
+      "p90_wait_sec": 262.0,
+      "true_avg_wait_sec_with_penalty": 162.1,
+      "est_revenue_won": 101759877
+    },
+    {
+      "strategy": "prepositioned",
+      "algorithm": "hungarian",
+      "demand_fingerprint": "21d16aac157600d3",
+      "run_date": "2026-09-07",
+      "n_total_passengers": 6620,
+      "n_measured": 6276,
+      "n_timeout_removed": 324,
+      "service_rate": 0.948,
+      "avg_wait_sec": 144.9,
+      "p90_wait_sec": 261.0,
+      "true_avg_wait_sec_with_penalty": 162.3,
+      "est_revenue_won": 102265010
+    },
+    {
+      "strategy": "rl_prepositioned",
+      "algorithm": "hungarian",
+      "demand_fingerprint": "21d16aac157600d3",
+      "run_date": "2026-09-07",
+      "n_total_passengers": 6620,
+      "n_measured": 6354,
+      "n_timeout_removed": 249,
+      "service_rate": 0.9598,
+      "avg_wait_sec": 147.9,
+      "p90_wait_sec": 268.0,
+      "true_avg_wait_sec_with_penalty": 161.2,
+      "est_revenue_won": 103535990
+    }
+  ]
+}
