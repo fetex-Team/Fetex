@@ -51,7 +51,7 @@ from module1_simulation.passenger_manager import PassengerTimeoutManager, riding
 from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG, use_run_config
 from module1_simulation.holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
-from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
+from module4_dispatch.custom_dispatchers import make_dispatcher
 from module1_simulation.step_snapshot import fetch_idle_taxis
 from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer  # 추가
 from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 2] 호출 로그 기록 (feat3, 병합)
@@ -131,7 +131,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     # 매칭 알고리즘을 바꾸지 않는다.
     taxi_strategy = meta.get("taxi_strategy")
     dispatch_algo = meta.get("taxi_dispatch_algorithm")
-    hungarian_dispatcher = build_hungarian_dispatcher(_sumo_cfg) if dispatch_algo == "hungarian" else None
+    hungarian_dispatcher = make_dispatcher(dispatch_algo, _sumo_cfg)  # hungarian/custom_* (SUMO 내장이면 None)
 
     # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
     # dispatcher를 넘겨주면, 이미 Hungarian이 예약을 배정한 승객의 강제제거를 한 스텝
@@ -440,8 +440,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                             if getattr(spawn_manager, "mean_fare_won", None) else None),
         "external_away": away_model.summary() if away_model is not None else None,
         "forecast_reposition": forecast_repositioner.summary() if forecast_repositioner is not None else None,
-        "dispatch_cost": (hungarian_dispatcher.cost_mode if hungarian_dispatcher is not None else None),
-        "dispatch_cost_stats": (dict(hungarian_dispatcher.cost_stats) if hungarian_dispatcher is not None else None),
+        "dispatch_cost": getattr(hungarian_dispatcher, "cost_mode", None),  # 헝가리안만 비용 방식이 있음
+        "dispatch_cost_stats": (dict(hungarian_dispatcher.cost_stats) if hasattr(hungarian_dispatcher, "cost_stats") else None),
         "waits": waits,
     }
 

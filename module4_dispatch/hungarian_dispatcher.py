@@ -18,8 +18,9 @@ SUMO device.taxi.dispatch-algorithm이 "traci"면, 승객 예약이 생겨도 SU
      - cost_mode="euclidean"(예전): 택시 좌표와 승객 도로 시작점 사이 직선 거리(m)
   4) traci.vehicle.dispatchTaxi(vehID, [reservationID])로 실제 배정한다.
 
-[사용법] measure_wait_time.py / run_simulation.py의 시뮬레이션 루프 안에서:
-    dispatcher = HungarianDispatcher() if meta.get("taxi_dispatch_algorithm") == "hungarian" else None
+[사용법] 직접 만들지 말고 module4_dispatch.custom_dispatchers.make_dispatcher(algo, sumo_cfg)를 쓴다
+(dispatch_cost에 맞는 비용 방식을 고름). 시뮬레이션 루프 안에서:
+    dispatcher = make_dispatcher(meta.get("taxi_dispatch_algorithm"), sumo_cfg_path)
     ...
     while step < max_steps:
         traci.simulationStep()

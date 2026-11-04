@@ -156,13 +156,19 @@ class CustomRouteExtensionDispatcher:
 # ----------------------------------------------------------------------------
 CUSTOM_ALGOS = ("hungarian", "custom_greedy", "custom_routeExtension")
 
-def make_dispatcher(algo: str):
-    """taxi_dispatch_algorithm 값 -> 파이썬 배차기 (SUMO 내장 알고리즘이면 None)."""
+def make_dispatcher(algo: str, sumo_cfg_path: str = None):
+    """taxi_dispatch_algorithm 값 -> 파이썬 배차기 (SUMO 내장 알고리즘이면 None).
+
+    GUI 실행(run_simulation)·측정(measure_wait_time)·RL 학습(rl_env)이 모두 이 함수 하나로 배차기를 만든다.
+    build_env는 CUSTOM_ALGOS일 때 SUMO dispatch-algorithm을 "traci"로 두므로, 여기서 배차기를 만들지 않으면
+    아무도 택시를 배정하지 않는다. hungarian은 config.json의 dispatch_cost(network/euclidean)를 따르며,
+    network이면 sumo_cfg_path의 도로망으로 이동시간 표를 만든다.
+    """
     if algo == "custom_greedy":
         return CustomGreedyDispatcher()
     if algo == "custom_routeExtension":
         return CustomRouteExtensionDispatcher()
     if algo == "hungarian":
-        from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
-        return HungarianDispatcher()
+        from module4_dispatch.hungarian_dispatcher import build_hungarian_dispatcher
+        return build_hungarian_dispatcher(sumo_cfg_path)
     return None

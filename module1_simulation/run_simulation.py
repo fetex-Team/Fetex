@@ -76,7 +76,7 @@ def run_sumo_gui(sumo_binary: str = "sumo-gui", output_dir=None, gui_delay: floa
     )
 
     # 파이썬 배차기(hungarian/custom_*). SUMO 내장 알고리즘이면 None
-    hungarian_dispatcher = make_dispatcher(meta.get("taxi_dispatch_algorithm"))
+    hungarian_dispatcher = make_dispatcher(meta.get("taxi_dispatch_algorithm"), sumo_cfg)
 
     # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
     pax_manager = PassengerTimeoutManager(

@@ -23,7 +23,7 @@ from module1_simulation.passenger_manager import PassengerTimeoutManager
 from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
 from module1_simulation.holiday_utils import pick_run_date
-from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
+from module4_dispatch.custom_dispatchers import make_dispatcher
 from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
 
 N_ZONES = len(ZONE_CATEGORIES)
@@ -121,7 +121,7 @@ class TaxiRepositionEnv(gym.Env):
         episode_date = self._pick_episode_date()
 
         dispatch_algo = self.meta.get("taxi_dispatch_algorithm", "greedy")
-        self.dispatcher = build_hungarian_dispatcher(self.sumo_cfg_path) if dispatch_algo == "hungarian" else None
+        self.dispatcher = make_dispatcher(dispatch_algo, self.sumo_cfg_path)  # hungarian/custom_* (SUMO 내장이면 None)
         
         sim_start_hour = self.meta.get("sim_start_hour", 0)
         
