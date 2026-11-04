@@ -1,5 +1,4 @@
 import os
-import sys
 import urllib.request
 import subprocess
 import xml.etree.ElementTree as ET
@@ -7,7 +6,6 @@ import tempfile
 import time
 
 # 프로젝트 루트 경로 추가
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 OSM_API_URL = "https://api.openstreetmap.org/api/0.6/map?bbox={lng_min},{lat_min},{lng_max},{lat_max}"

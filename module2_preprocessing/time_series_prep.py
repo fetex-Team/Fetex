@@ -19,12 +19,10 @@
 - 유일성: (time_bucket, h3_index) 중복 → ValueError
 - 검사 함수 validate_panel()은 create_features 입구에서 항상 호출된다 (학습·온라인 추론 공통 경로).
 """
-import sys
 import os
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config_loader import CFG
 from module2_preprocessing.time_features import add_time_features, TIME_FEATURE_COLS
 

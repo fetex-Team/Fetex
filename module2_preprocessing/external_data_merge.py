@@ -30,7 +30,6 @@ is_rain = precipitation > 0 (Data Spec 3장).
 
 공휴일(외부 달력 데이터)은 time_features.add_time_features가 붙인다 (holidays 패키지 KR).
 """
-import sys
 import os
 import glob
 import re
@@ -38,7 +37,6 @@ import warnings
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config_loader import CFG
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -7,13 +7,10 @@ module4_dispatch/rl_env.py
 
 import os
 import random
-import sys
 import numpy as np
 import traci
 import module1_simulation.vehicle_subscriptions as vehicle_subscriptions
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 import gymnasium as gym
 from gymnasium import spaces

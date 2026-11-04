@@ -14,7 +14,6 @@ interval마다 rl_env.py가 실제 관측치를 update()로 넣어줘야 함.
 (이력이 max_lag만큼 안 쌓였을 때는 0으로 대체 — 시뮬레이션 초반 워밍업 구간)
 """
 import os
-import sys
 from collections import deque
 
 import datetime
@@ -23,8 +22,6 @@ import numpy as np
 import pandas as pd
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 from config_loader import CFG
 
