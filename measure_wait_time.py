@@ -484,33 +484,39 @@ def print_result(label: str, result: dict):
         print(" - 탑승한 승객이 없어 대기시간을 계산할 수 없습니다.")
 
 
-def compare_strategies():
-    """patrol vs prepositioned 두 전략을 순차 실행해서 비교"""
+def _compare_two(kind: str, options, apply_option):
+    """options 두 개를 순차 실행해서 평균 대기시간 비교. apply_option(값)이 이번 실행 설정을 바꾼다
+    (config.json은 그대로, 실행용 설정 파일 사용). kind는 출력용 이름("전략"/"알고리즘")."""
     results = {}
-    for strategy in ("patrol", "prepositioned"):
-        print(f"\n########## 전략 '{strategy}' 시뮬레이션 준비 중 ##########")
-        set_strategy_in_config(strategy)
+    for opt in options:
+        print(f"\n########## {kind} '{opt}' 시뮬레이션 준비 중 ##########")
+        apply_option(opt)
         rebuild_env()
         result = run_and_measure()
-        results[strategy] = result
-        print_result(strategy, result)
+        results[opt] = result
+        print_result(opt, result)
 
-    print("\n===== [최종 비교] patrol vs prepositioned =====")
-    a, b = results["patrol"], results["prepositioned"]
-    # 타임아웃 페널티 포함 지표로 비교 -- 배차 실패(타임아웃)가 많은 쪽이
-    # 픽업만 기준으로는 오히려 좋게 보이는 착시를 막기 위함
-    a_metric, b_metric = a.get("true_avg_wait_sec_with_penalty"), b.get("true_avg_wait_sec_with_penalty")
+    name_a, name_b = options
+    print(f"\n===== [최종 비교] {name_a} vs {name_b} =====")
+    # 타임아웃 페널티 포함 지표로 비교 -- 배차 실패(타임아웃)가 많은 쪽이 픽업만 기준으로는
+    # 오히려 좋게 보이는 착시를 막기 위함 (실제로 greedy 56.3% 개선 → 타임아웃 포함 14.5%였던 사례)
+    a_metric = results[name_a].get("true_avg_wait_sec_with_penalty")
+    b_metric = results[name_b].get("true_avg_wait_sec_with_penalty")
     if a_metric is not None and b_metric is not None:
         diff = a_metric - b_metric
         pct = (diff / a_metric * 100) if a_metric else 0
-        better = "prepositioned" if diff > 0 else "patrol"
-        print(f" - patrol 평균 대기(타임아웃 포함): {a_metric}초")
-        print(f" - prepositioned 평균 대기(타임아웃 포함): {b_metric}초")
-        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) — '{better}' 전략이 더 나음")
+        better = name_b if diff > 0 else name_a
+        print(f" - {name_a} 평균 대기(타임아웃 포함): {a_metric}초")
+        print(f" - {name_b} 평균 대기(타임아웃 포함): {b_metric}초")
+        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) - '{better}' {kind}이 더 나음")
     else:
-        print(" - 두 전략 중 하나 이상에서 측정 실패 (탑승자 없음). 승객/시간대 설정을 확인하세요.")
-
+        print(" - 둘 중 하나 이상에서 측정 실패 (탑승자 없음). 시간대/승객 설정을 확인하세요.")
     return results
+
+
+def compare_strategies():
+    """patrol vs prepositioned 두 전략을 순차 실행해서 비교"""
+    return _compare_two("전략", ("patrol", "prepositioned"), set_strategy_in_config)
 
 
 def set_dispatch_algorithm_in_config(algo: str):
@@ -520,31 +526,7 @@ def set_dispatch_algorithm_in_config(algo: str):
 
 def compare_dispatch_algorithms(algo_a: str = "greedy", algo_b: str = "hungarian"):
     """두 배차 알고리즘(A vs B)을 순차 실행해서 평균 대기시간 비교"""
-    results = {}
-    for algo in (algo_a, algo_b):
-        print(f"\n########## 배차 알고리즘 '{algo}' 시뮬레이션 준비 중 ##########")
-        set_dispatch_algorithm_in_config(algo)
-        rebuild_env()
-        result = run_and_measure()
-        results[algo] = result
-        print_result(algo, result)
-
-    print(f"\n===== [최종 비교] {algo_a} vs {algo_b} =====")
-    a, b = results[algo_a], results[algo_b]
-    # 타임아웃 페널티 포함 지표로 비교 -- 아까 실제 테스트(greedy 56.3% 개선처럼 보였다가
-    # 타임아웃 포함하면 14.5%로 줄어든 것)에서 확인된 착시를 여기서도 막기 위함
-    a_metric, b_metric = a.get("true_avg_wait_sec_with_penalty"), b.get("true_avg_wait_sec_with_penalty")
-    if a_metric is not None and b_metric is not None:
-        diff = a_metric - b_metric
-        pct = (diff / a_metric * 100) if a_metric else 0
-        better = algo_b if diff > 0 else algo_a
-        print(f" - {algo_a} 평균 대기(타임아웃 포함): {a_metric}초")
-        print(f" - {algo_b} 평균 대기(타임아웃 포함): {b_metric}초")
-        print(f" - 차이: {abs(diff):.1f}초 ({abs(pct):.1f}%) — '{better}' 알고리즘이 더 나음")
-    else:
-        print(" - 둘 중 하나 이상에서 측정 실패. 시간대/승객 설정을 확인하세요.")
-
-    return results
+    return _compare_two("알고리즘", (algo_a, algo_b), set_dispatch_algorithm_in_config)
 
 
 if __name__ == "__main__":

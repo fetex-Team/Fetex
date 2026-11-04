@@ -50,11 +50,10 @@ def feature_groups(max_lag: int, rs: int, rl: int) -> list:
 def make_model(kind: str):
     if kind in ("auto", "xgb"):
         try:
-            from xgboost import XGBRegressor
+            import xgboost  # noqa: F401  (설치 여부 확인)
             from sklearn.multioutput import MultiOutputRegressor
-            return "xgboost", lambda: MultiOutputRegressor(XGBRegressor(
-                n_estimators=CFG.get("xgb_n_estimators", 100), max_depth=CFG.get("xgb_max_depth", 6),
-                learning_rate=CFG.get("xgb_learning_rate", 0.1), random_state=42, verbosity=0))
+            from module3_prediction.xgb_factory import build_xgboost_model
+            return "xgboost", lambda: MultiOutputRegressor(build_xgboost_model(verbosity=0))
         except ImportError:
             if kind == "xgb":
                 raise

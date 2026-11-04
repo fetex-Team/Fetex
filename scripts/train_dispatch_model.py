@@ -30,7 +30,6 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.multioutput import MultiOutputRegressor
-from xgboost import XGBRegressor
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -40,6 +39,7 @@ from module2_preprocessing.log_selection import selected_log_paths              
 from module2_preprocessing.pipeline import build_feature_table   # noqa: E402
 from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
 from module3_prediction.evaluate import calculate_metrics, fmt_pct                           # noqa: E402
+from module3_prediction.xgb_factory import build_xgboost_model  # noqa: E402
 
 MODEL_PATH = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
 
@@ -81,11 +81,9 @@ def main(log_paths=None, external_csv=None):
     print(f"[학습] {len(X_tr):,}행 (< {cuts['test_cut']}), 테스트 {len(X_te):,}행, "
           f"피처 {len(features)}개, 타겟 {targets}")
 
-    # module3_prediction.models.build_xgboost_model과 같은 설정.
+    # 다른 학습 스크립트와 같은 생성 함수(설정·시드 공통).
     # (models.py는 torch를 항상 import해서, torch 미설치 환경에서도 돌도록 여기서 직접 구성)
-    model = MultiOutputRegressor(XGBRegressor(
-        n_estimators=CFG["xgb_n_estimators"], max_depth=CFG["xgb_max_depth"],
-        learning_rate=CFG["xgb_learning_rate"], random_state=CFG.get("xgb_random_state", 42)))
+    model = MultiOutputRegressor(build_xgboost_model())
     model.fit(X_tr, Y_tr)
 
     pred = np.maximum(0, model.predict(X_te))

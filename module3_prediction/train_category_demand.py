@@ -18,7 +18,6 @@ import os
 import sys
 
 import joblib
-from xgboost import XGBRegressor
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -28,6 +27,7 @@ from config_loader import CFG
 from module2_preprocessing.log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 from module2_preprocessing.time_series_prep import time_based_split
 from module2_preprocessing.pipeline import build_feature_table
+from module3_prediction.xgb_factory import build_xgboost_model
 
 # [2026-09-21 중복 집계 수정] train.py와 같은 이유로 레거시 소스는 더 이상 합치지 않음.
 #   data/sim_logs/demand_log_*.csv        : measure_wait_time.py / 병렬 워커가 남기는 새 로그 (사용)
@@ -86,12 +86,7 @@ def main(log_glob: str = None, out_path: str = OUT_PATH):
         # [병합 수정] y를 현재 칸 demand -> t+1 예측(y_h1)로 교체: train.py / RL의 예측 지평과 일치.
         X_train, y_train = train_df[feature_cols].fillna(0), train_df[TARGET].fillna(0)
         X_test, y_test = test_df[feature_cols].fillna(0), test_df[TARGET].fillna(0)
-        model = XGBRegressor(
-            n_estimators=int(CFG["xgb_n_estimators"]),
-            max_depth=int(CFG["xgb_max_depth"]),
-            learning_rate=float(CFG["xgb_learning_rate"]),
-            random_state=int(CFG["xgb_random_state"]),
-        )
+        model = build_xgboost_model()
         model.fit(X_train, y_train)
         rmse = ((model.predict(X_test) - y_test) ** 2).mean() ** 0.5
         print(f"[{category}] Train {len(X_train)} / Test {len(X_test)} | RMSE {rmse:.3f}")
