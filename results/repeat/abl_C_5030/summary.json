@@ -1,0 +1,44 @@
+{
+  "dates": [
+    "2026-09-08"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "patrol": {
+      "service_rate": {
+        "mean": 0.9049,
+        "n": 1
+      },
+      "n_timeout_removed": {
+        "mean": 485.0,
+        "n": 1
+      },
+      "avg_wait_sec": {
+        "mean": 188.6,
+        "n": 1
+      },
+      "p90_wait_sec": {
+        "mean": 339.0,
+        "n": 1
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 216.5,
+        "n": 1
+      },
+      "est_revenue_won": {
+        "mean": 80316162.0,
+        "n": 1
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-08": true
+  },
+  "scenario": "base",
+  "overrides": {
+    "map_bus_lanes": "bus_only",
+    "map_speed_limits": "seoul_5030",
+    "signal_plans": "guess",
+    "speed_profile": "free_flow"
+  }
+}
