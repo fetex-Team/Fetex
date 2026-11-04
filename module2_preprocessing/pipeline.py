@@ -80,17 +80,24 @@ def _time_range(df: pd.DataFrame):
 
 def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizons: int = None,
                         weather_path: str = None, h3_resolution: int = None, dropna: bool = True,
-                        verbose: bool = True, max_missing_ratio: float = None, all_cells=None) -> pd.DataFrame:
-    """all_cells: 지도 전체 H3 셀 목록. 주면 호출이 없는 셀도 0 수요로 포함 (서빙 시 셀 목록 일치용)."""
+                        verbose: bool = True, max_missing_ratio: float = None, all_cells=None,
+                        spatial_col: str = "h3_index") -> pd.DataFrame:
+    """all_cells: 지도 전체 공간 단위 목록. 주면 호출이 없는 단위도 0 수요로 포함 (서빙 시 목록 일치용).
+    spatial_col: "h3_index"(기본, H3 셀) 또는 "category"(POI 구역 — RL 선배치용 카테고리 수요 모델,
+    module2_preprocessing.category_indexing으로 도로→구역 매핑). 이후 집계·날씨·피처 단계는 같다."""
     df = load_logs(log_paths)
     start, end = _time_range(df)
 
     # 1) 공간 인덱싱
-    df = SpatialIndexer(h3_resolution=h3_resolution).process_dataframe(df, verbose=verbose)
+    if spatial_col == "category":
+        from module2_preprocessing.category_indexing import CategoryIndexer
+        df = CategoryIndexer().process_dataframe(df)
+    else:
+        df = SpatialIndexer(h3_resolution=h3_resolution).process_dataframe(df, verbose=verbose)
 
-    # 2) (셀 × 칸) 집계 + 0 채움
+    # 2) (공간 단위 × 칸) 집계 + 0 채움
     prep = TimeSeriesPreprocessor(freq=freq, max_lag=max_lag, horizons=horizons)
-    agg = prep.aggregate_demands(df, start=start, end=end, all_cells=all_cells)
+    agg = prep.aggregate_demands(df, spatial_col=spatial_col, start=start, end=end, all_cells=all_cells)
 
     # 3) 외부 데이터 (5분 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
     # 학습 경로: 날씨 결측률 상한 검사 (Data Spec 5장 5% 미만). config weather_missing_max_ratio 로 조절, None이면 끔
@@ -98,12 +105,12 @@ def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizo
                               max_missing_ratio=max_missing_ratio if max_missing_ratio is not None else CFG.get("weather_missing_max_ratio", 0.05))
 
     # 4) 피처 + 타겟
-    feat = prep.create_features(agg, dropna=dropna, verbose=verbose)
+    feat = prep.create_features(agg, spatial_col=spatial_col, dropna=dropna, verbose=verbose)
     feat.attrs["feature_cols"] = list(feat.attrs.get("feature_cols", [])) + [c for c in EXTERNAL_FEATURE_COLS if c in feat.columns]
     feat.attrs["target_cols"] = target_columns(feat)
     feat.attrs["freq"] = prep.freq
     if verbose:
-        print(f"[피처 테이블] {len(feat):,}행 × 피처 {len(feat.attrs['feature_cols'])}개, 셀 {feat['h3_index'].nunique()}개, "
+        print(f"[피처 테이블] {len(feat):,}행 × 피처 {len(feat.attrs['feature_cols'])}개, {spatial_col} {feat[spatial_col].nunique()}개, "
               f"시간칸 {feat['time_bucket'].nunique()}개 ({prep.freq}), 타겟 {feat.attrs['target_cols']}")
     return feat
 

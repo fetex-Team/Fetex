@@ -18,7 +18,6 @@ import os
 import sys
 
 import joblib
-import pandas as pd
 from xgboost import XGBRegressor
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -27,9 +26,8 @@ if PROJECT_ROOT not in sys.path:
 
 from config_loader import CFG
 from module2_preprocessing.log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
-from module2_preprocessing.category_indexing import CategoryIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, time_based_split
-from module2_preprocessing.external_data_merge import merge_external_data  # train.py와 동일하게 재사용
+from module2_preprocessing.time_series_prep import time_based_split
+from module2_preprocessing.pipeline import build_feature_table
 
 # [2026-09-21 중복 집계 수정] train.py와 같은 이유로 레거시 소스는 더 이상 합치지 않음.
 #   data/sim_logs/demand_log_*.csv        : measure_wait_time.py / 병렬 워커가 남기는 새 로그 (사용)
@@ -47,33 +45,18 @@ OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pk
 CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]
 
 
-def _load_all_demand_logs(log_glob: str = None):
-    """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제).
-    log_glob을 주면 그 파일들만 쓴다 (예: 실데이터 보정 로그 data/real_demand_logs/demand_log_*.csv)."""
+def main(log_glob: str = None, out_path: str = OUT_PATH):
+    # 학습 로그: --logs 글롭, 없으면 config_gui '학습 로그 선택'(data/sim_logs)
     paths = sorted(glob.glob(log_glob)) if log_glob else selected_log_paths(DEMAND_LOG_DIR)
     if not paths:
-        return None
-    frames = [pd.read_csv(p, parse_dates=["pickup_datetime"]) for p in paths]
-    merged = pd.concat(frames, ignore_index=True)
-    merged = merged.drop_duplicates(subset=["pickup_datetime", "latitude", "longitude"])
-    print(f"[안내] 로그 {len(paths)}개에서 총 {len(merged)}건 로드")
-    return merged
-
-
-def main(log_glob: str = None, out_path: str = OUT_PATH):
-    df = _load_all_demand_logs(log_glob)
-    if df is None:
         print("[에러] data/sim_logs/demand_log_*.csv 로그가 없습니다. "
               "먼저 `python measure_wait_time.py`를 한 번 이상 돌려주세요.")
         return
 
-    indexer = CategoryIndexer()  # 기본: module1_simulation/sumo_config/ 사용
-    df = indexer.process_dataframe(df)
-    df = merge_external_data(df)  # train.py와 동일한 순서: 집계 전에 원본 로그에 날씨/주말 피처 결합
-
-    prep = TimeSeriesPreprocessor(max_lag=CFG["max_lag"])
-    agg_df = prep.aggregate_demands(df, timestamp_col="pickup_datetime", spatial_col="category")
-    feature_df = prep.create_features(agg_df, spatial_col="category")
+    # H3 모델(train.py·demand_v2)과 같은 공용 파이프라인을 카테고리 단위로 실행
+    # (로그 검증, 시뮬 시작 시각, 칸 집계 후 날씨 병합 → 날씨 피처가 학습에 들어감)
+    feature_df = build_feature_table(paths, max_lag=CFG["max_lag"], spatial_col="category",
+                                     all_cells=CATEGORY_LIST)
 
     if feature_df.empty:
         print("[에러] lag/rolling 생성 후 데이터가 하나도 안 남았습니다. 로그를 더 쌓아주세요.")
