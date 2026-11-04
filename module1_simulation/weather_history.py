@@ -8,47 +8,35 @@ data/external/weather_<지역>_<시작>_<종료>.csv (time, temperature, precipi
 """
 from __future__ import annotations
 
-import csv
 import datetime as _dt
-import glob
 import os
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
-EXTERNAL_DIR = os.path.join(ROOT, "data", "external")
+from module2_preprocessing.external_data_merge import EXTERNAL_DIR, load_weather, weather_files
+
 _CACHE: dict[str, dict] = {}
 
 
 def _load_file(path: str) -> dict:
+    """파일 → {(날짜, 시): (강수, 기온, 풍속)}. 읽기·범위 검사는 학습과 같은 load_weather를 쓴다."""
     if path in _CACHE:
         return _CACHE[path]
-    by_hour = {}
-    with open(path, "r", encoding="utf-8-sig", newline="") as f:
-        for r in csv.DictReader(f):
-            try:
-                t = _dt.datetime.fromisoformat(r["time"].strip())
-            except (KeyError, ValueError):
-                continue
-            def num(k):
-                v = (r.get(k) or "").strip()
-                return float(v) if v not in ("", "None", "nan") else None
-            by_hour[(t.date(), t.hour)] = (num("precipitation"), num("temperature"), num("wind_speed"))
+    w = load_weather(path)
+
+    def num(v):
+        return None if v != v else float(v)  # NaN → None
+    by_hour = {(t.date(), t.hour): (num(p), num(tc), num(ws))
+               for t, p, tc, ws in zip(w["time"], w["precipitation"], w["temperature"], w["wind_speed"])}
     _CACHE[path] = by_hour
     return by_hour
-
-
-def weather_files(region: str | None = None, directory: str = EXTERNAL_DIR) -> list[str]:
-    """실측 날씨 파일 목록 (합성 자료 weather_from_external.csv는 제외)."""
-    pat = f"weather_{region}_*.csv" if region else "weather_*.csv"
-    return sorted(p for p in glob.glob(os.path.join(directory, pat))
-                  if os.path.basename(p) != "weather_from_external.csv")
 
 
 def load_hourly_weather(date, region: str | None = None, directory: str = EXTERNAL_DIR,
                         min_hours: int = 20) -> dict | None:
     """date(YYYY-MM-DD 또는 date)의 시간별 실측 날씨. {'precipitation': [24], 'temperature': [24],
-    'wind_speed': [24], 'source': 파일명} 또는 None. 빠진 시간은 강수 0으로 둔다."""
+    'wind_speed': [24], 'source': 파일명} 또는 None. 빠진 시간은 강수 0으로 둔다.
+    파일은 학습·예측과 같은 우선순위(종료일 늦은 순)로 보고, 그날을 min_hours 이상 덮는 첫 파일을 쓴다."""
     d = _dt.date.fromisoformat(str(date)) if not isinstance(date, _dt.date) else date
-    for path in reversed(weather_files(region, directory) or weather_files(None, directory)):
+    for path in weather_files(region, directory):
         data = _load_file(path)
         rows = [data.get((d, h)) for h in range(24)]
         have = sum(r is not None and r[0] is not None for r in rows)

@@ -46,19 +46,36 @@ EXTERNAL_DIR = os.path.join(ROOT, "data", "external")
 WEATHER_COLS = ["temperature", "precipitation", "wind_speed"]
 
 
-def find_weather_file(region: str = None) -> str:
-    """data/external/weather_<지역>_<시작>_<종료>.csv 중 종료일이 가장 늦고, 같으면 기간이 가장 긴 파일 (없으면 None).
-    (이름순 정렬은 시작일이 늦은 짧은 파일을 고르는 문제가 있어 날짜로 비교)"""
-    region = region or CFG.get("region", "")
-    files = glob.glob(os.path.join(EXTERNAL_DIR, f"weather_{region}_*.csv")) or \
-            glob.glob(os.path.join(EXTERNAL_DIR, "weather_*.csv"))
+# 합성 외부 관측을 날씨 표로 바꾼 파일 (scripts/train_dispatch_model.py, scripts/feature_ablation.py가 씀).
+# 실측 날씨가 아니라서 자동 선택에서는 제외하고, 쓸 때는 경로를 직접 넘긴다.
+SYNTHETIC_WEATHER_FILES = ("weather_from_external.csv", "weather_from_external_5min.csv")
+
+
+def weather_files(region: str = None, directory: str = None) -> list:
+    """실측 날씨 파일 목록 — 종료일이 늦은 순, 같으면 기간이 긴 순 (합성 변환 파일 제외).
+    region 파일이 없으면 지역 무관 weather_*.csv 전체. 학습·예측(find_weather_file)과
+    수요 생성(module1_simulation.weather_history)이 같은 목록·같은 순서를 쓴다.
+    (이름순 정렬은 시작일이 늦은 짧은 파일을 먼저 고르는 문제가 있어 날짜로 비교)"""
+    directory = directory or EXTERNAL_DIR
+
+    def _list(pattern):
+        return [p for p in glob.glob(os.path.join(directory, pattern))
+                if os.path.basename(p) not in SYNTHETIC_WEATHER_FILES]
+
+    files = (_list(f"weather_{region}_*.csv") if region else []) or _list("weather_*.csv")
 
     def _key(path):
         dates = [pd.Timestamp(d) for d in re.findall(r"\d{4}-\d{2}-\d{2}", os.path.basename(path))]
         if not dates:
             return (pd.Timestamp.min, 0)
         return (dates[-1], (dates[-1] - dates[0]).days)
-    return max(files, key=_key) if files else None
+    return sorted(files, key=_key, reverse=True)
+
+
+def find_weather_file(region: str = None) -> str:
+    """학습·예측에 쓸 실측 날씨 파일 1개 (weather_files의 첫 번째, 없으면 None)."""
+    files = weather_files(region or CFG.get("region", ""))
+    return files[0] if files else None
 
 
 def load_weather(path: str) -> pd.DataFrame:
