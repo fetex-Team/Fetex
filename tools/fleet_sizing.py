@@ -20,6 +20,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+from worker_protocol import emit_result, run_worker  # noqa: E402  (tools/ 같은 폴더)
 
 
 def worker(config_path: str, config_dir: str):
@@ -33,7 +34,7 @@ def worker(config_path: str, config_dir: str):
     d = ROOT / "module1_simulation" / config_dir
     res = run_and_measure(meta_path=str(d / "runtime_meta.json"), sumo_cfg_path=str(d / "simulation.sumocfg"))
     res.pop("waits", None)
-    print("@@RESULT@@" + json.dumps(res, ensure_ascii=False), flush=True)
+    emit_result(res)
 
 
 def run_one(base_cfg: dict, n: int, strategy: str, date: str, log_dir: Path):
@@ -46,15 +47,9 @@ def run_one(base_cfg: dict, n: int, strategy: str, date: str, log_dir: Path):
     log = log_dir / f"fleet_{strategy}_{n}.log"
     t0 = time.time()
     try:
-        with open(log, "w", encoding="utf-8") as lf:
-            proc = subprocess.run([sys.executable, __file__, "--worker", path, f"sumo_config_fleet{n}"],
-                                  cwd=str(ROOT), stdout=subprocess.PIPE, stderr=lf, text=True,
-                                  env={**os.environ, "PYTHONUTF8": "1", "PYTHONHASHSEED": "0"})  # 실행 재현성
-            lf.write(proc.stdout)
-        line = next((l for l in proc.stdout.splitlines() if l.startswith("@@RESULT@@")), None)
-        if line is None:
+        res, _ = run_worker(__file__, [path, f"sumo_config_fleet{n}"], ROOT, log_path=log)  # 해시 시드 고정 = 재현성
+        if res is None:
             raise RuntimeError(f"택시 {n}대 실행 실패 — 로그 확인: {log}")
-        res = json.loads(line[len("@@RESULT@@"):])
         res["num_taxis"] = n
         res["wall_min"] = round((time.time() - t0) / 60, 1)
         return res

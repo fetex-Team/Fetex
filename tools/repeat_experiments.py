@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+from worker_protocol import emit_result, run_worker  # noqa: E402  (tools/ 같은 폴더)
 # 평가 기간(예측·RL 학습 기간 2026-07-13~09-06 이후, 공휴일 제외): 월~일 하루씩 7일, 9~10월에 고르게.
 # 실측 날씨 기준 비 온 날 3일 포함 (9~23시 강수: 10-13 화 2.6mm, 10-18 일 27.5mm, 10-24 토 4.9mm)
 DEFAULT_DATES = ["2026-09-07", "2026-10-13", "2026-10-14", "2026-09-10",   # 월 화 수 목
@@ -50,7 +51,7 @@ def _worker(cfg_path, meta_path):
     from measure_wait_time import run_and_measure
     r = run_and_measure(meta_path=meta_path, sumo_cfg_path=str(Path(meta_path).with_name("simulation.sumocfg")))
     r.pop("waits", None)
-    print("@@RESULT@@" + json.dumps(r, ensure_ascii=False), flush=True)
+    emit_result(r)
 
 
 def _run(cfg_path, base_meta, date, strategy, workdir, log_dir):
@@ -65,15 +66,9 @@ def _run(cfg_path, base_meta, date, strategy, workdir, log_dir):
     mpath.write_text(json.dumps(meta, ensure_ascii=False), encoding="utf-8")
     log = log_dir / f"{date}_{strategy}.log"
     t0 = time.time()
-    with open(log, "w", encoding="utf-8") as lf:
-        p = subprocess.run([sys.executable, __file__, "--worker", cfg_path, str(mpath)], cwd=str(ROOT),
-                           stdout=subprocess.PIPE, stderr=lf, text=True,
-                           env={**os.environ, "PYTHONUTF8": "1", "PYTHONHASHSEED": "0"})
-        lf.write(p.stdout)
-    line = next((l for l in p.stdout.splitlines() if l.startswith("@@RESULT@@")), None)
-    if line is None:
+    r, _ = run_worker(__file__, [cfg_path, mpath], ROOT, log_path=log)
+    if r is None:
         raise RuntimeError(f"{date} {strategy} 실패 — {log}")
-    r = json.loads(line[len("@@RESULT@@"):])
     r.update({"date": date, "strategy": strategy, "wall_min": round((time.time() - t0) / 60, 1)})
     done.parent.mkdir(parents=True, exist_ok=True)
     done.write_text(json.dumps(r, ensure_ascii=False), encoding="utf-8")
