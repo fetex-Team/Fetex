@@ -15,7 +15,7 @@ import torch.optim as optim
 import pandas as pd
 import joblib
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
 from sklearn.preprocessing import StandardScaler
 
 from config_loader import CFG
@@ -28,6 +28,7 @@ from module3_prediction.evaluate import calculate_metrics, fmt_pct
 # 예전에 여기서 직접 부르던 SpatialIndexer/TimeSeriesPreprocessor 호출은
 # pipeline.build_feature_table() 내부로 이미 들어가 있어 더 이상 직접 쓰지 않음.
 from module2_preprocessing.pipeline import build_feature_table
+from module2_preprocessing.time_series_prep import time_based_split
 from module2_preprocessing.sim_log_recorder import latest_log_path
 
 # measure_wait_time.py의 run_and_measure()가 매 스텝 DemandLogRecorder.step()으로 남기는
@@ -58,13 +59,21 @@ TARGET = "y_h1"
 
 
 def prepare_real_sequence_dataset(max_lag=None, log_path=None):
+    """전체 피처 행렬 (분할 전). 학습·평가는 시간 기준으로 나누는 prepare_train_test()를 쓴다."""
+    feature_df, feature_cols = _feature_table(max_lag, log_path)
+    X_mat = feature_df[feature_cols].fillna(0).values
+    y_vec = feature_df[TARGET].fillna(0).values
+    return X_mat, y_vec, feature_cols, (max_lag if max_lag is not None else CFG["max_lag"])
+
+
+def _feature_table(max_lag=None, log_path=None):
     """
     Module 2 파이프라인(module2_preprocessing.pipeline)으로 학습용 피처 테이블 생성.
     - data/sim_logs/demand_log_*.csv (새 로그) + data/raw/simulation_demand_log*.csv (팀원
       쪽에서 축적된 예전 로그) 를 모두 이어 붙여 사용 (log_path를 주면 그 파일/패턴만)
     - [feat3에서 이식] 로그 파일이 몇 개 잡혔는지, 총 몇 건인지 안내 출력 + 건수가 너무 적으면 경고
     - 로그가 하나도 없으면 에러 (가짜 랜덤 데이터 폴백 없음 — 평가 시 혼동 방지)
-    반환: X_mat, y_vec, feature_cols, max_lag  (기존 XGBoost/CNN-LSTM 학습 루프와 호환되는 형태)
+    반환: feature_df(시간·셀·피처·타깃), feature_cols
     """
     max_lag = max_lag if max_lag is not None else CFG["max_lag"]
     # [중복 집계 수정] data/sim_logs만 사용 (위 LEGACY_DEMAND_LOG_GLOB 주석 참고).
@@ -102,25 +111,40 @@ def prepare_real_sequence_dataset(max_lag=None, log_path=None):
     target_cols = feature_df.attrs["target_cols"]
     if TARGET not in target_cols:
         raise ValueError(f"TARGET={TARGET!r}이 피처 테이블의 target_cols({target_cols})에 없습니다.")
+    return feature_df, list(feature_cols)
 
-    # 2D Tabular Feature Matrix (XGBoost용)
-    X_mat = feature_df[feature_cols].fillna(0).values
-    y_vec = feature_df[TARGET].fillna(0).values
 
-    return X_mat, y_vec, feature_cols, max_lag
+def prepare_train_test(max_lag=None, log_path=None):
+    """학습/시험 데이터를 시간 기준으로 나눈다 (마지막 test_size 비율의 시간칸이 시험 구간).
+
+    피처 테이블은 [셀, 시간] 순서라 행 순서로 자르면 '마지막 셀들'이 시험 구간이 되고 같은 시각의 다른 셀이
+    학습에 들어간다. demand_v2(scripts/train_dispatch_model.py)·compare_saved_models와 같은 time_based_split을 쓴다.
+    학습 행은 시간순으로 정렬해 돌려준다 (GridSearch의 TimeSeriesSplit이 과거→미래 순서로 접도록).
+    반환: X_train, X_test, y_train, y_test, feature_cols, cuts({'test_cut': 시험 구간 시작 시각})
+    """
+    feature_df, feature_cols = _feature_table(max_lag, log_path)
+    train_df, _val, test_df, cuts = time_based_split(feature_df, CFG["test_size"])
+    train_df = train_df.sort_values(["time_bucket", "h3_index"])
+    test_df = test_df.sort_values(["time_bucket", "h3_index"])
+    return (train_df[feature_cols].fillna(0).values, test_df[feature_cols].fillna(0).values,
+            train_df[TARGET].fillna(0).values, test_df[TARGET].fillna(0).values, feature_cols, cuts)
 
 
 if __name__ == "__main__":
     SAVED_MODELS = os.path.join(PROJECT_ROOT, 'saved_models')  # 어느 폴더에서 실행해도 프로젝트의 saved_models에 저장
     os.makedirs(SAVED_MODELS, exist_ok=True)
 
-    # 1. 데이터셋 준비 및 Train/Test 분리 (비율은 config.json에서 조절)
-    X_mat, y_vec, feature_cols, seq_len = prepare_real_sequence_dataset()
-    X_train, X_test, y_train, y_test = train_test_split(
-        X_mat, y_vec, test_size=CFG["test_size"], random_state=42, shuffle=False
-    )
+    import argparse
+    ap = argparse.ArgumentParser(description="Module 3: XGBoost(GridSearch) vs CNN-LSTM 학습")
+    ap.add_argument("--logs", default=None,
+                    help="학습 로그 글롭 (예: \"data/real_demand_logs/demand_log_*.csv\"). 생략 시 '학습 로그 선택'의 data/sim_logs 로그")
+    args = ap.parse_args()
 
-    print(f"[데이터 분리 완료] Train: {len(X_train)}개, Test: {len(X_test)}개 | Features: {len(feature_cols)}개 | test_size={CFG['test_size']}")
+    # 1. 데이터셋 준비 및 Train/Test 분리 — 시간 기준 (마지막 test_size 비율의 시간칸이 시험 구간)
+    X_train, X_test, y_train, y_test, feature_cols, cuts = prepare_train_test(log_path=args.logs)
+
+    print(f"[데이터 분리 완료] Train: {len(X_train)}개, Test: {len(X_test)}개 (시험 구간 {cuts['test_cut']} 이후) | "
+          f"Features: {len(feature_cols)}개 | test_size={CFG['test_size']}")
 
     # ------------------------------------------------------------
     # 2. XGBoost 학습, 하이퍼파라미터 튜닝(GridSearch), 평가 및 저장
@@ -146,7 +170,9 @@ if __name__ == "__main__":
 
     base_xgb = build_xgboost_model()
     if n_splits >= 2:
-        grid_search = GridSearchCV(base_xgb, param_grid, cv=n_splits, scoring='neg_root_mean_squared_error')
+        # 시간 순서를 지키는 교차검증 (항상 과거로 학습해 그 뒤 구간으로 검증; 학습 행은 시간순 정렬됨)
+        grid_search = GridSearchCV(base_xgb, param_grid, cv=TimeSeriesSplit(n_splits=n_splits),
+                                   scoring='neg_root_mean_squared_error')
         grid_search.fit(X_train, y_train)
         best_xgb = grid_search.best_estimator_
         print(f"최적 파라미터: {grid_search.best_params_}")

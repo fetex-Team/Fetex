@@ -20,7 +20,6 @@ import sys
 import joblib
 import pandas as pd
 from xgboost import XGBRegressor
-from sklearn.model_selection import train_test_split
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -29,7 +28,7 @@ if PROJECT_ROOT not in sys.path:
 from config_loader import CFG
 from module2_preprocessing.log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 from module2_preprocessing.category_indexing import CategoryIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
+from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, time_based_split
 from module2_preprocessing.external_data_merge import merge_external_data  # train.py와 동일하게 재사용
 
 # [2026-09-21 중복 집계 수정] train.py와 같은 이유로 레거시 소스는 더 이상 합치지 않음.
@@ -61,7 +60,7 @@ def _load_all_demand_logs(log_glob: str = None):
     return merged
 
 
-def main(log_glob: str = None):
+def main(log_glob: str = None, out_path: str = OUT_PATH):
     df = _load_all_demand_logs(log_glob)
     if df is None:
         print("[에러] data/sim_logs/demand_log_*.csv 로그가 없습니다. "
@@ -89,18 +88,21 @@ def main(log_glob: str = None):
         print(f"[에러] TARGET={TARGET!r}이 피처 테이블의 target_cols({target_cols})에 없습니다.")
         return
 
+    # 시간 기준 분할을 전체 테이블에 한 번만 적용 → 모든 카테고리가 같은 시험 구간을 쓴다 (train.py·demand_v2와 같은 방식)
+    train_all, _val, test_all, cuts = time_based_split(feature_df, CFG["test_size"])
+    print(f"[분할] 시험 구간 {cuts['test_cut']} 이후")
+
     models = {}
     for category in CATEGORY_LIST:
-        cat_df = feature_df[feature_df["category"] == category]
-        if len(cat_df) < 20:
-            print(f"[경고] '{category}' 샘플이 {len(cat_df)}건뿐이라 건너뜁니다 (최소 20건 권장).")
+        train_df = train_all[train_all["category"] == category]
+        test_df = test_all[test_all["category"] == category]
+        if len(train_df) + len(test_df) < 20:
+            print(f"[경고] '{category}' 샘플이 {len(train_df) + len(test_df)}건뿐이라 건너뜁니다 (최소 20건 권장).")
             continue
 
         # [병합 수정] y를 현재 칸 demand -> t+1 예측(y_h1)로 교체: train.py / RL의 예측 지평과 일치.
-        X, y = cat_df[feature_cols].fillna(0), cat_df[TARGET].fillna(0)
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=CFG["test_size"], random_state=int(CFG["train_random_state"]), shuffle=False
-        )
+        X_train, y_train = train_df[feature_cols].fillna(0), train_df[TARGET].fillna(0)
+        X_test, y_test = test_df[feature_cols].fillna(0), test_df[TARGET].fillna(0)
         model = XGBRegressor(
             n_estimators=int(CFG["xgb_n_estimators"]),
             max_depth=int(CFG["xgb_max_depth"]),
@@ -112,14 +114,16 @@ def main(log_glob: str = None):
         print(f"[{category}] Train {len(X_train)} / Test {len(X_test)} | RMSE {rmse:.3f}")
         models[category] = model
 
-    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     joblib.dump({"models": models, "feature_cols": feature_cols, "target": TARGET,
-                 "category_list": list(models.keys())}, OUT_PATH)
-    print(f"[완료] {OUT_PATH} 에 카테고리별 모델 {len(models)}개 저장")
+                 "category_list": list(models.keys())}, out_path)
+    print(f"[완료] {out_path} 에 카테고리별 모델 {len(models)}개 저장")
 
 
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 config_gui에서 고른 data/sim_logs 로그)")
-    main(ap.parse_args().logs)
+    ap.add_argument("--out", default=OUT_PATH, help="저장 경로 (기본 saved_models/category_demand_models.pkl)")
+    a = ap.parse_args()
+    main(a.logs, a.out)

@@ -4,7 +4,6 @@ import joblib
 import numpy as np
 import pandas as pd
 from sklearn.metrics import mean_squared_error, mean_absolute_error
-from sklearn.model_selection import train_test_split
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 if PROJECT_ROOT not in sys.path:
@@ -41,27 +40,29 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
         "WAPE (%)": round(wape, 4) if wape is not None else None,
     }
 
-def evaluate_saved_models():
+def evaluate_saved_models(log_path=None):
+    """저장된 XGBoost와 CNN-LSTM 모델을 train.py와 같은 시간 기준 시험 구간에서 비교 평가"""
     import torch
-    from config_loader import CFG
     from module3_prediction.models import CNNLSTMModel
-    """저장된 XGBoost와 CNN-LSTM 모델을 로드하여 Test 셋에서 성능을 비교 평가"""
     xgb_path = os.path.join(PROJECT_ROOT, 'saved_models/xgboost_demand.pkl')
     dl_path = os.path.join(PROJECT_ROOT, 'saved_models/cnn_lstm_demand.pt')
 
     if not os.path.exists(xgb_path) or not os.path.exists(dl_path):
-        print("[오류] 저장된 모델 파일이 없습니다. 먼저 python train.py를 실행하세요.")
+        print("[오류] 저장된 모델 파일이 없습니다. 먼저 python module3_prediction/train.py를 실행하세요.")
         return
 
     # 1. 평가용 데이터셋 생성 (train.py와 동일한 파이프라인)
-    from module3_prediction.train import prepare_real_sequence_dataset
-    X_mat, y_vec, feature_cols, _ = prepare_real_sequence_dataset()
-    _, X_test, _, y_test = train_test_split(
-        X_mat, y_vec, test_size=CFG["test_size"], random_state=CFG.get("train_random_state", 42), shuffle=False
-    )
+    from module3_prediction.train import prepare_train_test
+    _, X_test, _, y_test, feature_cols, cuts = prepare_train_test(log_path=log_path)
+    print(f"[평가 데이터] 시험 구간 {cuts['test_cut']} 이후 {len(X_test)}행 | 피처 {len(feature_cols)}개")
 
     # 2. XGBoost 평가
     xgb_data = joblib.load(xgb_path)
+    saved_cols = list(xgb_data.get('feature_cols', []))
+    if saved_cols and saved_cols != list(feature_cols):
+        print(f"[오류] 저장된 모델의 피처({len(saved_cols)}개)가 지금 전처리 피처({len(feature_cols)}개)와 다릅니다. "
+              f"python module3_prediction/train.py로 다시 학습하세요.")
+        return
     xgb_model = xgb_data['model']
     xgb_preds = xgb_model.predict(X_test)
     xgb_metrics = calculate_metrics(y_test, xgb_preds)
@@ -109,4 +110,7 @@ def evaluate_saved_models():
 
 
 if __name__ == "__main__":
-    evaluate_saved_models()
+    import argparse
+    ap = argparse.ArgumentParser(description="저장된 Module 3 모델(XGBoost·CNN-LSTM) 비교 평가")
+    ap.add_argument("--logs", default=None, help="평가 로그 글롭 (train.py --logs와 같게 지정)")
+    evaluate_saved_models(ap.parse_args().logs)
