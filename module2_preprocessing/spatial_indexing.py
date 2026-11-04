@@ -48,9 +48,9 @@ class SpatialIndexer:
     """GPS 위도/경도 → H3 셀 ID + Geohash 문자열."""
 
     def __init__(self, h3_resolution: int = None, geohash_precision: int = 7, coord_decimals: int = None):
-        # 근거는 모듈 docstring 참고. config.json 값(기본 9)을 우선 사용.
+        # 근거는 모듈 docstring 참고. config.json 값(현재 8)을 우선 사용.
         self.h3_resolution = h3_resolution if h3_resolution is not None else CFG["h3_resolution"]
-        self.geohash_precision = geohash_precision   # 7자리 ≈ 153m × 153m, res 9(201m)와 비슷한 크기
+        self.geohash_precision = geohash_precision   # 7자리 ≈ 153m × 153m (참고용 보조 인덱스)
         # coord_decimals: None이면 반올림 없이 '완전히 같은 좌표'만 캐시(결과가 apply 방식과 100% 동일).
         #   6을 주면 0.1m 단위로 묶어 캐시 적중률을 높이지만 셀 경계 0.1m 안의 점은 셀이 바뀔 수 있음.
         self.coord_decimals = coord_decimals
