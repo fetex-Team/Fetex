@@ -41,3 +41,16 @@ results/unity_replay/backup/20*
 
 # 개인 인증키 (절대 커밋하지 않음)
 secrets/
+
+# 로그·테스트 캐시·OS/에디터 파일
+*.log
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# GUI 실행마다 쓰는 임시 설정 (config.json은 [적용하기]로만 바뀜)
+results/run_configs/
