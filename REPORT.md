@@ -171,7 +171,7 @@ RL 상태: 구역별 대기 손님·빈 택시·예측 수요 + 시각(19개). �
 - 새 방식에서도 순찰이 1등이다. 순찰 대비 선배치 평균 대기 +9.5초, RL +15.4초(카카오 몫, 7일 모두 길다, p=0.016).
   손님 100%에서는 선배치·RL의 타임아웃이 오히려 늘었다 — 배차가 정확해질수록 "미리 옮겨 두기"의 손해(근처 호출을 놓침)가 더 드러난다.
 - RL은 직선 거리 배차로 학습한 정책이다. 새 배차로 다시 학습하면 달라질 수 있으나, 같은 이유(카테고리 구역 단위 재배치)로 큰 개선은 기대하기 어렵다.
-- 시뮬레이션 속도: 택시 상태 조회를 TraCI 구독으로 묶어 약 17% 빨라졌다(결과는 숫자까지 동일 확인, `vehicle_subscriptions.py`).
+- 시뮬레이션 속도: 택시 상태 조회를 TraCI 구독으로 묶어 약 17% 빨라졌다(결과는 숫자까지 동일 확인, `module1_simulation/vehicle_subscriptions.py`).
 - 테스트: `tests/test_network_cost.py`(일방통행 고리 도로망에서 우회 시간·같은 도로 앞/뒤·도달 불가 처리).
 
 ### 5.6 예측 기반 재배치 (`taxi_strategy = "forecast"`, 설계·근거 `docs/design/04_forecast_repositioning.md`)
@@ -191,7 +191,7 @@ v1은 손님 100%의 바쁜 날 손해(9/10 놓친 손님 973 → 1,392)가 있�
 
 ### 5.7 민감도: 밖으로 나간 택시의 복귀 지연 (`taxi_external_away`)
 기본 가정은 "밖으로 나간 택시만큼 빈 택시가 다시 들어온다"이다. 반대 극단으로 강남구 하차/승차 비율(0.918)만큼만 대체되고
-나머지는 운행시간의 2배 뒤에 돌아오게 하는 시나리오를 넣었다(`external_trip_model.py`, `tools/repeat_experiments.py --scenario external_away`).
+나머지는 운행시간의 2배 뒤에 돌아오게 하는 시나리오를 넣었다(`module1_simulation/external_trip_model.py`, `tools/repeat_experiments.py --scenario external_away`).
 1.5시간 시험 실행에서 28대가 밖으로 나갔다가 돌아왔고 서비스율 97.1%였다. 7일 반복은 후속 과제로 남긴다.
 
 ## 6. Unity 디지털 트윈 재생 (`docs/replay_motion.md`)
@@ -225,7 +225,7 @@ python tools/repeat_experiments.py --jobs 2 --scenario full_demand
 python tools/repeat_experiments.py --jobs 2 --scenario network_dispatch        # 도로 기준 배차
 python tools/repeat_experiments.py --jobs 2 --scenario network_dispatch_full
 python tools/check_determinism.py --hours 1 --strategy rl_prepositioned
-python export_unity_replay.py --stride 5
+python tools/export_unity_replay.py --stride 5
 python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz
 python notebooks/build_notebooks.py
 python tests/test_demand_model.py && python tests/test_weather_history.py && python tests/test_replay_motion.py && python tests/test_module2.py
@@ -303,9 +303,9 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 
 ## 부록 B. 단기 수요 예측 모델 비교(XGBoost·CNN-LSTM) — Module 3 (담당 전우영)
 
-> 관련 코드: `train.py`, `evaluate.py`, `module3_prediction/models.py`, `module3_prediction/train.py`, `module3_prediction/evaluate.py`.  
+> 관련 코드: `module3_prediction/train.py`, `module3_prediction/evaluate.py`, `module3_prediction/models.py`, `module3_prediction/train.py`, `module3_prediction/evaluate.py`.  
 > 가중치 저장소: `saved_models/xgboost_demand.pkl`, `saved_models/cnn_lstm_demand.pt`.  
-> 모델 평가 실행: `python evaluate.py` (또는 `python module3_prediction/evaluate.py`).
+> 모델 평가 실행: `python module3_prediction/evaluate.py` (또는 `python module3_prediction/evaluate.py`).
 
 ### B.1 모델 설계 및 타깃 정의
 - **예측 목적**: H3 육각 격자(Resolution 8) 및 5분 단위 시계열 피처를 기반으로, 현재 시점 $t$에서 **향후 30분($t+1 \sim t+6$, 5분 간격 6개 시점)**의 미래 셀별 택시 호출 수를 동시 예측(Multi-horizon Forecasting).

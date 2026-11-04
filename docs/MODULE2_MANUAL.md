@@ -151,14 +151,14 @@
 1. `module2_preprocessing/pipeline.py`: 단일 진입점
    `build_feature_table(log_paths, freq, horizons, weather_path) -> DataFrame`
    CLI: `python -m module2_preprocessing.pipeline --logs data/sim_logs/*.csv --out data/processed/features.csv`
-2. `train.py`가 `pipeline`을 호출 (전처리 코드 중복 제거)
+2. `module3_prediction/train.py`가 `pipeline`을 호출 (전처리 코드 중복 제거)
 3. `tests/test_module2.py`: T1~T4 최소 완료 조건을 그대로 테스트로 (외부 패키지 없는 환경에서도 돌게 mock 지원)
 4. 문서: `README.md` Module 2 실행법 섹션, `data/README.md`, `REPORT.md` EDA 섹션 초안(노트북 결과 요약)
 
 **최소 완료 조건**
 - [ ] `python tests/test_module2.py` 전부 PASS
 - [ ] CLI 한 줄로 로그 → 피처 CSV 생성, 출력 요약(행 수·셀 수·기간·피처 목록) 표시
-- [ ] `train.py`가 pipeline 출력으로 학습 (기존과 동일 결과 재현)
+- [ ] `module3_prediction/train.py`가 pipeline 출력으로 학습 (기존과 동일 결과 재현)
 - [ ] README에 "Module 2 실행 순서" 3줄 이상
 
 ---
@@ -185,5 +185,5 @@ python tests/test_module2.py                    # T1~T4 검증
 python scripts/fetch_weather_history.py         # T4 날씨 수집 (네트워크)
 python -m module2_preprocessing.pipeline --logs "data/sim_logs/*.csv" --out data/processed/features.csv
 bash 실행_EDA.command                            # T5 노트북 실행 + H3/POI 그림
-python train.py                                 # M3 연동 확인
+python module3_prediction/train.py                                 # M3 연동 확인
 ```

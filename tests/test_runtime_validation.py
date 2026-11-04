@@ -9,10 +9,10 @@ os.environ.setdefault('MOBILITY_CONFIG', str(Path(__file__).resolve().parents[1]
 import pytest
 import traci
 from config_loader import DEFAULT_CONFIG, load_config
-import passenger_spawn_manager as spawn_module
-import passenger_manager as timeout_module
-from passenger_spawn_manager import PassengerSpawnManager
-from passenger_manager import PassengerTimeoutManager
+import module1_simulation.passenger_spawn_manager as spawn_module
+import module1_simulation.passenger_manager as timeout_module
+from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
+from module1_simulation.passenger_manager import PassengerTimeoutManager
 # summarize/runtime_validation은 2번 담당 런타임 검증 브랜치(myth-2)에만 있고 아직 병합되지 않아,
 # 없으면 이 파일 전체를 건너뛴다 (기존 jwy에서도 import 단계에서 실패하던 상태).
 summarize = getattr(pytest.importorskip("measure_wait_time"), "summarize", None)
@@ -158,7 +158,7 @@ def test_future_demand_does_not_stop_early(fake):
 
 
 def test_pending_taxi_counts_toward_fleet_cap(monkeypatch):
-    import taxi_manager
+    import module1_simulation.taxi_manager as taxi_manager
     vehicle=SimpleNamespace(getIDList=lambda:[],getLoadedIDList=lambda:['pending'],getTypeID=lambda vid:'taxi_type')
     api=SimpleNamespace(vehicle=vehicle,exceptions=traci.exceptions)
     monkeypatch.setattr(taxi_manager,'traci',api)
@@ -170,7 +170,7 @@ def test_pending_taxi_counts_toward_fleet_cap(monkeypatch):
 
 
 def test_forecast_protected_taxi_is_not_patrolled(monkeypatch):
-    import taxi_manager
+    import module1_simulation.taxi_manager as taxi_manager
     vehicle=SimpleNamespace(getIDList=lambda:['taxi'],getLoadedIDList=lambda:['taxi'],getTypeID=lambda vid:'taxi_type')
     monkeypatch.setattr(taxi_manager,'traci',SimpleNamespace(vehicle=vehicle,exceptions=traci.exceptions))
     m=taxi_manager.TaxiFleetManager(1,['a'],['a','b'])

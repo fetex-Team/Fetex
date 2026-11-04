@@ -29,7 +29,7 @@
 ### 0-3. 이번에 추가로 고친 것 (지도·외부데이터)
 - **OSM 원본 재사용**: 예전에는 `build_env.py`를 돌릴 때마다(전략별 A/B 실행마다) OSM API에서 지도를 새로 받았다.
   네트워크가 없으면 멈추고, 그 사이 OSM이 수정되면 도로·edge id가 바뀌어 실험 재현이 깨진다.
-  → 같은 범위의 `region.osm.xml`이 있으면 재사용(다른 설정 폴더에 있으면 복사), `FETEX_REFRESH_OSM=1`일 때만 새로 받음 (`real_map_fetch.py`).
+  → 같은 범위의 `region.osm.xml`이 있으면 재사용(다른 설정 폴더에 있으면 복사), `FETEX_REFRESH_OSM=1`일 때만 새로 받음 (`module1_simulation/real_map_fetch.py`).
 - **실측 수요 데이터 연동**: TIMS 500m 격자 승차 통계 + 서울시 시간대 통계 → `docs/real_data_calibration.md`.
 - **Unity 차량 궤적**: 교차로 내부 차선을 지도에 넣고 차선 경로로 보간 → `docs/replay_motion.md`.
 - **pandas 3 호환**: 날씨 병합 시 시간 키 단위(μs/ns) 불일치 오류 수정 (`module2_preprocessing/external_data_merge.py`).
@@ -59,9 +59,9 @@ netconvert 경고(회전 금지 무시·비보호 좌회전 속도)는 둘 다 *
 
 | # | 검증 항목 | 결과 |
 |---|---|---|
-| A | `geo_lookup.py` 좌표 조회 실패 시 `REGION_PRESETS` 폴백 | **정상** (프리셋 5개 지역 전부) — 단, 프리셋 없는 지역에서 결함 2건 |
-| B | `weather_lookup.py` 실패 시 `temp_min/max` 폴백 | **정상** (성공·실패 4개 조합 전부) |
-| C | `real_map_fetch.py` OSM 변환 경고 중 실제 영향 있는 것 선별 | **완료** — 258건 중 84건(33%)이 실제 영향 |
+| A | `module1_simulation/geo_lookup.py` 좌표 조회 실패 시 `REGION_PRESETS` 폴백 | **정상** (프리셋 5개 지역 전부) — 단, 프리셋 없는 지역에서 결함 2건 |
+| B | `module1_simulation/weather_lookup.py` 실패 시 `temp_min/max` 폴백 | **정상** (성공·실패 4개 조합 전부) |
+| C | `module1_simulation/real_map_fetch.py` OSM 변환 경고 중 실제 영향 있는 것 선별 | **완료** — 258건 중 84건(33%)이 실제 영향 |
 
 검증 스크립트를 `tools/`에 넣어 두었으므로 누구나 재현할 수 있다.
 
@@ -190,7 +190,7 @@ Nominatim은 초당 1회 정책이고 코드에도 `time.sleep(1.0)`이 들어 �
 
 ### 방법
 
-`real_map_fetch.py`와 동일한 옵션으로 실제 변환을 수행하고 stderr를 분류했다.
+`module1_simulation/real_map_fetch.py`와 동일한 옵션으로 실제 변환을 수행하고 stderr를 분류했다.
 대상은 `module1_simulation/sumo_config/region.osm.xml` (강남역, 3.4MB).
 
 ```
@@ -244,7 +244,7 @@ Maybe a left-turn lane is missing.
 
 - **대중교통 정류장·노선 관련 127건** (`pt stop`, `pt line`, `Removed invalid stop` 등)
   이 프로젝트는 SUMO에서 버스·지하철을 운행시키지 않는다. 승객은 택시와 도보만 쓴다.
-  `poi_extractor.py`도 버스정류장·지하철입구를 **OSM 원본 노드에서 직접 파싱**하므로
+  `module2_preprocessing/poi_extractor.py`도 버스정류장·지하철입구를 **OSM 원본 노드에서 직접 파싱**하므로
   netconvert가 pt stop을 버려도 구역 배정에는 영향이 없다.
 - **bbox 밖 relation 참조 33건** (`No node/way found for reference`)
   지도를 사각형으로 잘라 받았으니 경계에서 반드시 발생한다. 정상이다.
@@ -310,7 +310,7 @@ except Exception:
 이 상태로 만든 수요 로그는 Module 2·3의 전제를 무너뜨린다.
 
 `pyproj`는 `geopandas`의 의존성이라 정상 설치되면 따라온다. 그런데
-`SETUP_GUIDE.md` FAQ에 "Windows에서 geopandas 설치 에러" 항목이 이미 있다.
+`docs/setup.md` FAQ에 "Windows에서 geopandas 설치 에러" 항목이 이미 있다.
 geopandas 설치가 실패한 채로 넘어가면 정확히 이 상태가 된다.
 
 - 권고 1: `requirements.txt`에 `pyproj`를 명시한다 (geopandas와 무관하게 설치됨).

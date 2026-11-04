@@ -1,6 +1,6 @@
 # 06. 시뮬레이션 속도: TraCI 구독
 
-파일: `vehicle_subscriptions.py`, `taxi_manager.py`, `passenger_manager.py`, `export_unity_replay.py`
+파일: `module1_simulation/vehicle_subscriptions.py`, `module1_simulation/taxi_manager.py`, `module1_simulation/passenger_manager.py`, `tools/export_unity_replay.py`
 
 ---
 
@@ -16,7 +16,7 @@
 | 항목 | 내용 |
 |---|---|
 | 방법 | 택시 상태(탑승 승객, 현재 도로, 경로 위치)를 TraCI **구독**으로 받아 스텝당 왕복 1번으로 묶음 |
-| 공용 관리 | `traci.vehicle.subscribe`는 같은 차량에 다시 걸면 변수 목록을 덮어씀 → Unity 기록기와 택시 매니저가 서로 지우지 않게 차량별 변수 합집합을 `vehicle_subscriptions.py`에서 관리 |
+| 공용 관리 | `traci.vehicle.subscribe`는 같은 차량에 다시 걸면 변수 목록을 덮어씀 → Unity 기록기와 택시 매니저가 서로 지우지 않게 차량별 변수 합집합을 `module1_simulation/vehicle_subscriptions.py`에서 관리 |
 | 제외한 것 | 경로 전체(VAR_EDGES): 순찰 택시는 경로가 수천 개로 길어져 매 스텝 받으면 오히려 느려짐 (1차 시도에서 확인) → 필요할 때만 직접 조회 |
 
 ## 값이 정확한 이유

@@ -18,11 +18,11 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlparse
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 sys.path.insert(0, ROOT)
-from log_selection import LOG_DIR, parse_log_name  # noqa: E402
+from module2_preprocessing.log_selection import LOG_DIR, parse_log_name  # noqa: E402
 
-HTML = os.path.join(ROOT, "demand_analyzer.html")
+HTML = os.path.join(os.path.dirname(os.path.abspath(__file__)), "demand_analyzer.html")
 NET_CANDIDATES = [
     os.path.join(ROOT, "module1_simulation", "sumo_config", "grid.net.xml"),
     os.path.join(ROOT, "module1_simulation", "sumo_config_combo0", "grid.net.xml"),

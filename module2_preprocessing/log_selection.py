@@ -10,7 +10,7 @@ import os
 import re
 from datetime import datetime
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 LOG_DIR = os.path.join(ROOT, "data", "sim_logs")
 SELECTION_PATH = os.path.join(LOG_DIR, "selected_logs.json")
 
@@ -42,7 +42,7 @@ def list_logs(log_dir: str = None) -> list:
     """[{filename, label, date, is_holiday, rows}] 날짜순."""
     log_dir = log_dir or LOG_DIR
     try:
-        from holiday_utils import is_holiday_date
+        from module1_simulation.holiday_utils import is_holiday_date
     except Exception:  # holiday_utils 못 읽어도 목록은 보여줌
         is_holiday_date = None
     out = []

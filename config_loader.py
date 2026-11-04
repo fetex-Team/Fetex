@@ -206,7 +206,7 @@ def _apply_region_coords(merged, region):
     merged.pop("region_unresolved", None)
     coords = None
     try:
-        from geo_lookup import lookup_region
+        from module1_simulation.geo_lookup import lookup_region
         # 실제지도 모드에서도 grid_x/grid_y/grid_length 슬라이더를 그대로 활용:
         # 격자 전체 폭(grid_x*grid_length)과 높이(grid_y*grid_length) 중 큰 쪽의 절반을
         # OSM 다운로드 반경(미터)으로 사용 -> 별도 슬라이더 안 만들고 기존 3개 값 재사용
@@ -234,7 +234,7 @@ def _apply_region_coords(merged, region):
 
 def _apply_live_weather(merged, region):
     try:
-        from weather_lookup import get_current_weather
+        from module1_simulation.weather_lookup import get_current_weather
         lat = (merged["lat_min"] + merged["lat_max"]) / 2
         lng = (merged["lng_min"] + merged["lng_max"]) / 2
         weather = get_current_weather(lat, lng)

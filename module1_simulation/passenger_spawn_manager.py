@@ -38,7 +38,7 @@ import math
 import random
 import traci
 from config_loader import CFG
-from holiday_utils import resolve_is_holiday
+from module1_simulation.holiday_utils import resolve_is_holiday
 
 
 class PassengerSpawnManager:
@@ -209,11 +209,11 @@ class PassengerSpawnManager:
 
     def _init_real_schedule(self, meta, sim_date, seed):
         import datetime as _dt
-        from demand_model import RealDemandModel
+        from module1_simulation.demand_model import RealDemandModel
         if meta is None:
             import json, os
             meta_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                     "module1_simulation", "sumo_config", "runtime_meta.json")
+                                     "sumo_config", "runtime_meta.json")
             with open(meta_path, "r", encoding="utf-8") as f:
                 meta = json.load(f)
         if self.sim_end_hour is None:
@@ -226,7 +226,7 @@ class PassengerSpawnManager:
         # 시간마다 1 + 1.99%/mm 배율. 없으면 기존 '날씨적용'(실행 시점 실시간 날씨 가산값)을 하루 전체에 적용.
         hist = None
         if CFG.get("weather_bonus_enabled", False) or CFG.get("use_historical_weather", True):
-            from weather_history import load_hourly_weather
+            from module1_simulation.weather_history import load_hourly_weather
             hist = load_hourly_weather(date, CFG.get("region")) if CFG.get("use_historical_weather", True) else None
         weather_factor = 1.0 if hist else 1.0 + self.weather_bonus
         precip = hist["precipitation"] if hist else None

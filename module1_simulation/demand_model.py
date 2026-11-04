@@ -34,7 +34,7 @@ import os
 import random
 from dataclasses import dataclass, field
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 DATA_DIR = os.path.join(ROOT, "data", "external")
 TIMS_PATH = os.path.join(DATA_DIR, "tims", "tims_500m_grid_2025_dasa.csv")
 HOURLY_PATH = os.path.join(DATA_DIR, "seoul_taxi_hourly_2025.csv")

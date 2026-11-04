@@ -18,7 +18,7 @@ sys.path.insert(0, ROOT)
 for m in ("geo_lookup", "weather_lookup"):          # config_loader가 외부 API를 부르지 않게 차단
     sys.modules.setdefault(m, types.ModuleType(m))
 
-import demand_model as dm  # noqa: E402
+import module1_simulation.demand_model as dm  # noqa: E402
 
 GANGNAM = (37.4979, 127.0276)
 # pyproj (EPSG:4326 -> EPSG:5179) 기준값

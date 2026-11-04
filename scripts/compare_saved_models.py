@@ -27,8 +27,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from config_loader import CFG                                        # noqa: E402
-from log_selection import selected_log_paths                         # noqa: E402
-from evaluate import calculate_metrics                               # noqa: E402
+from module2_preprocessing.log_selection import selected_log_paths                         # noqa: E402
+from module3_prediction.evaluate import calculate_metrics                               # noqa: E402
 from module2_preprocessing.pipeline import build_feature_table       # noqa: E402
 from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
 

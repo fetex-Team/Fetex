@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _args.config_path:
     os.environ["MOBILITY_CONFIG"] = os.path.abspath(_args.config_path)
 from config_loader import CFG, ROOT, _apply_region_coords
-from poi_extractor import get_zones, get_boundary_edges, get_department_store_edges, CATEGORIES
-from largest_component_filter import filter_to_largest_scc
+from module2_preprocessing.poi_extractor import get_zones, get_boundary_edges, get_department_store_edges, CATEGORIES
+from module1_simulation.largest_component_filter import filter_to_largest_scc
 DEPART_JITTER_SEC = float(CFG.get("depart_jitter_sec", 300.0))
 
 
@@ -130,7 +130,7 @@ def create_network_and_routes():
         if CFG.get("region_unresolved"):
             raise SystemExit(f"[중단] '{CFG['region_unresolved']}' 지역 좌표를 찾지 못했습니다. "
                              "다른 지역 지도로 대신 돌리지 않도록 중단합니다. 지역명/네트워크를 확인하세요.")
-        from real_map_fetch import build_real_map_network
+        from module1_simulation.real_map_fetch import build_real_map_network
         print(f"[안내] 실제 지도 모드 — '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
         net_file, raw_osm_path = build_real_map_network(
             CFG["lat_min"], CFG["lat_max"], CFG["lng_min"], CFG["lng_max"], config_dir

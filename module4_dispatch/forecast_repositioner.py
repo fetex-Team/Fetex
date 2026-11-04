@@ -78,8 +78,8 @@ class ForecastRepositioner:
         self._rng = random.Random(f"fetex-forecast|{seed}|{run_date.isoformat()}")
 
         # ---- 관측 호출 기록: (시각, 칸) + 칸별 호출이 많았던 도로 ----
-        from holiday_utils import is_holiday_date
-        from weather_history import load_hourly_weather
+        from module1_simulation.holiday_utils import is_holiday_date
+        from module1_simulation.weather_history import load_hourly_weather
         times, cells, hist_edges = [], [], Counter()
 
         def add(base, calls, count_edges):

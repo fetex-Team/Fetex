@@ -14,7 +14,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from config_loader import REGION_PRESETS
-from geo_lookup import search_suggestions
+from module1_simulation.geo_lookup import search_suggestions
 
 
 class RegionSearchEntry(ttk.Frame):

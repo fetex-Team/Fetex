@@ -27,7 +27,7 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from config_loader import CFG
-from log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
+from module2_preprocessing.log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 from module2_preprocessing.category_indexing import CategoryIndexer
 from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
 from module2_preprocessing.external_data_merge import merge_external_data  # train.py와 동일하게 재사용

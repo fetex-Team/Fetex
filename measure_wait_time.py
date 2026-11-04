@@ -44,19 +44,18 @@ import csv
 import re
 import hashlib
 import traci
-import vehicle_subscriptions
-
+import module1_simulation.vehicle_subscriptions as vehicle_subscriptions
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from taxi_manager import TaxiFleetManager
-from passenger_manager import PassengerTimeoutManager, riding_map
-from passenger_spawn_manager import PassengerSpawnManager
+from module1_simulation.taxi_manager import TaxiFleetManager
+from module1_simulation.passenger_manager import PassengerTimeoutManager, riding_map
+from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
-from holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
+from module1_simulation.holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
-from step_snapshot import fetch_idle_taxis
+from module1_simulation.step_snapshot import fetch_idle_taxis
 from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer  # 추가
 from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 2] 호출 로그 기록 (feat3, 병합)
-from external_trip_model import ExternalTripAwayModel
+from module1_simulation.external_trip_model import ExternalTripAwayModel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
@@ -557,7 +556,7 @@ def compare_dispatch_algorithms(algo_a: str = "greedy", algo_b: str = "hungarian
 
 
 if __name__ == "__main__":
-    from reproducibility import ensure_fixed_hash_seed
+    from module1_simulation.reproducibility import ensure_fixed_hash_seed
     ensure_fixed_hash_seed()
     mode = sys.argv[1] if len(sys.argv) > 1 else "current"
 

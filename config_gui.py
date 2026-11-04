@@ -9,7 +9,7 @@ for _stream in (sys.stdout, sys.stderr):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 from datetime import datetime
 from tkinter import ttk, messagebox, simpledialog
-from region_autocomplete import RegionSearchEntry
+from tools.region_autocomplete import RegionSearchEntry
 from config_loader import DEFAULT_CONFIG
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -774,7 +774,7 @@ class ConfigGUI:
 
             self.status.config(text="1/4 train.py 실행 중...")
             self.root.update()
-            self._run("train.py", blocking=True)
+            self._run(os.path.join("module3_prediction", "train.py"), blocking=True)
 
             # 기존 category_demand_models.pkl은 보존하고, 이번 학습 결과는 별도 파일로 저장한다.
             category_new_path = os.path.join(ROOT, "saved_models", "category_demand_models_new.pkl")
@@ -951,7 +951,7 @@ class ConfigGUI:
                 cmd_args += ["--unity-dir", unity_default_path]
 
             win.destroy()
-            self._run("export_unity_replay.py", cmd_args)
+            self._run(os.path.join("tools", "export_unity_replay.py"), cmd_args)
 
         run_btn = tk.Button(action_bar, text="🚀 유니티 재생 데이터 생성 시작", command=run_export,
                             bg="#2563eb", fg="white", font=("Malgun Gothic", 11, "bold"),
@@ -1021,7 +1021,7 @@ class ConfigGUI:
                 ttk.Checkbutton(box, text=FACTOR_VALUE_LABELS.get(v, v), variable=var).pack(anchor="w")
 
         try:
-            from holiday_utils import is_holiday_date
+            from module1_simulation.holiday_utils import is_holiday_date
             from datetime import date as _date
             _t = _date.today()
             _today_txt = f"오늘({_t})은 {'공휴일/주말' if is_holiday_date(_t) else '평일'}"
@@ -1082,7 +1082,7 @@ class ConfigGUI:
             win.destroy()
             self.save_config_only()
             model_path = dict(models)[model_var.get()]
-            self._run("multi_factor_compare.py", [json.dumps(combos, ensure_ascii=False)],
+            self._run(os.path.join("scripts", "multi_factor_compare.py"), [json.dumps(combos, ensure_ascii=False)],
                       env_extra={"AI_CATEGORY_MODEL_PATH": model_path})
 
         ttk.Button(win, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=15, fill="x", padx=15)
@@ -1090,7 +1090,7 @@ class ConfigGUI:
     def _build_log_picker(self, parent, persist=True):
         """학습 팝업 안에 들어가는 '학습에 쓸 로그' 선택 목록. 반환값 save()를 호출하면 selected_logs.json에 저장.
         로그가 없으면 None."""
-        import log_selection as ls
+        import module2_preprocessing.log_selection as ls
         logs = ls.list_logs()
         if not logs:
             ttk.Label(parent, text="data/sim_logs에 로그가 아직 없습니다. (시뮬레이션 먼저 돌리기를 켜면 만들어집니다)",
@@ -1179,7 +1179,7 @@ class ConfigGUI:
                             "로그는 거기서 체크박스로 고르면 돼요. (끝낼 때는 열린 콘솔 창을 닫기)",
                   justify="left").pack(side="left")
         ttk.Button(top, text="브라우저로 열기",
-                   command=lambda: (win.destroy(), self._run("analyzer_server.py"))).pack(side="right")
+                   command=lambda: (win.destroy(), self._run(os.path.join("tools", "analyzer_server.py")))).pack(side="right")
         ttk.Label(win, text="아래는 표/CSV/그래프 리포트(report.md)를 만들 때 쓸 로그예요. (학습용 로그 선택에는 영향 없음)\n"
                             "결과는 data/analysis/<날짜_시각>/ 에 저장돼요.",
                   padding=(12, 6), justify="left").pack(anchor="w")
@@ -1195,7 +1195,7 @@ class ConfigGUI:
                 return
             win.destroy()
             paths = [os.path.join(ROOT, "data", "sim_logs", n) for n in names]
-            self._run("analyze_demand_logs.py", ["--logs", *paths])
+            self._run(os.path.join("tools", "analyze_demand_logs.py"), ["--logs", *paths])
 
         bar = ttk.Frame(win)
         bar.pack(fill="x", padx=12, pady=10)
@@ -1217,7 +1217,7 @@ class ConfigGUI:
         v2_var = self.bool_vars["force_regenerate_demand_v2"]
         # 사용자가 기존 로그를 골라 둔 경우, 그 선택만으로 학습하는 것이 안전한 기본값이다.
         # 추가 시뮬레이션은 선택 로그를 보완하는 것이 아니라 새 로그를 학습 목록에 섞는다.
-        import log_selection as _training_log_selection
+        import module2_preprocessing.log_selection as _training_log_selection
         if _training_log_selection.load_selection() is not None:
             sim_var.set(False)
             ttk.Label(opt, text="선택된 로그만 학습하도록 '3회 추가 생성'을 자동 해제했습니다.",

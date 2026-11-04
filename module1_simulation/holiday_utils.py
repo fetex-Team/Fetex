@@ -13,7 +13,7 @@ try:
 except ImportError:  # pip install holidays
     _holidays = None
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 _kr_cache = {}
 _warned = False
 

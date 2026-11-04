@@ -23,7 +23,7 @@ def elevate_worker_priority():
 
 # 스크립트 실행 시 즉시 적용
 elevate_worker_priority()
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 sys.path.insert(0, ROOT)
 
 from measure_wait_time import run_and_measure, print_result

@@ -21,7 +21,7 @@ import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import font_manager
 from matplotlib.lines import Line2D
-from poi_extractor import parse_osm_pois, CATEGORIES
+from module2_preprocessing.poi_extractor import parse_osm_pois, CATEGORIES
 
 for f in ["AppleGothic", "Apple SD Gothic Neo", "NanumGothic"]:
     if any(f == x.name for x in font_manager.fontManager.ttflist):

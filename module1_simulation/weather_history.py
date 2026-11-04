@@ -13,7 +13,7 @@ import datetime as _dt
 import glob
 import os
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 EXTERNAL_DIR = os.path.join(ROOT, "data", "external")
 _CACHE: dict[str, dict] = {}
 

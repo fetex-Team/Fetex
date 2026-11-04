@@ -6,7 +6,7 @@ Module 2 외부 데이터 결합의 근거 자료. 시뮬레이션 승객 생성
 작성: 2026-09-12 / 담당: 이동규 (지도·외부데이터) / 복구: 2026-11-01 (KJS 브랜치에서 빠져 있던 문서)
 
 > **현재 사용처 (2026-11 갱신)**: 실데이터 수요 모드에서 아래 강수 계수(1mm당 +1.99%, 최대 30mm)를 그날의 **실측 시간별 강수**
-> (Open-Meteo 과거 날씨, `scripts/fetch_weather_history.py` → `weather_history.py`)에 곱해 시간마다 호출량을 조정한다 (`demand_model.weather_factors`).
+> (Open-Meteo 과거 날씨, `scripts/fetch_weather_history.py` → `module1_simulation/weather_history.py`)에 곱해 시간마다 호출량을 조정한다 (`demand_model.weather_factors`).
 > 기온 계수는 8월 22일치(21.5~34.3°C)로만 추정된 여름 한정 계수라, 기온이 10°C 아래로 내려가는 9~10월 실험에 그대로 쓸 수 없어 적용하지 않는다. 그날 날씨 파일이 없을 때만 예전 "날씨적용" 설정값(비 +10% 등)으로 대체한다.
 
 ---
@@ -84,7 +84,7 @@ n = 528, R² = 0.972
 
 ## 6. 시뮬레이션 적용 방식
 
-`passenger_spawn_manager.py`의 승객 생성 확률에 곱할 배수:
+`module1_simulation/passenger_spawn_manager.py`의 승객 생성 확률에 곱할 배수:
 
 ```
 weather_multiplier = (1 + 0.0199) ** precip_mm * (1 + 0.0273) ** (temp - temp_base)

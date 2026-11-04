@@ -184,6 +184,6 @@ def main():
 
 if __name__ == "__main__":
     sys.path.insert(0, PROJECT_ROOT)
-    from reproducibility import ensure_fixed_hash_seed
+    from module1_simulation.reproducibility import ensure_fixed_hash_seed
     ensure_fixed_hash_seed()
     main()

@@ -25,8 +25,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 import config_loader          # noqa: E402
-import geo_lookup             # noqa: E402
-import weather_lookup         # noqa: E402
+import module1_simulation.geo_lookup as geo_lookup  # noqa: E402
+import module1_simulation.weather_lookup as weather_lookup  # noqa: E402
 from config_loader import REGION_PRESETS  # noqa: E402
 
 MOCK_COORDS = {"lat_min": 37.0, "lat_max": 37.1,

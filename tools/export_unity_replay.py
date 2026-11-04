@@ -17,6 +17,11 @@ Unity(FetexReplayPlayer + ReplayMotion)는 두 프레임 사이를 지나온 차
 """
 import argparse
 import gzip
+import os
+import sys
+
+# tools/에서 직접 실행해도 프로젝트 모듈(measure_wait_time, module1_simulation 등)을 찾도록 루트 등록
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 import math
 import shutil
@@ -26,7 +31,7 @@ import xml.etree.ElementTree as ET
 import h3
 import sumolib
 import traci
-import vehicle_subscriptions
+import module1_simulation.vehicle_subscriptions as vehicle_subscriptions
 import traci.constants as tc
 
 from measure_wait_time import META_PATH, ROOT, RL_MODEL_PATH, run_and_measure
@@ -371,6 +376,6 @@ def main():
 
 
 if __name__ == '__main__':
-    from reproducibility import ensure_fixed_hash_seed
+    from module1_simulation.reproducibility import ensure_fixed_hash_seed
     ensure_fixed_hash_seed()
     main()

@@ -61,7 +61,7 @@ def nb_eda():
         code(SETUP),
         md("## 1. TIMS 500m 격자 — 강남역 주변 승차량"),
         code(r'''
-import demand_model as dm
+import module1_simulation.demand_model as dm
 tims = pd.read_csv(dm.TIMS_PATH)
 tims["ix"] = tims.grid.str[2:5].astype(int); tims["iy"] = tims.grid.str[5:8].astype(int)
 cx, cy = dm.latlng_to_utmk(37.4979, 127.0276)       # 강남역
@@ -121,7 +121,7 @@ err = (d.calls - d.expected) / np.sqrt(d.expected)
 print("일별 (생성-기대)/√기대 : 평균 %.2f, 표준편차 %.2f  (포아송이면 ≈ 0, 1)" % (err.mean(), err.std()))
 '''),
         code(r'''
-from demand_model import grid_code_of, latlng_to_utmk
+from module1_simulation.demand_model import grid_code_of, latlng_to_utmk
 logs["grid"] = [grid_code_of(*latlng_to_utmk(a, b)) for a, b in zip(logs.latitude, logs.longitude)]
 gen_share = logs.grid.value_counts(normalize=True)
 exp_share = pd.Series(model.cell_shares(dt.date(2026, 8, 1)))
@@ -188,7 +188,7 @@ print("분할:", {k: str(v) for k, v in cuts.items()}, "| 학습", len(train_df)
 '''),
         code(r'''
 import joblib
-from evaluate import calculate_metrics
+from module3_prediction.evaluate import calculate_metrics
 art = joblib.load(os.path.join(ROOT, "saved_models", "demand_v2.joblib"))
 Y = test_df[T].values
 pred_xgb = np.maximum(0, art["model"].predict(test_df[art["feature_cols"]].fillna(0).values))

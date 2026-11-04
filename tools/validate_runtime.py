@@ -24,7 +24,7 @@ def save_csv(path, rows):
 
 def mock_sweeps(out):
     """SUMO 삽입을 성공 처리하여 시간/확률 규칙만 독립 검증한다."""
-    import passenger_spawn_manager as module
+    import module1_simulation.passenger_spawn_manager as module
     from config_loader import DEFAULT_CONFIG
     from runtime_validation import schedule_status
     original=module.traci

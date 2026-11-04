@@ -23,7 +23,7 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 sys.path.insert(0, ROOT)
 
 MODULE1 = os.path.join(ROOT, "module1_simulation")
@@ -49,7 +49,7 @@ def decide_run_dates(combos: list) -> list:
     - holiday_mode 없음/auto          -> config.json 규칙(run_date_mode)으로 1개만 뽑아 전 조합 공유
     반환: 조합 순서대로의 datetime.date 리스트
     """
-    from holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
+    from module1_simulation.holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
@@ -134,7 +134,7 @@ def patch_combo(idx, combo, run_date=None):
 
 def launch_workers(combos: list) -> list:
     """조합마다 parallel_dispatch_worker.py를 새 콘솔에서 동시에 실행."""
-    worker_path = os.path.join(ROOT, "parallel_dispatch_worker.py")
+    worker_path = os.path.join(ROOT, "scripts", "parallel_dispatch_worker.py")
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
@@ -183,7 +183,7 @@ def wait_for_results(result_paths: list):
 def _day_type(iso: str, is_holiday=None) -> str:
     if is_holiday is None:
         try:
-            from holiday_utils import is_holiday_date
+            from module1_simulation.holiday_utils import is_holiday_date
             is_holiday = is_holiday_date(datetime.date.fromisoformat(iso))
         except Exception:
             return ""
@@ -191,8 +191,8 @@ def _day_type(iso: str, is_holiday=None) -> str:
 
 
 def save_ranking_text(ranked, results, labels_total, combos=None):
-    """최종 순위를 ab_results/ab_ranking_<시각>.txt 로 저장하고 경로를 반환."""
-    out_dir = os.path.join(ROOT, "ab_results")
+    """최종 순위를 results/ab_results/ab_ranking_<시각>.txt 로 저장하고 경로를 반환."""
+    out_dir = os.path.join(ROOT, "results", "ab_results")
     os.makedirs(out_dir, exist_ok=True)
     now = datetime.datetime.now()
     path = os.path.join(out_dir, f"ab_ranking_{now.strftime('%Y%m%d_%H%M%S')}.txt")

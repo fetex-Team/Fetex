@@ -1,6 +1,6 @@
 # 실데이터 기반 수요 보정 (TIMS 500m 격자 + 서울시 2025 통계 + 실측 날씨)
 
-담당: 이동규 / 코드: `demand_model.py`, `weather_history.py`, `external_trip_model.py`, `passenger_spawn_manager.py`(실데이터 모드), `scripts/generate_demand_logs.py`,
+담당: 이동규 / 코드: `module1_simulation/demand_model.py`, `module1_simulation/weather_history.py`, `module1_simulation/external_trip_model.py`, `module1_simulation/passenger_spawn_manager.py`(실데이터 모드), `scripts/generate_demand_logs.py`,
 `tools/fleet_sizing.py` / 데이터: `data/external/` (출처·한계는 `data/external/README.md`)
 
 ## 1. 왜 바꿨나
@@ -24,10 +24,10 @@
    백화점 11~21시 2.5, 음식점 점심·저녁 2.5, 회사 17~21시 2.5, 주거 6~10시 2)로 도로를 고른다. 도로 위 위치는 10~90% 무작위.
 4. **목적지**: TIMS 격자 평균 운행거리 L(강남역 약 10.5km)로부터 1km 안에서 끝나는 손님 비율 = 1 − e^(−1/L) ≈ **9%**만 영역 안에서
    내리고, 나머지는 경계 도로로 나간다(밖으로 가는 손님). 강남구는 서울 하차 1위 지역이라, 밖으로 나간 택시만큼 빈 택시가 다시 들어온다고 본다.
-5. **날씨**: 그날의 **실측 시간별 강수**(Open-Meteo 과거 자료, `weather_history.py`)로 시간마다 `1 + 0.0199 × 강수mm`(최대 30mm)배.
+5. **날씨**: 그날의 **실측 시간별 강수**(Open-Meteo 과거 자료, `module1_simulation/weather_history.py`)로 시간마다 `1 + 0.0199 × 강수mm`(최대 30mm)배.
    그날 파일이 없을 때만 예전 "날씨적용"(실행 시점 실시간 날씨 가산값)으로 대체. 결과에 `weather_source`, `precip_mm_in_window`.
 6. **재현성**: 난수는 `random.Random("fetex-demand|시드|날짜")` 전용 스트림. 같은 날짜·시드면 시각·도로까지 완전히 같다.
-   시뮬레이션 전체도 파이썬 해시 시드를 0으로 고정(`reproducibility.py`)해 같은 설정이면 결과가 숫자까지 같다
+   시뮬레이션 전체도 파이썬 해시 시드를 0으로 고정(`module1_simulation/reproducibility.py`)해 같은 설정이면 결과가 숫자까지 같다
    (`tools/check_determinism.py`: 고정 시 두 번 실행 결과 동일, 고정 해제 시 다름을 확인).
 7. **매출 추정**: 태운 손님 수 × TIMS 실측 평균 요금(영역 격자 가중 평균 약 16,300원) → 결과에 `est_revenue_won`.
 

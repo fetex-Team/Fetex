@@ -13,7 +13,7 @@ import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
-import weather_history as wh  # noqa: E402
+import module1_simulation.weather_history as wh  # noqa: E402
 
 
 def _write(path, day, hours, precip=0.0):

@@ -34,9 +34,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from config_loader import CFG                     # noqa: E402
-from demand_model import RealDemandModel          # noqa: E402
-from holiday_utils import is_holiday_date         # noqa: E402
-from weather_history import load_hourly_weather   # noqa: E402
+from module1_simulation.demand_model import RealDemandModel          # noqa: E402
+from module1_simulation.holiday_utils import is_holiday_date         # noqa: E402
+from module1_simulation.weather_history import load_hourly_weather   # noqa: E402
 
 META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 OUT_DIR = os.path.join(ROOT, "data", "real_demand_logs")

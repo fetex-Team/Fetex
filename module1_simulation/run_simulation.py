@@ -18,13 +18,13 @@ if MODULE1_DIR not in sys.path:
 
 import traci
 
-from taxi_manager import TaxiFleetManager
-from passenger_manager import PassengerTimeoutManager
-from passenger_spawn_manager import PassengerSpawnManager
+from module1_simulation.taxi_manager import TaxiFleetManager
+from module1_simulation.passenger_manager import PassengerTimeoutManager
+from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
-from holiday_utils import pick_run_date
+from module1_simulation.holiday_utils import pick_run_date
 from module4_dispatch.custom_dispatchers import make_dispatcher
-from step_snapshot import fetch_idle_taxis
+from module1_simulation.step_snapshot import fetch_idle_taxis
 from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer
 
 CONFIG_PATH = os.path.join(ROOT, "config.json")

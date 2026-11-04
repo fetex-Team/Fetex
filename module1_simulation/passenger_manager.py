@@ -1,9 +1,7 @@
 import traci
 import traci.constants as tc
 
-import vehicle_subscriptions
-
-
+import module1_simulation.vehicle_subscriptions as vehicle_subscriptions
 _RIDING_CACHE = {"t": None, "map": {}}
 
 

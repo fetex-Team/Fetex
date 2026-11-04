@@ -18,7 +18,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from export_unity_replay import ReplayRecorder, export_map  # noqa: E402
+from tools.export_unity_replay import ReplayRecorder, export_map  # noqa: E402
 from measure_wait_time import META_PATH, run_and_measure    # noqa: E402
 
 

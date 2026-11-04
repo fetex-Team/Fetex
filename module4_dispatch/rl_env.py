@@ -10,8 +10,7 @@ import random
 import sys
 import numpy as np
 import traci
-import vehicle_subscriptions
-
+import module1_simulation.vehicle_subscriptions as vehicle_subscriptions
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
@@ -19,13 +18,13 @@ if PROJECT_ROOT not in sys.path:
 import gymnasium as gym
 from gymnasium import spaces
 
-from taxi_manager import TaxiFleetManager, CATEGORY_PEAK_HOURS
-from passenger_manager import PassengerTimeoutManager
-from passenger_spawn_manager import PassengerSpawnManager
+from module1_simulation.taxi_manager import TaxiFleetManager, CATEGORY_PEAK_HOURS
+from module1_simulation.passenger_manager import PassengerTimeoutManager
+from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
-from holiday_utils import pick_run_date
+from module1_simulation.holiday_utils import pick_run_date
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
-from poi_extractor import CATEGORIES as ZONE_CATEGORIES
+from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
 
 N_ZONES = len(ZONE_CATEGORIES)
 DECISION_INTERVAL_SEC = 60.0

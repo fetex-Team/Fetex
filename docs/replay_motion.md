@@ -1,6 +1,6 @@
 # Unity 재생에서 차량이 회전할 때 도로 밖으로 나가던 문제 — 원인과 수정
 
-담당: 이동규 / 관련 파일: `export_unity_replay.py`, `tools/replay_motion.py`, `tools/verify_replay_motion.py`,
+담당: 이동규 / 관련 파일: `tools/export_unity_replay.py`, `tools/replay_motion.py`, `tools/verify_replay_motion.py`,
 `tools/record_motion_truth.py`, Unity `Assets/Fetex/Scripts/ReplayMotion.cs`·`FetexReplayPlayer.cs`
 
 ## 1. 증상
@@ -71,7 +71,7 @@
 |---|---:|---:|
 | patrol (14시간, 5초 간격) | 47.9MB | **8.3MB** (17%) |
 
-- 내보내기: `export_unity_replay.py`가 `.json.gz`로 저장(`--no-gzip`이면 예전처럼 `.json`). 같은 이름의 다른 형식 파일은 지워 헷갈리지 않게 한다.
+- 내보내기: `tools/export_unity_replay.py`가 `.json.gz`로 저장(`--no-gzip`이면 예전처럼 `.json`). 같은 이름의 다른 형식 파일은 지워 헷갈리지 않게 한다.
 - Unity: `FetexReplayPlayer`가 `<파일>.gz`가 있으면 그것을 `GZipStream`으로 풀어 읽고, 없으면 `.json`을 읽는다(예전 파일도 그대로 재생).
   `map.json`은 0.5MB라 압축하지 않는다.
 - 검증 도구 `tools/verify_replay_motion.py`도 `.gz`를 바로 읽는다.
@@ -99,7 +99,7 @@
 
 ## 6. 재현
 ```bash
-python export_unity_replay.py --stride 5 --unity-dir <Unity 프로젝트>/Assets/StreamingAssets
+python tools/export_unity_replay.py --stride 5 --unity-dir <Unity 프로젝트>/Assets/StreamingAssets
 python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz
 python tests/test_replay_motion.py
 ```

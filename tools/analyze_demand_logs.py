@@ -26,11 +26,11 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 sys.path.insert(0, ROOT)
 
-from log_selection import selected_log_paths, parse_log_name, LOG_DIR  # noqa: E402
-from holiday_utils import is_holiday_date  # noqa: E402
+from module2_preprocessing.log_selection import selected_log_paths, parse_log_name, LOG_DIR  # noqa: E402
+from module1_simulation.holiday_utils import is_holiday_date  # noqa: E402
 
 LABEL_RE = re.compile(
     r"^(?P<region>.*?)(?P<strategy>rl_prepositioned|prepositioned|patrol)_"

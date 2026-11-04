@@ -127,7 +127,7 @@ if __name__ == "__main__":
     ap.add_argument("--freq", default=None)
     a = ap.parse_args()
     if a.logs is None:
-        from log_selection import selected_log_paths
+        from module2_preprocessing.log_selection import selected_log_paths
         a.logs = selected_log_paths()
     feat = build_feature_table(a.logs, freq=a.freq, weather_path=a.weather)
     save_feature_table(feat, a.out)

@@ -19,13 +19,13 @@ export_unity_replay ─▶ map.json + 전략별 재생 파일(v2, .json.gz) ─�
 ## 과제 요구사항 대응
 | 요구사항 | 구현 | 위치 |
 |---|---|---|
-| 디지털 트윈(실제 지역) | 강남역 OSM → SUMO, 회전·차선·신호, POI 구역 | `module1_simulation/`, `real_map_fetch.py`, `poi_extractor.py` |
-| 수요 데이터 | **TIMS 2025 격자별 승차 실측 + 서울시 2025 시간대·강남구 월별 통계 + 실측 시간별 날씨, 카카오 T 몫 0.77**(가정값 모드도 유지) | `demand_model.py`, `weather_history.py`, `data/external/` |
+| 디지털 트윈(실제 지역) | 강남역 OSM → SUMO, 회전·차선·신호, POI 구역 | `module1_simulation/`, `module1_simulation/real_map_fetch.py`, `module2_preprocessing/poi_extractor.py` |
+| 수요 데이터 | **TIMS 2025 격자별 승차 실측 + 서울시 2025 시간대·강남구 월별 통계 + 실측 시간별 날씨, 카카오 T 몫 0.77**(가정값 모드도 유지) | `module1_simulation/demand_model.py`, `module1_simulation/weather_history.py`, `data/external/` |
 | 공간 인덱싱 | H3 res 8(실측 500m 해상도와 일치) + Geohash | `module2_preprocessing/spatial_indexing.py` |
 | 시계열 전처리·외부 데이터 | 10분 칸, lag/이동평균/지난주 동일 칸, 날씨·공휴일 병합, 누수 방지 | `module2_preprocessing/` |
 | 수요 예측 | MultiOutput XGBoost(t+1~t+6), 기준선 대비 평가 | `scripts/train_dispatch_model.py`, `notebooks/02_Model_Experiments.ipynb` |
 | 동적 배차 | 헝가리안 매칭(비용 = 다익스트라 도로 이동시간) + 시간표 선배치/RL 재배치 + 할증 계산 | `module4_dispatch/`, `module4_dispatch/network_cost.py` |
-| 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `tools/repeat_experiments.py`, `tools/check_determinism.py`, `export_unity_replay.py` |
+| 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `tools/repeat_experiments.py`, `tools/check_determinism.py`, `tools/export_unity_replay.py` |
 | 시각화 | Unity 3D 재생(차선 경로 보간), 대시보드 | Unity 브랜치 `KJS-UNITY` |
 
 ## 빠른 시작 (Windows PowerShell 기준)
@@ -44,7 +44,7 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 ### 주요 명령
 | 목적 | 명령 |
 |---|---|
-| 전략 3개 공정 비교 + Unity 재생 파일 | `python export_unity_replay.py --stride 5 --unity-dir <Unity>/Assets/StreamingAssets` |
+| 전략 3개 공정 비교 + Unity 재생 파일 | `python tools/export_unity_replay.py --stride 5 --unity-dir <Unity>/Assets/StreamingAssets` |
 | 택시 대수 산정 | `python tools/fleet_sizing.py --taxis 50 70 --strategy prepositioned` |
 | 실측 날씨 받기(네트워크 필요) | `python scripts/fetch_weather_history.py 2026-07-01 2026-10-27` |
 | 학습용 8주 호출 생성(SUMO 불필요, 약 10초) | `python scripts/generate_demand_logs.py` |
@@ -96,19 +96,25 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 - [`docs/weather_coefficient.md`](docs/weather_coefficient.md) — 날씨-수요 실측 계수
 - [`docs/pipeline_flow.md`](docs/pipeline_flow.md) — 실행 흐름
 - [`data/external/README.md`](data/external/README.md) — 외부 데이터 출처
-- [`SETUP_GUIDE.md`](SETUP_GUIDE.md) — 설치 안내
+- [`docs/setup.md`](docs/setup.md) — 설치 안내
 
 ## 폴더 구조 (주요)
 ```
-config.json / config_loader.py / config_gui.py     설정
-demand_model.py / passenger_spawn_manager.py       수요(실측 보정 스케줄 / 가정 모델)
-measure_wait_time.py / export_unity_replay.py      실행·측정 / Unity 내보내기
-module1_simulation/  module2_preprocessing/  module3_prediction/  module4_dispatch/
-scripts/   tools/   tests/   notebooks/   eda/   docs/
-data/external/        실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
+main.py / config_gui.py                 실행 진입점 (시뮬레이션 / 설정 GUI)
+config.json / config_loader.py          설정 (config.json = 현재 값, config_loader.DEFAULT_CONFIG = 기본값)
+measure_wait_time.py                    공용 실행·측정 루프 (여러 도구가 import)
+module1_simulation/    디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model),
+                       지도·날씨·공휴일(geo_lookup, real_map_fetch, weather_*, holiday_utils), 재현성·TraCI 구독 도우미
+module2_preprocessing/ 전처리: H3 인덱싱, 시계열 피처(43개), 외부 데이터 병합, POI 추출, 학습 로그 선택
+module3_prediction/    예측 모델: train.py·evaluate.py(XGBoost vs CNN-LSTM), 카테고리 수요 모델 학습
+module4_dispatch/      배차: 헝가리안·커스텀 배차, 예측 재배치(forecast), RL 선배치, 할증
+scripts/               데이터 생성·학습·A/B 비교(multi_factor_compare + parallel_dispatch_worker)
+tools/                 실험·검증·Unity 내보내기·수요 로그 분석기·지역 검색 위젯
+tests/   notebooks/   eda/   docs/   presets/
+data/external/         실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
 data/real_demand_logs/ 학습용 8주 호출 (scripts/generate_demand_logs.py로 재생성 가능)
-saved_models/         demand_v2.joblib, category_demand_*.pkl, (기존) xgboost/cnn
-results/              repeat/(반복 실험), unity_replay/, fleet_sizing/, motion_eval/, ab_results/
+saved_models/          demand_v2.joblib, category_demand_*.pkl, xgboost/cnn (Module 3)
+results/               repeat/(반복 실험), unity_replay/, fleet_sizing/, motion_eval/, ab_results/, runtime_validation/
 ```
 
 ## 역할

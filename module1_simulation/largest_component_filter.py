@@ -17,7 +17,7 @@ edge 그래프(각 edge -> getOutgoing()으로 이어지는 edge들)를 networkx
 findRoute 실패가 원천적으로 사라진다 (그 컴포넌트 내부에서는 항상 경로가 존재).
 
 [사용법] build_env.py에서 net 읽은 직후:
-    from largest_component_filter import filter_to_largest_scc
+    from module1_simulation.largest_component_filter import filter_to_largest_scc
     edges = filter_to_largest_scc(net, edges)
 """
 

@@ -2,8 +2,7 @@ import random
 import traci
 import traci.constants as tc
 
-import vehicle_subscriptions
-
+import module1_simulation.vehicle_subscriptions as vehicle_subscriptions
 from collections import Counter
 
 from config_loader import CFG

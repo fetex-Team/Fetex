@@ -66,7 +66,7 @@ import traci
 from gymnasium import spaces
 from stable_baselines3 import PPO
 
-from poi_extractor import CATEGORIES as ZONE_CATEGORIES
+from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
 from module4_dispatch.category_demand_predictor import CategoryDemandPredictor
 
 DECISION_INTERVAL_SEC = 60.0
