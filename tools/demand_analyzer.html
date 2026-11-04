@@ -129,7 +129,7 @@ function csv(t){
 }
 // demand_log_{구역}{전략}_{알고리즘}[공휴일]{yymmdd}.csv
 function parseName(n){
-  const m=n.match(/^demand_log_(.+?)(patrol|prepositioned|rl_prepositioned)_(custom_greedy|custom_routeExtension|greedy|routeExtension|hungarian)(공휴일)?(\d{6})\.csv$/);
+  const m=n.match(/^demand_log_(.+?)(patrol|prepositioned|rl_prepositioned|forecast)_(custom_greedy|custom_routeExtension|greedy|routeExtension|hungarian)(공휴일)?(\d{6})\.csv$/);
   if(!m)return null;
   const d=m[5];
   return{region:m[1],strategy:m[2],algo:m[3],hol:!!m[4],date:'20'+d.slice(0,2)+'-'+d.slice(2,4)+'-'+d.slice(4)};

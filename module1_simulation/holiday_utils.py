@@ -1,4 +1,4 @@
-"""공휴일/실행 날짜 판정 유틸 (프로젝트 루트에 두세요).
+"""공휴일/실행 날짜 판정 유틸 (module1_simulation/).
 
 - is_holiday_date(d): 토·일 또는 한국 공휴일이면 True (holidays 패키지 필요, 없으면 주말만 휴일 취급)
 - resolve_is_holiday(sim_date, mode): holiday_mode("auto"/"weekday"/"holiday")에 따라 최종 판정
@@ -42,7 +42,9 @@ def is_holiday_date(value) -> bool:
             print("[경고] holidays 패키지가 없어 주말만 휴일로 판정합니다 (pip install holidays).")
         return False
     if d.year not in _kr_cache:
-        _kr_cache[d.year] = _holidays.KR(years=[d.year])
+        # 학습 피처(time_features.add_time_features)와 같은 공휴일 달력을 연도별로 캐시
+        from module2_preprocessing.time_features import korean_holidays
+        _kr_cache[d.year] = korean_holidays([d.year])
     return d in _kr_cache[d.year]
 
 
@@ -59,20 +61,15 @@ def count_existing_logs(log_dir: str = None) -> int:
     """alternate 모드용 인덱스. 파일 개수가 아니라 파일명 끝 yymmdd로 기존 로그의 평일/공휴일 수를 세서,
     평일이 더 많으면 홀수(=공휴일 차례), 아니면 짝수(=평일 차례)를 돌려줌. 병합/덮어쓰기로 파일 수가
     안 늘어도 균형이 맞음. (구 형식 demand_log_YYYYMMDD_HHMMSS.csv는 무시)"""
-    import re
+    from module2_preprocessing.log_selection import parse_log_name, log_is_holiday
     log_dir = log_dir or os.path.join(ROOT, "data", "sim_logs")
     if not os.path.isdir(log_dir):
         return 0
     n_hol = n_wk = 0
     for f in os.listdir(log_dir):
-        m = re.search(r"[A-Za-z\uac00-\ud7a3](\d{6})\.csv$", f)
-        if not (f.startswith("demand_log_") and m):
+        if not f.startswith("demand_log_") or parse_log_name(f)["date"] is None:
             continue
-        try:
-            d = datetime.datetime.strptime("20" + m.group(1), "%Y%m%d").date()
-        except ValueError:
-            continue
-        if "공휴일" in f or is_holiday_date(d):
+        if log_is_holiday(f):
             n_hol += 1
         else:
             n_wk += 1

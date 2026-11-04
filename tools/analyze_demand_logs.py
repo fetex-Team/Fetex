@@ -29,11 +29,11 @@ import pandas as pd
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
 sys.path.insert(0, ROOT)
 
-from module2_preprocessing.log_selection import selected_log_paths, parse_log_name, LOG_DIR  # noqa: E402
+from module2_preprocessing.log_selection import selected_log_paths, parse_log_name, log_is_holiday, LOG_DIR  # noqa: E402
 from module1_simulation.holiday_utils import is_holiday_date  # noqa: E402
 
 LABEL_RE = re.compile(
-    r"^(?P<region>.*?)(?P<strategy>rl_prepositioned|prepositioned|patrol)_"
+    r"^(?P<region>.*?)(?P<strategy>rl_prepositioned|prepositioned|patrol|forecast)_"
     r"(?P<algo>custom_greedy|custom_routeExtension|greedy|routeExtension|hungarian)(?P<hol>공휴일)?$")
 DAY_KO = {"weekday": "평일", "holiday": "공휴일"}
 MIN_FILES_WARN = 3  # 그룹당 로그가 이보다 적으면 '표본 부족' 표시
@@ -51,8 +51,9 @@ def load_log(path: str):
     info = parse_log_name(path)
     m = LABEL_RE.match(info["label"])
     date = d["pickup_datetime"].dt.date.min()
-    tagged = "공휴일" in info["label"]
-    is_hol = True if tagged else bool(is_holiday_date(date))
+    is_hol = log_is_holiday(path)
+    if is_hol is None:  # 날짜 없는 예전 파일명: 로그 안의 첫 호출 날짜로 판정
+        is_hol = bool(is_holiday_date(date))
     d["file"] = os.path.basename(path)
     d["region"] = m.group("region") if m else "?"
     d["strategy"] = m.group("strategy") if m else "?"

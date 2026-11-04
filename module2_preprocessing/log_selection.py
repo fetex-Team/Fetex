@@ -30,6 +30,19 @@ def parse_log_name(filename: str) -> dict:
     return {"label": m.group("label"), "date": d}
 
 
+def log_is_holiday(filename: str):
+    """로그 파일명 기준 평일/공휴일. 파일명의 '공휴일' 표식(실행 때 실제 적용된 판정)을 우선하고,
+    없으면 파일명 날짜로 판정. 날짜 없는 예전 형식이면 None.
+    (count_existing_logs·list_logs·tools/analyze_demand_logs가 같은 규칙을 쓰도록 한 곳에 둠)"""
+    info = parse_log_name(filename)
+    if "공휴일" in info["label"]:
+        return True
+    if info["date"] is None:
+        return None
+    from module1_simulation.holiday_utils import is_holiday_date
+    return bool(is_holiday_date(info["date"]))
+
+
 def _count_rows(path: str) -> int:
     try:
         with open(path, "r", encoding="utf-8-sig") as f:
@@ -41,10 +54,6 @@ def _count_rows(path: str) -> int:
 def list_logs(log_dir: str = None) -> list:
     """[{filename, label, date, is_holiday, rows}] 날짜순."""
     log_dir = log_dir or LOG_DIR
-    try:
-        from module1_simulation.holiday_utils import is_holiday_date
-    except Exception:  # holiday_utils 못 읽어도 목록은 보여줌
-        is_holiday_date = None
     out = []
     for p in sorted(glob.glob(os.path.join(log_dir, "demand_log_*.csv"))):
         info = parse_log_name(p)
@@ -52,9 +61,7 @@ def list_logs(log_dir: str = None) -> list:
             "filename": os.path.basename(p),
             "label": info["label"],
             "date": info["date"],
-            # 파일명에 '공휴일' 표식이 있으면 그걸 우선(실행 때 실제로 적용된 판정), 없으면 날짜로 판정
-            "is_holiday": True if "공휴일" in info["label"] else (
-                bool(is_holiday_date(info["date"])) if (is_holiday_date and info["date"]) else None),
+            "is_holiday": log_is_holiday(p),
             "rows": _count_rows(p),
         })
     out.sort(key=lambda r: (r["date"] is None, r["date"], r["filename"]))
