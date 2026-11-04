@@ -16,6 +16,7 @@ import pandas as pd
 import joblib
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.preprocessing import StandardScaler
 
 from config_loader import CFG
 from log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
@@ -167,10 +168,16 @@ if __name__ == "__main__":
 
     num_features = X_train.shape[1]  # 피처 전체 사용
 
-    X_train_seq = torch.tensor(X_train, dtype=torch.float32).unsqueeze(1)
+    # 피처 단위가 제각각(lag 건수·기온·0/1 플래그)이라 신경망 입력은 학습 구간 기준으로 표준화.
+    # scaler는 모델과 함께 저장해 평가·추론에서 같은 변환을 쓴다 (XGBoost는 트리라 불필요).
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+
+    X_train_seq = torch.tensor(X_train_scaled, dtype=torch.float32).unsqueeze(1)
     y_train_seq = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
 
-    X_test_seq = torch.tensor(X_test, dtype=torch.float32).unsqueeze(1)
+    X_test_seq = torch.tensor(X_test_scaled, dtype=torch.float32).unsqueeze(1)
     y_test_seq = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
 
     train_loader = DataLoader(
@@ -210,7 +217,9 @@ if __name__ == "__main__":
     torch.save({
         'state_dict': dl_model.state_dict(),
         'input_dim': num_features,
-        'feature_cols': feature_cols
+        'output_dim': 1,
+        'feature_cols': feature_cols,
+        'scaler': scaler,
     }, 'saved_models/cnn_lstm_demand.pt')
 
     print("\n[완료] 학습, 튜닝, 평가 및 모델 저장 완료!")
