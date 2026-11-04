@@ -78,7 +78,7 @@ CATEGORY_MODEL_PATH = os.environ.get(
 def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                      sumo_cfg_path: str = None, meta_path: str = None,
                      strategy: str = None, algorithm: str = None, recorder=None,
-                     recorder_factory=None) -> dict:
+                     recorder_factory=None, step_hook=None) -> dict:
     """
     시뮬레이션을 headless(sumo, GUI 없음)로 끝까지 돌리면서 승객별 대기시간을 측정.
     택시는 taxi_manager.TaxiFleetManager가 항상 target_count(=num_taxis)만큼 유지함
@@ -93,6 +93,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         기록기. recorder.capture(now, requested, pickup, arrived, removed, failed, forecast,
         teleports)를 매 스텝 호출하고, 끝나면 recorder.finish(result)를 호출함. 안 넘기면
         (기본값) 기록 없이 예전과 완전히 동일하게 동작 - 성능/결과에 영향 없음.
+    step_hook: 매 스텝 끝에 step_hook(now, sim_start_hour)를 호출 (GUI 실행의 화면 지연·창 제목 표시용,
+        module1_simulation/run_simulation.py). 안 넘기면 아무 일도 하지 않음.
     """
     if strategy is not None:
         set_strategy_in_config(strategy)
@@ -333,6 +335,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                     vehicle_ids=current_vids, idle_taxis=idle_taxis, person_ids=current_pids,
                     is_last=sim_end_seconds is not None and now >= sim_end_seconds,
                 )
+
+            if step_hook is not None:
+                step_hook(now, sim_start_hour)
 
             # 설정한 시간대(sim_end_hour)에 도달하면 승객이 남아있어도 강제 종료.
             # (승객이 0명 될 때까지 무한정 기다리던 예전 문제 수정 — sim_end_hour가 실제로 적용됨)
