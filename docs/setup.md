@@ -18,7 +18,7 @@ VS Code 완전 재시작 (중요)
 새 PowerShell에서 Get-Command netgenerate 를 칩니다. 경로가 띄야 성공입니다. 주의: PowerShell에서 where는 cmd.exe의 where.exe가 아니라 Where-Object의 별칭이라 항상 빈 결과가 나오며 실패로 보임. 반드시 Get-Command를 쓰거나, cmd.exe를 따로 열어 where를 쓰세요.
 7
 실행
-config.json / presets 값 확인 후 python config_gui.py 로 GUI를 켜서 '플레이' 버튼을 누르거나, 터미널에서 python module3_prediction/train.py → python main.py 순서로 직접 실행하면 됩니다.
+python config_gui.py 로 GUI를 켜서(처음엔 config.json이 없어 팀 기본 프리셋 presets/default/기본.json으로 시작) '플레이' 버튼을 누르거나, 터미널에서 python module3_prediction/train.py → python main.py 순서로 직접 실행하면 됩니다.
 8
 실데이터 다운로드 (선택)
 https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page 에서 Yellow Taxi Trip Records(parquet)를 받아 data/raw/nyc_yellow_taxi_sample.parquet 으로 넣으면 실데이터로 동작해요. 안 받아도 main.py가 가상 데이터로 자동 대체하니 없어도 실행은 됩니다.

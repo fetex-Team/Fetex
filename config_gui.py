@@ -10,11 +10,10 @@ for _stream in (sys.stdout, sys.stderr):
 from datetime import datetime
 from tkinter import ttk, messagebox, simpledialog
 from tools.region_autocomplete import RegionSearchEntry
-from config_loader import DEFAULT_CONFIG, write_run_config
+from config_loader import (DEFAULT_CONFIG, write_run_config, read_user_config,
+                           DEFAULT_PRESET_DIR, USER_PRESET_DIR)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-PRESET_DIR = os.path.join(ROOT, "presets")
-os.makedirs(PRESET_DIR, exist_ok=True)
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
 STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
@@ -132,382 +131,517 @@ BOOLS = [
 ]
 CHOICES = [
     ("taxi_strategy", "택시 전략", STRATEGIES),
-    ("taxi_dispatch_algorithm", "SUMO taxi dispatch algorithm", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
-    ("taxi_idle_algorithm", "SUMO taxi idle algorithm", ["randomCircling", "stopOnRoad", "taxiStop"]),
+    ("taxi_dispatch_algorithm", "배차 알고리즘", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
+    ("taxi_idle_algorithm", "빈 택시 동작 (SUMO)", ["randomCircling", "stopOnRoad", "taxiStop"]),
+    ("dispatch_cost", "헝가리안 배차 비용", ["network", "euclidean"]),
     ("passenger_mode", "승객 생성 모드", ["replay", "legacy"]),
     ("demand_source", "수요 출처 (real=실측보정)", ["real", "synthetic"]),
     ("holiday_mode", "공휴일 판정 모드", ["auto", "weekday", "holiday"]),
     ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
 ]
 
-# 원클릭 시나리오 프리셋 (Unity 시연·벤치마크용). 누르면 화면 값만 바뀌고 [적용하기]로 저장한다.
-# freq·h3_resolution은 저장된 예측 모델(demand_v2, 10분·res 8)과 맞아야 해서 프리셋이 바꾸지 않는다.
-SCENARIO_PRESETS = {
-    "🚀 강남역 출근길 (08~10시)": {
-        "region": "강남역", "use_real_map": True, "sim_start_hour": 8, "sim_end_hour": 10,
-        "num_taxis": 25, "num_normal_cars": 25,
-        "taxi_strategy": "prepositioned", "taxi_dispatch_algorithm": "hungarian", "max_multiplier": 3.0,
-    },
-    "🌙 강남역 불금 저녁 (18~22시)": {
-        "region": "강남역", "use_real_map": True, "sim_start_hour": 18, "sim_end_hour": 22,
-        "num_taxis": 35, "num_normal_cars": 40,
-        "taxi_strategy": "forecast", "taxi_dispatch_algorithm": "hungarian", "max_multiplier": 3.0,
-    },
-    "⚡ 초고속 테스트 (1시간)": {
-        "region": "강남역", "use_real_map": False, "sim_start_hour": 8, "sim_end_hour": 9,
-        "num_taxis": 10, "num_normal_cars": 5,
-        "taxi_strategy": "patrol", "taxi_dispatch_algorithm": "greedy", "max_multiplier": 1.5,
-    },
-    "🏙️ 홍대입구 심야 (22~24시)": {
-        "region": "홍대입구", "use_real_map": True, "sim_start_hour": 22, "sim_end_hour": 24,
-        "num_taxis": 20, "num_normal_cars": 15,
-        "taxi_strategy": "prepositioned", "taxi_dispatch_algorithm": "hungarian", "max_multiplier": 3.0,
-    },
+# 날씨 보정 값 (세부 설정 '날씨 보정' 섹션)
+WEATHER_NUMERICS = [
+    ("weather_rain_taxi_bonus", "비 올 때 택시확률 가산", 0, 1, 3, 0),
+    ("weather_cool_taxi_bonus", "쌀쌀할 때 택시확률 가산", 0, 1, 3, 0),
+    ("weather_sunny_taxi_bonus", "맑을 때 택시확률 가산", 0, 1, 3, 0),
+    ("weather_rain_threshold_mm", "비로 판정하는 강수량(mm)", 0, 50, 2, 0),
+    ("weather_cool_threshold_c", "쌀쌀함 판정 기온(°C)", -20, 40, 1, 0),
+    ("weather_strong_wind_threshold_kmh", "강풍 판정 풍속(km/h)", 0, 200, 1, 0),
+    ("weather_strong_wind_taxi_bonus", "강풍일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
+    ("weather_typhoon_wind_threshold_kmh", "태풍급 판정 풍속(km/h)", 0, 200, 1, 0),
+    ("weather_typhoon_taxi_bonus", "태풍급일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
+]
+TEXTS = [
+    ("sim_date", "시뮬레이션 기준 날짜 (YYYY-MM-DD)"),
+    ("demo_data_start", "데모 데이터 시작 시각"),
+    ("taxi_respawn_prefix", "택시 재생성 ID 접두어"),
+]
+HOLIDAY_MULT_ITEMS = [
+    ("school", "등교 (0=공휴일 등교 없음)"),
+    ("company", "출근 (점심·퇴근 인원도 같이 줄어듦)"),
+    ("restaurant", "음식점 방문"),
+    ("general", "기본 수요 (num_passengers 가챠)"),
+    ("department", "백화점 방문"),
+    ("lunch", "점심 이동 (아침 인원에서 파생, 1.0 권장)"),
+    ("evening", "퇴근 (아침 인원에서 파생, 1.0 권장)"),
+]
+
+# 기본 탭에 보이는 값 (세부 설정과 같은 변수를 공유)
+BASIC_KEYS = ["region", "taxi_strategy", "taxi_dispatch_algorithm", "demand_source", "holiday_mode", "use_real_map",
+              "num_taxis", "sim_start_hour", "sim_end_hour", "sim_date"]
+
+# 세부 설정 탭의 섹션 (모든 설정이 정확히 한 섹션에 들어간다 — _check_sections가 확인)
+DETAIL_SECTIONS = [
+    ("지도·차량", ["region", "use_real_map", "grid_x", "grid_y", "grid_length", "num_taxis", "num_normal_cars",
+                "num_auto_cars", "num_obstacles"]),
+    ("시뮬레이션 기준", ["sim_start_hour", "sim_end_hour", "passenger_wait_timeout", "sim_date", "run_date_mode",
+                   "passenger_seed", "depart_jitter_sec", "sumo_time_to_teleport", "suppress_sumo_warnings"]),
+    ("승객 수요 — 실측 보정", ["demand_source", "real_demand_scale", "real_internal_trip_km", "passenger_mode",
+                         "num_passengers"]),
+    ("승객 수요(가정 모델) — 주거", ["residential_base_pop_per_edge", "residential_schedule_scale",
+                              "residential_taxi_probability", "residential_out_hour", "residential_out_probability",
+                              "residential_evening_in_hour", "residential_evening_in_probability",
+                              "residential_late_in_hour", "residential_late_in_probability"]),
+    ("승객 수요(가정 모델) — 학교", ["school_pop_base", "school_start_hour", "school_end_hour", "school_taxi_peak_hour",
+                              "school_afternoon_start_hour", "school_afternoon_end_hour", "school_afternoon_fraction"]),
+    ("승객 수요(가정 모델) — 회사·점심", ["company_pop_base", "company_start_hour", "company_end_hour",
+                                 "company_taxi_peak_hour", "lunch_start_hour", "lunch_end_hour",
+                                 "lunch_company_release_fraction", "lunch_taxi_fraction"]),
+    ("승객 수요(가정 모델) — 퇴근·음식점", ["evening_start_hour", "evening_end_hour", "evening_taxi_fraction",
+                                  "late_evening_start_hour", "late_evening_end_hour", "evening_residential_fraction",
+                                  "restaurant_stay_sec", "restaurant_pop_base", "restaurant_window1_start",
+                                  "restaurant_window1_end", "restaurant_window2_start", "restaurant_window2_end",
+                                  "restaurant_civilian_taxi_probability"]),
+    ("승객 수요(가정 모델) — 백화점", ["department_enabled", "department_pop_base", "department_window_start",
+                                "department_window_end", "department_taxi_probability", "department_stay_sec"]),
+    ("공휴일", ["holiday_mode", "holiday_multipliers"]),
+    ("날씨 보정", ["weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
+    ("택시 운행·배차", ["taxi_strategy", "taxi_dispatch_algorithm", "dispatch_cost", "taxi_idle_algorithm",
+                   "reposition_fraction", "taxi_remaining_edges_threshold", "taxi_target_pick_attempts",
+                   "taxi_fail_threshold", "taxi_primary_prob", "dispatch_use_euclidean"]),
+    ("요금·인센티브", ["base_fare", "min_multiplier", "max_multiplier", "surge_coefficient", "incentive_weight",
+                  "target_hotspot_ratio"]),
+    ("전처리 (Module 2)", ["freq", "h3_resolution", "max_lag", "rolling_short", "rolling_long", "forecast_horizons"]),
+    ("예측 모델 (Module 3)", ["xgb_n_estimators", "xgb_max_depth", "xgb_learning_rate", "test_size", "cnn_hidden_dim",
+                          "cnn_num_layers", "cnn_kernel_size", "cnn_epochs", "cnn_batch_size", "cnn_lr",
+                          "xgb_random_state", "train_random_state"]),
+    ("강화학습 (RL)", ["rl_max_decisions", "rl_total_timesteps", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
+                   "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed"]),
+    ("학습 실행 옵션·테스트 데이터", ["run_sim_before_training", "force_regenerate_demand_v2", "mock_available_taxis_min",
+                            "mock_available_taxis_max", "mock_taxi_count", "mock_passenger_count", "demo_data_rows",
+                            "demo_data_minutes", "demo_data_start", "taxi_respawn_prefix"]),
+]
+
+# 마우스를 올리면 뜨는 설명 (config_loader.DEFAULT_CONFIG 주석과 각 모듈의 동작 기준)
+TIPS = {
+    "region": "시뮬레이션할 지역. 실제 지도 모드면 이 지역 좌표로 OSM 도로망을 받아 SUMO 지도를 만든다.",
+    "use_real_map": "켜면 OSM 실제 도로망, 끄면 grid_x×grid_y 합성 격자 도로망.",
+    "grid_x": "합성 격자의 가로 블록 수. 실제 지도 모드에서는 grid_x×grid_length가 지도 범위(폭)를 정한다.",
+    "grid_y": "합성 격자의 세로 블록 수. 실제 지도 모드에서는 grid_y×grid_length가 지도 범위(높이)를 정한다.",
+    "grid_length": "블록 한 변 길이(m). 실제 지도 모드에서 다운로드 반경 = 큰 쪽 범위의 절반.",
+    "num_taxis": "운행하는 택시 대수. 도착해 사라진 택시는 길 끝에서 다시 생겨 이 대수를 유지한다.",
+    "num_normal_cars": "배경 교통으로 도는 일반 차량 대수.",
+    "num_auto_cars": "자율주행차로 표시하는 차량 대수 (Unity 재생에서 구분 표시).",
+    "num_obstacles": "도로 위 정지 장애물 개수.",
+    "sim_start_hour": "시뮬레이션 시작 시각(시). 승객 생성·날씨·요일 판정이 이 시각부터 시작한다.",
+    "sim_end_hour": "시뮬레이션 종료 시각(시). 이 시각에 승객이 남아 있어도 끝낸다.",
+    "passenger_wait_timeout": "승객이 배차를 기다리는 최대 시간(초). 넘으면 승객이 사라지고 타임아웃으로 집계된다.",
+    "sim_date": "기준 날짜. 실측 수요의 요일·월·공휴일·날씨, 학습 로그 생성의 마지막 날 기준.",
+    "run_date_mode": "sim_date=위 날짜로 고정(평가·A/B용), alternate=과거 90일 중 평일/공휴일 번갈아(학습 로그용), random=랜덤.",
+    "passenger_seed": "승객 생성 난수 시드. 같은 시드·날짜면 같은 손님 목록(공정 비교). 비우면 매번 랜덤.",
+    "depart_jitter_sec": "정적 승객 출발 시각을 흩뜨리는 표준편차(초).",
+    "sumo_time_to_teleport": "차가 이 시간(초) 이상 막히면 SUMO가 순간이동시켜 정체를 푼다. 0이면 끔.",
+    "suppress_sumo_warnings": "SUMO 경고 로그를 숨긴다. 출력이 줄어 조금 빨라진다.",
+    "demand_source": "real=TIMS 2025 격자 승차 + 서울시 2025 통계로 보정한 수요, synthetic=학교·회사·음식점 가정 모델.",
+    "real_demand_scale": "실측 호출량 중 이 시뮬레이션이 맡는 비율. 기본 0.77 = 앱 호출 80% × 카카오 점유율 96%. 영역 전체는 1.0.",
+    "real_internal_trip_km": "이 거리보다 짧은 운행은 영역 안에서 내리고, 나머지는 경계 도로로 나간다고 본다.",
+    "passenger_mode": "replay=시간대별 동적 생성(기본), legacy=예전 방식(시작 시 정적 승객 배치).",
+    "num_passengers": "가정 모델의 기본 승객 수 (주거 독립 가챠 모수). 실측 모드에서는 쓰지 않는다.",
+    "residential_base_pop_per_edge": "주거 도로 1개당 인구 (가정 모델).",
+    "residential_schedule_scale": "주거 외출·귀가 스케줄 인원에 곱하는 전체 배율.",
+    "residential_taxi_probability": "기본 승객 가챠에서 택시를 부르는 확률.",
+    "residential_out_hour": "주거지 외출 시각(시).",
+    "residential_out_probability": "외출 시각에 택시로 나가는 확률.",
+    "residential_evening_in_hour": "저녁 귀가 시각(시).",
+    "residential_evening_in_probability": "저녁 귀가 때 택시 이용 확률.",
+    "residential_late_in_hour": "늦은 귀가 시각(시).",
+    "residential_late_in_probability": "늦은 귀가 때 택시 이용 확률.",
+    "school_pop_base": "학교 등교 인구 모수.",
+    "school_start_hour": "등교 시작 시각(시).",
+    "school_end_hour": "등교 끝 시각(시).",
+    "school_taxi_peak_hour": "등교 택시 확률이 가장 높아지는 시각(시). 시작부터 이 시각까지 선형 증가.",
+    "school_afternoon_start_hour": "하교 시작 시각(시).",
+    "school_afternoon_end_hour": "하교 끝 시각(시).",
+    "school_afternoon_fraction": "아침에 온 학생 중 하교 때 택시를 타는 비율.",
+    "company_pop_base": "회사 출근 인구 모수.",
+    "company_start_hour": "출근 시작 시각(시).",
+    "company_end_hour": "출근 끝 시각(시).",
+    "company_taxi_peak_hour": "출근 택시 확률이 가장 높아지는 시각(시).",
+    "lunch_start_hour": "점심 시작 시각(시).",
+    "lunch_end_hour": "점심 끝 시각(시).",
+    "lunch_company_release_fraction": "회사 인원 중 점심에 나가는 비율.",
+    "lunch_taxi_fraction": "점심에 나가는 인원 중 택시 비율.",
+    "evening_start_hour": "퇴근 시작 시각(시).",
+    "evening_end_hour": "퇴근 주요 시간 끝(시).",
+    "evening_taxi_fraction": "퇴근 인원 중 택시 비율 (버스·지하철 제외분).",
+    "late_evening_start_hour": "늦은 퇴근 시작 시각(시).",
+    "late_evening_end_hour": "늦은 퇴근 끝 시각(시).",
+    "evening_residential_fraction": "퇴근 목적지가 주거지인 비율 (나머지는 음식점).",
+    "restaurant_stay_sec": "음식점 체류 시간(초). 이후 다시 이동 수요가 생긴다.",
+    "restaurant_pop_base": "음식점 건물당 방문 인구.",
+    "restaurant_window1_start": "음식점 방문 시간대 1 시작(시).",
+    "restaurant_window1_end": "음식점 방문 시간대 1 끝(시).",
+    "restaurant_window2_start": "음식점 방문 시간대 2 시작(시).",
+    "restaurant_window2_end": "음식점 방문 시간대 2 끝(시).",
+    "restaurant_civilian_taxi_probability": "음식점 방문 시민이 택시를 타는 확률.",
+    "department_enabled": "백화점·쇼핑몰 방문 승객 생성. 지도에서 백화점을 못 찾으면 자동으로 꺼진다.",
+    "department_pop_base": "백화점 한 곳당 방문 인구 (평일 기준, 공휴일엔 배율이 곱해짐).",
+    "department_window_start": "백화점 방문 시간대 시작(시).",
+    "department_window_end": "백화점 방문 시간대 끝(시).",
+    "department_taxi_probability": "백화점 방문객이 택시를 타는 확률.",
+    "department_stay_sec": "백화점 체류 시간(초). 이후 주거지로 귀가한다.",
+    "holiday_mode": "auto=날짜로 자동 판정(토·일·한국 공휴일), weekday=무조건 평일, holiday=무조건 공휴일.",
+    "holiday_multipliers": "공휴일·주말일 때 카테고리별 택시 확률에 곱하는 배율. 평일은 항상 1.0. 날씨 가산 뒤에 곱한다.",
+    "weather_bonus_enabled": "켜면 실행 시점 현재 날씨(기온·강수·풍속)를 조회해 택시 확률에 가산값을 더한다.",
+    "weather_rain_taxi_bonus": "강수가 판정 기준 이상일 때 택시 확률에 더하는 값.",
+    "weather_cool_taxi_bonus": "기온이 판정 기준보다 낮을 때 더하는 값.",
+    "weather_sunny_taxi_bonus": "비·쌀쌀함·강풍이 모두 아닐 때 더하는 값.",
+    "weather_rain_threshold_mm": "이 강수량(mm) 이상이면 비로 판정.",
+    "weather_cool_threshold_c": "이 기온(°C)보다 낮으면 쌀쌀함으로 판정.",
+    "weather_strong_wind_threshold_kmh": "강풍 판정 풍속(km/h). 50.4 = 강풍주의보 14m/s.",
+    "weather_strong_wind_taxi_bonus": "강풍일 때 더하는 값 (음수면 감소).",
+    "weather_typhoon_wind_threshold_kmh": "태풍급 판정 풍속(km/h). 61.2 = 17m/s. 강풍보다 우선.",
+    "weather_typhoon_taxi_bonus": "태풍급일 때 더하는 값 (음수면 감소).",
+    "taxi_strategy": "빈 택시 운영 전략. patrol=순찰, prepositioned=시간대 규칙 선배치, "
+                     "rl_prepositioned=RL 선배치, forecast=수요 예측(demand_v2) 기반 재배치.",
+    "taxi_dispatch_algorithm": "손님-택시 매칭. greedy/routeExtension=SUMO 내장, hungarian=최적 할당(권장), "
+                               "custom_*=파이썬 직접 배정.",
+    "dispatch_cost": "헝가리안 비용. network=도로망 최단 이동시간(권장), euclidean=직선 거리.",
+    "taxi_idle_algorithm": "SUMO 빈 택시 동작. randomCircling=돌아다님, stopOnRoad=정차, taxiStop=정류장 대기.",
+    "reposition_fraction": "선배치·예측 재배치 때 빈 택시 중 옮기는 비율.",
+    "taxi_remaining_edges_threshold": "남은 경로가 이 도로 수 이하면 새 목적지를 붙여 택시가 사라지지 않게 한다.",
+    "taxi_target_pick_attempts": "택시 목적지를 고를 때 연결된 도로를 찾는 최대 시도 횟수.",
+    "taxi_fail_threshold": "목적지 찾기가 이만큼 연속 실패하면 고립된 택시로 보고 다시 생성.",
+    "taxi_primary_prob": "선배치 때 1순위 핫스팟으로 보내는 비율.",
+    "dispatch_use_euclidean": "배차 단위 테스트에서 거리를 유클리드로 계산 (시뮬레이션 배차에는 dispatch_cost 사용).",
+    "base_fare": "택시 기본 요금(원).",
+    "min_multiplier": "할증 배수 하한.",
+    "max_multiplier": "할증 배수 상한.",
+    "surge_coefficient": "수요/공급 불균형이 할증 배수로 바뀌는 계수.",
+    "incentive_weight": "RL 보상에 더하는 '핫스팟 분포 일치도' 가중치. 0이면 대기 감소만 보상.",
+    "target_hotspot_ratio": "빈 택시 중 핫스팟에 있어야 하는 목표 비율(0~1).",
+    "freq": "수요 집계 시간 칸. 저장된 예측 모델(10분)과 같아야 예측 재배치가 동작한다.",
+    "h3_resolution": "H3 공간 격자 해상도. 8 = 약 0.7km² (TIMS 500m 격자와 맞춤). 바꾸면 모델 재학습 필요.",
+    "max_lag": "lag 피처 개수 (과거 몇 칸까지 보는지). 바꾸면 모델 재학습 필요.",
+    "rolling_short": "단기 이동평균 창(칸 수).",
+    "rolling_long": "장기 이동평균 창(칸 수).",
+    "forecast_horizons": "예측 지평 개수 (y_h1~y_hN). demand_v2는 6.",
+    "xgb_n_estimators": "XGBoost 트리 개수 (train.py는 이 값 주변을 GridSearch).",
+    "xgb_max_depth": "XGBoost 트리 최대 깊이.",
+    "xgb_learning_rate": "XGBoost 학습률.",
+    "test_size": "시험 구간 비율. 마지막 이 비율의 시간 칸을 시험 데이터로 쓴다.",
+    "cnn_hidden_dim": "CNN-LSTM 은닉 차원.",
+    "cnn_num_layers": "CNN-LSTM LSTM 층 수.",
+    "cnn_kernel_size": "CNN 커널 크기 (양의 홀수).",
+    "cnn_epochs": "CNN-LSTM 학습 반복 횟수.",
+    "cnn_batch_size": "CNN-LSTM 배치 크기.",
+    "cnn_lr": "CNN-LSTM 학습률.",
+    "xgb_random_state": "XGBoost 난수 시드 (모든 학습 스크립트 공통).",
+    "train_random_state": "학습 분할 난수 시드.",
+    "rl_max_decisions": "RL 에피소드당 결정 횟수(분 단위).",
+    "rl_total_timesteps": "RL 총 학습 스텝 수.",
+    "rl_rollout_steps": "PPO 롤아웃 스텝 (batch size의 배수).",
+    "rl_n_envs": "병렬 SUMO 환경 개수. 1이면 병렬 안 씀. CPU 코어 수 이하 권장.",
+    "rl_batch_size": "PPO 배치 크기.",
+    "rl_seed": "RL 난수 시드.",
+    "rl_learning_rate": "PPO 학습률.",
+    "rl_gamma": "미래 보상 할인율(gamma).",
+    "rl_randomize_passenger_seed": "RL 학습 때 에피소드마다 다른 승객 호출 패턴을 쓴다.",
+    "run_sim_before_training": "'학습만 실행' 때 시뮬레이션을 먼저 돌려 학습 로그를 만든다. 끄면 기존 로그로 바로 학습.",
+    "force_regenerate_demand_v2": "'학습만 실행' 때 demand_v2.joblib이 있어도 다시 만든다 (기존 파일은 백업).",
+    "mock_available_taxis_min": "배차 단위 테스트용 가용 택시 최소 수.",
+    "mock_available_taxis_max": "배차 단위 테스트용 가용 택시 최대 수.",
+    "mock_taxi_count": "배차 단위 테스트 택시 수.",
+    "mock_passenger_count": "배차 단위 테스트 승객 수.",
+    "demo_data_rows": "학습 데모(가짜) 데이터 행 수.",
+    "demo_data_minutes": "추론 데모 데이터 길이(분).",
+    "demo_data_start": "데모 데이터 시작 시각.",
+    "taxi_respawn_prefix": "다시 생성된 택시 ID 앞에 붙이는 접두어.",
 }
 
-# 핵심 제어 탭에 다시 모아 보여줄 자주 쓰는 값 (다른 탭과 같은 변수를 공유)
-CORE_CHOICES = ["taxi_strategy", "taxi_dispatch_algorithm", "demand_source", "holiday_mode"]
-CORE_NUMERICS = ["num_taxis", "num_normal_cars", "sim_start_hour", "sim_end_hour", "passenger_wait_timeout",
-                 "real_demand_scale", "xgb_n_estimators", "xgb_max_depth", "xgb_learning_rate", "cnn_epochs",
-                 "base_fare", "max_multiplier", "surge_coefficient"]
+
+class ToolTip:
+    """위젯에 마우스를 올리면 설명을 띄운다."""
+
+    def __init__(self, widget, text):
+        self.widget, self.text, self.tip = widget, text, None
+        widget.bind("<Enter>", self._show, add="+")
+        widget.bind("<Leave>", self._hide, add="+")
+
+    def _show(self, _event=None):
+        if self.tip or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 4
+        self.tip = tk.Toplevel(self.widget)
+        self.tip.wm_overrideredirect(True)
+        self.tip.attributes("-topmost", True)  # GUI 창 뒤에 가려지지 않게
+        self.tip.wm_geometry(f"+{x}+{y}")
+        tk.Label(self.tip, text=self.text, justify="left", wraplength=420, background="#fffbe6",
+                 relief="solid", borderwidth=1, padx=6, pady=4, font=("맑은 고딕", 9)).pack()
+
+    def _hide(self, _event=None):
+        if self.tip:
+            self.tip.destroy()
+            self.tip = None
+
+
+def _scroll_area(parent):
+    """세로 스크롤되는 영역. 마우스가 영역 안에 있을 때만 휠이 이 영역을 움직인다."""
+    canvas = tk.Canvas(parent, highlightthickness=0)
+    sb = ttk.Scrollbar(parent, orient="vertical", command=canvas.yview)
+    inner = ttk.Frame(canvas, padding=8)
+    inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+    win = canvas.create_window((0, 0), window=inner, anchor="nw")
+    canvas.bind("<Configure>", lambda e: canvas.itemconfigure(win, width=e.width))
+    canvas.configure(yscrollcommand=sb.set)
+    canvas.pack(side="left", fill="both", expand=True)
+    sb.pack(side="right", fill="y")
+    wheel = lambda e: canvas.yview_scroll(int(-1 * (e.delta / 120)), "units")
+    canvas.bind("<Enter>", lambda e: canvas.bind_all("<MouseWheel>", wheel))
+    canvas.bind("<Leave>", lambda e: canvas.unbind_all("<MouseWheel>"))
+    return inner
 
 
 class ConfigGUI:
     def __init__(self, root):
         self.root = root
-        root.title("AI Mobility — CONFIG GUI (전체 설정)")
-        root.geometry("780x820")
-        self.vars = {}
+        root.title("AI Mobility — CONFIG GUI")
+        root.geometry("820x840")
+        self.vars, self.bool_vars, self.choice_vars, self.text_vars = {}, {}, {}, {}
+        self.holiday_mult_vars = {}
         self._loaded_config = {}
+        self._numeric_meta = {k: (label, lo, hi, dec, isint)
+                              for items in NUMERIC_GROUPS.values() for k, label, lo, hi, dec, isint in items}
+        self._numeric_meta.update({k: (label, lo, hi, dec, isint) for k, label, lo, hi, dec, isint in WEATHER_NUMERICS})
+        self._bool_meta = dict(BOOLS + [("weather_bonus_enabled", "날씨적용 (현재 날씨로 택시확률 보정)")])
+        self._choice_meta = {k: (label, vals) for k, label, vals in CHOICES}
+        self._choice_meta["freq"] = ("집계 시간 칸 (freq)", FREQ_OPTIONS)
+        self._text_meta = dict(TEXTS)
+        self._check_sections()
         self._build()
         self.load_config_file(show=False)
 
+    def _check_sections(self):
+        """모든 설정이 세부 설정의 한 섹션에 들어가 있는지 (빠지면 화면에서 바꿀 수 없음)."""
+        listed = [k for _, keys in DETAIL_SECTIONS for k in keys]
+        known = (set(self._numeric_meta) | set(self._bool_meta) | set(self._choice_meta) | set(self._text_meta)
+                 | {"region", "passenger_seed", "holiday_multipliers"})
+        missing, unknown = known - set(listed), set(listed) - known
+        if missing or unknown:
+            print(f"[경고] 세부 설정 섹션 확인 필요 — 빠짐: {sorted(missing)}, 알 수 없음: {sorted(unknown)}")
+
+    # ---------------------------------------------------------------- 화면 구성
     def _build(self):
-        ttk.Label(self.root, text="CONFIG GUI — 프로젝트 전체 실험/시뮬레이션 설정",
-                  font=("맑은 고딕", 14, "bold")).pack(pady=(10, 0))
-        ttk.Label(self.root, text="자주 쓰는 값은 '핵심 제어' 탭, 세부 값은 모듈별 탭. 모든 변경은 [적용하기]로 config.json에 저장됩니다.",
+        ttk.Style().configure("Section.TButton", anchor="w", font=("맑은 고딕", 10, "bold"))
+        ttk.Label(self.root, text="CONFIG GUI — 시뮬레이션·학습 설정", font=("맑은 고딕", 14, "bold")).pack(pady=(10, 0))
+        ttk.Label(self.root, text="실행 버튼은 지금 화면 값으로 실행합니다(config.json은 그대로). "
+                                  "[적용하기]를 눌러야 내 기본 설정(config.json)으로 저장됩니다.",
                   foreground="#64748b").pack(pady=(2, 8))
 
-        bottom_frame = ttk.Frame(self.root)
-        bottom_frame.pack(fill="x", side="bottom", padx=12, pady=(0, 8))
-        content_frame = ttk.Frame(self.root)
-        content_frame.pack(fill="both", expand=True)
-        nb = ttk.Notebook(content_frame)
-        nb.pack(fill="both", expand=True)
-        for tab, items in NUMERIC_GROUPS.items():
-            self._numeric_tab(nb, tab, items)
-        self._special_tab(nb)
-        # 다른 탭의 변수가 다 만들어진 뒤 같은 변수를 공유하는 핵심 제어 탭을 맨 앞에 끼워 넣는다
-        self._quick_tab(nb)
+        bottom = ttk.Frame(self.root)
+        bottom.pack(fill="x", side="bottom", padx=12, pady=(0, 8))
+        nb = ttk.Notebook(self.root)
+        nb.pack(fill="both", expand=True, padx=8)
+        basic = ttk.Frame(nb)
+        detail = ttk.Frame(nb)
+        nb.add(basic, text="기본")
+        nb.add(detail, text="세부 설정")
+        # 세부 설정에서 모든 변수를 만든 뒤, 기본 탭은 같은 변수를 공유하는 위젯만 만든다
+        self._build_detail_tab(detail)
+        self._build_basic_tab(basic)
 
-        pf = ttk.LabelFrame(bottom_frame, text="프리셋", padding=8)
-        pf.pack(fill="x", padx=12, pady=4)
-        self.preset_combo = ttk.Combobox(pf, state="readonly")
-        self.preset_combo.pack(side="left", fill="x", expand=True, padx=5)
-        ttk.Button(pf, text="불러오기", command=self.load_preset).pack(side="left")
-        ttk.Button(pf, text="저장", command=self.save_preset).pack(side="left")
-        ttk.Button(pf, text="삭제", command=self.delete_preset).pack(side="left")
-        self.refresh_presets()
-
-        bf = ttk.Frame(bottom_frame)
-        bf.pack(fill="x", padx=12, pady=8)
-        ttk.Button(bf, text="적용하기", command=self.save_config_only).pack(side="left", fill="x", expand=True, padx=3)
-        ttk.Button(bf, text="▶ 플레이", command=self.run_main).pack(side="left", fill="x", expand=True, padx=3)
-        ttk.Button(bf, text="학습만 실행", command=self.open_training_dialog).pack(side="left", fill="x", expand=True, padx=3)
-        ttk.Button(bf, text="🧪 A/B 비교하기", command=self.open_ab_compare_dialog).pack(side="left", fill="x", expand=True, padx=3)
-        ttk.Button(bf, text="📊 분석하기", command=self.open_analysis_dialog).pack(side="left", fill="x", expand=True, padx=3)
-        ttk.Button(bf, text="🎬 유니티 재생 생성기", command=self.open_unity_replay_dialog).pack(side="left", fill="x", expand=True, padx=3)
-
-        self.status = ttk.Label(bottom_frame, text="현재 config.json을 불러오는 중...")
-        self.status.pack(anchor="w", padx=12, pady=(0, 8))
-
-    def _create_slider_row(self, parent, key, label, lo, hi, dec, isint):
-        row = ttk.Frame(parent)
-        row.pack(fill="x", pady=3)
-        ttk.Label(row, text=label, width=34).pack(side="left")
-        var = tk.DoubleVar(value=DEFAULT_CONFIG.get(key, 0))
-        self.vars[key] = (var, dec, isint)
-        ttk.Entry(row, textvariable=var, width=12).pack(side="right", padx=4)
-        ttk.Scale(row, from_=lo, to=hi, variable=var, length=300).pack(side="right", fill="x", expand=True)
-
-    def _build_collapsible_module1(self, parent, items):
-        categories = {
-            "기본 맵 & 차량 설정": [
-                "grid_x", "grid_y", "grid_length", "num_normal_cars",
-                "num_taxis", "num_auto_cars", "num_obstacles", "num_passengers",
-            ],
-            "시뮬레이션 & 로직 기준": [
-                "sim_start_hour", "sim_end_hour", "passenger_wait_timeout",
-                "real_demand_scale", "real_internal_trip_km", "depart_jitter_sec",
-                "sumo_time_to_teleport", "taxi_remaining_edges_threshold",
-                "taxi_target_pick_attempts", "taxi_fail_threshold", "taxi_primary_prob",
-            ],
-            "주거 지역 (Residential)": [
-                "residential_base_pop_per_edge", "residential_schedule_scale", "residential_taxi_probability",
-                "residential_out_hour", "residential_out_probability", "residential_evening_in_hour",
-                "residential_evening_in_probability", "residential_late_in_hour", "residential_late_in_probability",
-            ],
-            "학교 (School)": [
-                "school_pop_base", "school_start_hour", "school_end_hour", "school_taxi_peak_hour",
-                "school_afternoon_start_hour", "school_afternoon_end_hour", "school_afternoon_fraction",
-            ],
-            "회사 및 점심 (Company & Lunch)": [
-                "company_pop_base", "company_start_hour", "company_end_hour", "company_taxi_peak_hour",
-                "lunch_start_hour", "lunch_end_hour", "lunch_company_release_fraction", "lunch_taxi_fraction",
-            ],
-            "퇴근 및 저녁/음식점 (Evening & Restaurant)": [
-                "evening_start_hour", "evening_end_hour", "evening_taxi_fraction", "late_evening_start_hour",
-                "late_evening_end_hour", "evening_residential_fraction", "restaurant_stay_sec",
-                "restaurant_pop_base", "restaurant_window1_start", "restaurant_window1_end",
-                "restaurant_window2_start", "restaurant_window2_end", "restaurant_civilian_taxi_probability",
-            ],
-            "백화점 (Department Store)": [
-                "department_pop_base", "department_window_start", "department_window_end",
-                "department_taxi_probability", "department_stay_sec",
-            ],
-        }
-
-        item_dict = {item[0]: item for item in items}
-
-        for cat_name, keys in categories.items():
-            group_frame = ttk.LabelFrame(parent, padding=5)
-            group_frame.pack(fill="x", expand=True, pady=4, padx=2)
-
-            header_frame = ttk.Frame(group_frame)
-            header_frame.pack(fill="x")
-
-            content_frame = ttk.Frame(group_frame, padding=(5, 5))
-            content_frame.pack(fill="x", expand=True)
-
-            is_expanded = [False]
-
-            def make_toggle(c_frame, btn, expanded):
-                def _toggle():
-                    if expanded[0]:
-                        c_frame.pack_forget()
-                        btn.config(text="▶ 펼치기")
-                        expanded[0] = False
-                    else:
-                        c_frame.pack(fill="x", expand=True)
-                        btn.config(text="▼ 접기")
-                        expanded[0] = True
-                return _toggle
-
-            lbl = ttk.Label(header_frame, text=cat_name, font=("맑은 고딕", 10, "bold"))
-            lbl.pack(side="left", padx=5)
-
-            btn = ttk.Button(header_frame, text="▶ 펼치기", width=10)
-            btn.config(command=make_toggle(content_frame, btn, is_expanded))
-            btn.pack(side="right")
-            content_frame.pack_forget()  # 기본 접힘
-
-            for k in keys:
-                if k in item_dict:
-                    key, label, lo, hi, dec, isint = item_dict[k]
-                    self._create_slider_row(content_frame, key, label, lo, hi, dec, isint)
-
-    def _numeric_tab(self, nb, tab, items):
-        frame = ttk.Frame(nb, padding=12)
-        nb.add(frame, text=tab.split("—")[0].strip() if "—" in tab else tab)
-
-        canvas = tk.Canvas(frame, highlightthickness=0)
-        sb = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
-        inner = ttk.Frame(canvas)
-
-        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=inner, anchor="nw")
-        canvas.configure(yscrollcommand=sb.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        # Module 1일 경우에만 접기/펼치기 카테고리 적용
-        if "Module 1" in tab:
-            self._build_collapsible_module1(inner, items)
-        else:
-            for key, label, lo, hi, dec, isint in items:
-                self._create_slider_row(inner, key, label, lo, hi, dec, isint)
-
-    def _toggle_weather_frame(self):
-        if self.weather_bonus_var.get():
-            self.weather_frame.pack(fill="x", pady=6)
-        else:
-            self.weather_frame.pack_forget()
-
-    def _special_tab(self, nb):
-        frame = ttk.Frame(nb)
-        nb.add(frame, text="공통/선택")
-
-        canvas = tk.Canvas(frame, highlightthickness=0)
-        sb = ttk.Scrollbar(frame, orient="vertical", command=canvas.yview)
-        f = ttk.Frame(canvas, padding=12)
-
-        f.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=f, anchor="nw")
-        canvas.configure(yscrollcommand=sb.set)
-
-        canvas.pack(side="left", fill="both", expand=True)
-        sb.pack(side="right", fill="y")
-
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-
-        r = ttk.Frame(f)
-        r.pack(fill="x", pady=5)
-        ttk.Label(r, text="지역", width=30).pack(side="left")
-        self.region_var = tk.StringVar()
-        self.region = RegionSearchEntry(r, default="홍대입구", width=24)
-        self.region.pack(side="right")
-
-        r = ttk.Frame(f)
-        r.pack(fill="x", pady=5)
-        ttk.Label(r, text="freq", width=30).pack(side="left")
-        self.freq_var = tk.StringVar()
-        ttk.Combobox(r, textvariable=self.freq_var, values=FREQ_OPTIONS, state="readonly", width=20).pack(side="right")
-
-        self.bool_vars = {}
-        for key, label in BOOLS:
-            v = tk.BooleanVar(value=bool(DEFAULT_CONFIG.get(key, False)))
-            self.bool_vars[key] = v
-            ttk.Checkbutton(f, text=label, variable=v).pack(anchor="w", pady=4)
-
-        self.choice_vars = {}
-        for key, label, vals in CHOICES:
-            r = ttk.Frame(f)
-            r.pack(fill="x", pady=5)
-            ttk.Label(r, text=label, width=30).pack(side="left")
-            v = tk.StringVar()
-            self.choice_vars[key] = v
-            ttk.Combobox(r, textvariable=v, values=vals, state="readonly", width=20).pack(side="right")
-
-        r = ttk.Frame(f)
-        r.pack(fill="x", pady=8)
-        ttk.Label(r, text="Passenger seed (비우면 랜덤)", width=30).pack(side="left")
-        self.seed_var = tk.StringVar()
-        ttk.Entry(r, textvariable=self.seed_var, width=20).pack(side="right")
-
-        self.text_vars = {}
-        for key, label in [
-            ("sim_date", "시뮬레이션 기준 날짜 (YYYY-MM-DD)"),
-            ("demo_data_start", "데모 데이터 시작 시각"),
-            ("taxi_respawn_prefix", "택시 재생성 ID 접두어"),
-        ]:
-            r = ttk.Frame(f)
-            r.pack(fill="x", pady=5)
-            ttk.Label(r, text=label, width=30).pack(side="left")
-            v = tk.StringVar()
-            self.text_vars[key] = v
-            ttk.Entry(r, textvariable=v, width=24).pack(side="right")
-
-        # [공휴일 보정] 공휴일/주말일 때 카테고리별 택시확률 배율 (평일은 항상 1.0)
-        ttk.Label(f, foreground="gray", wraplength=520, justify="left", text=(
-            "공휴일 판정: auto=아래 날짜로 자동(토·일·한국 공휴일), weekday/holiday=강제.\n"
-            "실행 날짜: sim_date=위 '기준 날짜' 고정(평가·A/B용), alternate=평일/공휴일 번갈아(학습 로그용), random=랜덤.")
-        ).pack(anchor="w", pady=(4, 0))
-        self.holiday_frame = ttk.LabelFrame(f, text="공휴일 배율 (공휴일/주말일 때 택시확률에 곱함)", padding=8)
-        self.holiday_frame.pack(fill="x", pady=(8, 4))
-        self.holiday_mult_vars = {}
-        _hm_defaults = DEFAULT_CONFIG.get("holiday_multipliers", {})
-        for key, label in [
-            ("school", "등교 (0=공휴일 등교 없음)"),
-            ("company", "출근 (점심·퇴근 인원도 같이 줄어듦)"),
-            ("restaurant", "음식점 방문"),
-            ("general", "기본 수요 (num_passengers 가챠)"),
-            ("department", "백화점 방문 (공휴일 증가)"),
-            ("lunch", "점심 이동 (아침 인원에서 파생, 1.0 권장)"),
-            ("evening", "퇴근 (아침 인원에서 파생, 1.0 권장)"),
-        ]:
-            row = ttk.Frame(self.holiday_frame)
-            row.pack(fill="x", pady=3)
-            ttk.Label(row, text=label, width=34).pack(side="left")
-            var = tk.DoubleVar(value=_hm_defaults.get(key, 1.0))
-            self.holiday_mult_vars[key] = var
-            ttk.Entry(row, textvariable=var, width=8).pack(side="right", padx=4)
-            ttk.Scale(row, from_=0, to=3, variable=var, length=200).pack(side="right", fill="x", expand=True)
-
-        # [날씨 보정] 체크하면 아래 슬라이더가 나타남
-        self.weather_bonus_var = tk.BooleanVar(value=bool(DEFAULT_CONFIG.get("weather_bonus_enabled", False)))
-        self.bool_vars["weather_bonus_enabled"] = self.weather_bonus_var
-        self.weather_bonus_var.trace_add("write", lambda *args: self._toggle_weather_frame())
-        ttk.Checkbutton(f, text="날씨적용 (오늘 날씨로 택시확률 보정)", variable=self.weather_bonus_var).pack(anchor="w", pady=(12, 4))
-
-        self.weather_frame = ttk.LabelFrame(f, text="날씨 보정 값", padding=8)
-        weather_items = [
-            ("weather_rain_taxi_bonus", "비 올 때 택시확률 가산", 0, 1, 3, 0),
-            ("weather_cool_taxi_bonus", "쌀쌀할 때 택시확률 가산", 0, 1, 3, 0),
-            ("weather_sunny_taxi_bonus", "맑을 때 택시확률 가산", 0, 1, 3, 0),
-            ("weather_rain_threshold_mm", "비로 판정하는 강수량(mm)", 0, 50, 2, 0),
-            ("weather_cool_threshold_c", "쌀쌀함 판정 기온(°C)", -20, 40, 1, 0),
-            ("weather_strong_wind_threshold_kmh", "강풍 판정 풍속(km/h, 50.4=14m/s)", 0, 200, 1, 0),
-            ("weather_strong_wind_taxi_bonus", "강풍일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
-            ("weather_typhoon_wind_threshold_kmh", "태풍급 판정 풍속(km/h, 61.2=17m/s, 강풍보다 우선)", 0, 200, 1, 0),
-            ("weather_typhoon_taxi_bonus", "태풍급일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
+        bf = ttk.Frame(bottom)
+        bf.pack(fill="x", pady=8)
+        buttons = [
+            ("적용하기", self.save_config_only, "지금 화면 값을 내 기본 설정(config.json)으로 저장"),
+            ("▶ 플레이", self.run_main, "지금 화면 값으로 지도 생성 후 SUMO GUI 시뮬레이션"),
+            ("학습만 실행", self.open_training_dialog, "로그 생성·수요 예측·RL 학습"),
+            ("🧪 A/B 비교하기", self.open_ab_compare_dialog, "전략·배차 조합을 같은 손님 목록으로 병렬 비교"),
+            ("📊 분석하기", self.open_analysis_dialog, "학습 로그 분석 (평일/공휴일, 전략별)"),
+            ("🎬 유니티 재생 생성기", self.open_unity_replay_dialog, "SUMO 결과를 Unity 재생 파일로 내보내기"),
         ]
-        for key, label, lo, hi, dec, isint in weather_items:
-            row = ttk.Frame(self.weather_frame)
-            row.pack(fill="x", pady=3)
-            ttk.Label(row, text=label, width=28).pack(side="left")
-            var = tk.DoubleVar(value=DEFAULT_CONFIG.get(key, 0))
-            self.vars[key] = (var, dec, isint)
-            ttk.Entry(row, textvariable=var, width=10).pack(side="right", padx=4)
-            ttk.Scale(row, from_=lo, to=hi, variable=var, length=220).pack(side="right", fill="x", expand=True)
-        self._toggle_weather_frame()
+        for text, cmd, tip in buttons:
+            b = ttk.Button(bf, text=text, command=cmd)
+            b.pack(side="left", fill="x", expand=True, padx=3)
+            ToolTip(b, tip)
+        self.status = ttk.Label(bottom, text="config.json을 불러오는 중...")
+        self.status.pack(anchor="w", pady=(0, 4))
 
-    def _quick_tab(self, nb):
-        """핵심 제어 탭: 원클릭 시나리오 프리셋 + 자주 쓰는 값. 위젯은 다른 탭과 같은 tk 변수를 공유한다."""
-        frame = ttk.Frame(nb, padding=12)
-        nb.insert(0, frame, text="🌟 핵심 제어")
-        nb.select(0)
+    def _build_basic_tab(self, parent):
+        f = ttk.Frame(parent, padding=12)
+        f.pack(fill="both", expand=True)
+        self.preset_box = ttk.LabelFrame(f, text="프리셋 (누르면 화면에 적용, 저장은 [적용하기])", padding=8)
+        self.preset_box.pack(fill="x", pady=(0, 10))
+        self._refresh_preset_buttons()
+        box = ttk.LabelFrame(f, text="기본 설정 (항목에 마우스를 올리면 설명)", padding=8)
+        box.pack(fill="x")
+        for key in BASIC_KEYS:
+            self._row(box, key, create=False)
+        ttk.Label(f, text="나머지 설정은 '세부 설정' 탭에 있습니다. 세부 설정에서 만든 개인 프리셋도 위 버튼에 나타납니다.",
+                  foreground="#64748b").pack(anchor="w", pady=(10, 0))
 
-        box = ttk.LabelFrame(frame, text="🚀 원클릭 시나리오 프리셋 (누른 뒤 [적용하기]로 저장)", padding=8)
-        box.pack(fill="x", pady=(0, 10))
-        for title, preset in SCENARIO_PRESETS.items():
-            ttk.Button(box, text=title, command=lambda p=preset, t=title: self._apply_quick_preset(p, t)).pack(
-                side="left", fill="x", expand=True, padx=3)
+    def _build_detail_tab(self, parent):
+        inner = _scroll_area(parent)
+        top = ttk.LabelFrame(inner, text="개인 프리셋 (presets/user/ — 나만 쓰고 git에 올라가지 않음)", padding=8)
+        top.pack(fill="x", pady=(0, 6))
+        b = ttk.Button(top, text="현재 화면을 프리셋으로 저장", command=self.save_preset)
+        b.pack(side="left", padx=3)
+        ToolTip(b, "지금 화면 값을 이름을 붙여 저장. 기본 탭의 프리셋 버튼에 추가된다.")
+        self.preset_combo = ttk.Combobox(top, state="readonly", width=24)
+        self.preset_combo.pack(side="left", padx=6)
+        ttk.Button(top, text="삭제", command=self.delete_preset).pack(side="left")
+        ctl = ttk.Frame(inner)
+        ctl.pack(fill="x", pady=(2, 4))
+        ttk.Button(ctl, text="모두 펼치기", command=lambda: self._toggle_all(True)).pack(side="left", padx=3)
+        ttk.Button(ctl, text="모두 접기", command=lambda: self._toggle_all(False)).pack(side="left", padx=3)
+        self._sections = []
+        for title, keys in DETAIL_SECTIONS:
+            content = self._section(inner, title)
+            for key in keys:
+                self._row(content, key, create=True)
+        self._toggle_weather_rows()
 
-        env = ttk.LabelFrame(frame, text="지역·전략", padding=8)
-        env.pack(fill="x", pady=4)
-        labels = {key: label for key, label, _ in CHOICES}
-        values = {key: vals for key, _, vals in CHOICES}
-        for key in CORE_CHOICES:
-            r = ttk.Frame(env)
-            r.pack(fill="x", pady=3)
-            ttk.Label(r, text=labels[key], width=30).pack(side="left")
-            ttk.Combobox(r, textvariable=self.choice_vars[key], values=values[key], state="readonly", width=20).pack(side="right")
-        ttk.Checkbutton(env, text="실제 OSM 지도 사용", variable=self.bool_vars["use_real_map"]).pack(anchor="w", pady=4)
+    def _section(self, parent, title):
+        """접기/펼치기 섹션. 기본은 접힘."""
+        frame = ttk.Frame(parent)
+        frame.pack(fill="x", pady=2)
+        content = ttk.Frame(frame, padding=(14, 2, 4, 6))
+        state = {"open": False}
+        btn = ttk.Button(frame, text=f"▶  {title}", style="Section.TButton")
 
-        nums = ttk.LabelFrame(frame, text="핵심 수치", padding=8)
-        nums.pack(fill="x", pady=6)
-        items = {item[0]: item for group in NUMERIC_GROUPS.values() for item in group}
-        for key in CORE_NUMERICS:
-            _, label, lo, hi, _, _ = items[key]
+        def toggle(open_=None):
+            state["open"] = (not state["open"]) if open_ is None else open_
+            btn.config(text=f"{'▼' if state['open'] else '▶'}  {title}")
+            if state["open"]:
+                content.pack(fill="x")
+            else:
+                content.pack_forget()
+        btn.config(command=toggle)
+        btn.pack(fill="x")
+        self._sections.append(toggle)
+        return content
+
+    def _toggle_all(self, open_):
+        for toggle in self._sections:
+            toggle(open_)
+
+    def _row(self, parent, key, create):
+        """설정 한 줄. create=True면 변수를 새로 만들고, False면 세부 설정에서 만든 변수를 공유한다."""
+        row = ttk.Frame(parent)
+        row.pack(fill="x", pady=2)
+        if key == "region":
+            lbl = ttk.Label(row, text="지역", width=34)
+            lbl.pack(side="left")
+            if create:
+                self.region = RegionSearchEntry(row, default="강남역", width=24)
+                self.region.pack(side="right")
+            else:
+                # RegionSearchEntry는 한 위젯이라 기본 탭에는 같은 값을 쓰는 입력칸을 따로 둔다
+                self.basic_region = RegionSearchEntry(row, default="강남역", width=24)
+                self.basic_region.pack(side="right")
+                self._link_region()
+        elif key in self._numeric_meta:
+            label, lo, hi, dec, isint = self._numeric_meta[key]
+            if create:
+                self.vars[key] = (tk.DoubleVar(value=DEFAULT_CONFIG.get(key, 0)), dec, isint)
             var = self.vars[key][0]
-            row = ttk.Frame(nums)
-            row.pack(fill="x", pady=3)
-            ttk.Label(row, text=label, width=34).pack(side="left")
-            ttk.Entry(row, textvariable=var, width=12).pack(side="right", padx=4)
-            ttk.Scale(row, from_=lo, to=hi, variable=var, length=300).pack(side="right", fill="x", expand=True)
+            lbl = ttk.Label(row, text=label, width=34)
+            lbl.pack(side="left")
+            ttk.Entry(row, textvariable=var, width=10).pack(side="right", padx=4)
+            ttk.Scale(row, from_=lo, to=hi, variable=var, length=260).pack(side="right", fill="x", expand=True)
+        elif key in self._bool_meta:
+            if create:
+                self.bool_vars[key] = tk.BooleanVar(value=bool(DEFAULT_CONFIG.get(key, False)))
+            lbl = ttk.Checkbutton(row, text=self._bool_meta[key], variable=self.bool_vars[key])
+            lbl.pack(anchor="w")
+            if key == "weather_bonus_enabled" and create:
+                self.weather_bonus_var = self.bool_vars[key]
+                self.weather_bonus_var.trace_add("write", lambda *a: self._toggle_weather_rows())
+        elif key in self._choice_meta:
+            label, vals = self._choice_meta[key]
+            if create:
+                v = tk.StringVar()
+                if key == "freq":
+                    self.freq_var = v
+                else:
+                    self.choice_vars[key] = v
+            var = self.freq_var if key == "freq" else self.choice_vars[key]
+            lbl = ttk.Label(row, text=label, width=34)
+            lbl.pack(side="left")
+            ttk.Combobox(row, textvariable=var, values=vals, state="readonly", width=22).pack(side="right")
+        elif key in self._text_meta:
+            if create:
+                self.text_vars[key] = tk.StringVar()
+            lbl = ttk.Label(row, text=self._text_meta[key], width=34)
+            lbl.pack(side="left")
+            ttk.Entry(row, textvariable=self.text_vars[key], width=24).pack(side="right")
+        elif key == "passenger_seed":
+            if create:
+                self.seed_var = tk.StringVar()
+            lbl = ttk.Label(row, text="승객 시드 (비우면 랜덤)", width=34)
+            lbl.pack(side="left")
+            ttk.Entry(row, textvariable=self.seed_var, width=24).pack(side="right")
+        elif key == "holiday_multipliers":
+            lbl = ttk.Label(row, text="공휴일 배율 (공휴일·주말일 때 택시확률에 곱함)", font=("맑은 고딕", 9, "bold"))
+            lbl.pack(anchor="w")
+            defaults = DEFAULT_CONFIG.get("holiday_multipliers", {})
+            for cat, cat_label in HOLIDAY_MULT_ITEMS:
+                r = ttk.Frame(parent)
+                r.pack(fill="x", pady=1)
+                ttk.Label(r, text="   " + cat_label, width=34).pack(side="left")
+                var = tk.DoubleVar(value=defaults.get(cat, 1.0))
+                self.holiday_mult_vars[cat] = var
+                ttk.Entry(r, textvariable=var, width=10).pack(side="right", padx=4)
+                ttk.Scale(r, from_=0, to=3, variable=var, length=260).pack(side="right", fill="x", expand=True)
+        else:
+            return
+        if create and key in {k for k, *_ in WEATHER_NUMERICS}:
+            self._weather_rows = getattr(self, "_weather_rows", []) + [row]
+        ToolTip(lbl, TIPS.get(key, ""))
+        ToolTip(row, TIPS.get(key, ""))
 
-    def _apply_quick_preset(self, preset, name):
-        """시나리오 프리셋 값을 화면에 반영 (config.json 저장은 [적용하기])."""
-        for k, val in preset.items():
-            if k == "region":
-                self.region.set(val)
-            elif k in self.choice_vars:
-                self.choice_vars[k].set(str(val))
-            elif k in self.bool_vars:
-                self.bool_vars[k].set(bool(val))
-            elif k in self.vars:
-                var, _, isint = self.vars[k]
-                var.set(int(val) if isint else float(val))
-        self.status.config(text=f"시나리오 프리셋 적용: '{name}' (저장하려면 [적용하기])")
+    def _link_region(self):
+        """기본 탭과 세부 설정의 지역 입력칸을 같은 값으로 맞춘다 (어느 쪽에서 바꿔도 반영)."""
+        def sync(src, dst):
+            def _f(*_):
+                if dst.get() != src.get():
+                    dst.set(src.get())
+            return _f
+        for a, b in ((self.region, self.basic_region), (self.basic_region, self.region)):
+            var = getattr(a, "var", None) or getattr(a, "textvariable", None)
+            if isinstance(var, tk.Variable):
+                var.trace_add("write", sync(a, b))
+
+    def _toggle_weather_rows(self):
+        """날씨적용을 켰을 때만 날씨 보정 값 줄을 보여 준다."""
+        if not hasattr(self, "weather_bonus_var"):
+            return
+        for row in getattr(self, "_weather_rows", []):
+            if self.weather_bonus_var.get():
+                row.pack(fill="x", pady=2)
+            else:
+                row.pack_forget()
+
+    # ---------------------------------------------------------------- 프리셋
+    def _preset_files(self):
+        """[(이름, 경로, 팀 여부)] 팀 프리셋(presets/default) 먼저, 그다음 개인 프리셋(presets/user)."""
+        out = []
+        for folder, team in ((DEFAULT_PRESET_DIR, True), (USER_PRESET_DIR, False)):
+            if os.path.isdir(folder):
+                for f in sorted(os.listdir(folder)):
+                    if f.endswith(".json"):
+                        out.append((f[:-5], os.path.join(folder, f), team))
+        # 팀 기본 프리셋은 맨 앞
+        out.sort(key=lambda x: (not x[2], x[0] != "기본", x[0]))
+        return out
+
+    def _refresh_preset_buttons(self):
+        for w in self.preset_box.winfo_children():
+            w.destroy()
+        files = self._preset_files()
+        for i, (name, path, team) in enumerate(files):
+            b = ttk.Button(self.preset_box, text=("" if team else "★ ") + name,
+                           command=lambda p=path, n=name: self.apply_preset(p, n))
+            b.grid(row=i // 3, column=i % 3, sticky="ew", padx=3, pady=2)
+            ToolTip(b, ("팀 공유 프리셋" if team else "내 개인 프리셋") + f" — {os.path.relpath(path, ROOT)}")
+        for c in range(3):
+            self.preset_box.columnconfigure(c, weight=1)
+        if hasattr(self, "preset_combo"):
+            users = [n for n, _, team in files if not team]
+            self.preset_combo["values"] = users
+            self.preset_combo.set(users[0] if users else "")
 
     def current(self):
         c = {**DEFAULT_CONFIG, **self._loaded_config}
@@ -545,16 +679,17 @@ class ConfigGUI:
             v.set(float(_hm.get(k, 1.0)))
 
     def load_config_file(self, show=True):
+        """내 설정(config.json)을 불러온다. 아직 없으면(처음 받은 상태) 팀 기본 프리셋으로 시작."""
         try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                c = json.load(f)
+            c = read_user_config(CONFIG_PATH)
         except Exception:
-            c = DEFAULT_CONFIG.copy()
+            c = {}
         merged = {**DEFAULT_CONFIG, **c}
         self._loaded_config = merged.copy()
         self.set_values(merged)
         if hasattr(self, "status"):
-            self.status.config(text="현재 config.json을 GUI에 불러왔습니다.")
+            self.status.config(text="내 설정(config.json)을 불러왔습니다." if os.path.exists(CONFIG_PATH)
+                               else "config.json이 없어 팀 기본 프리셋으로 시작합니다. [적용하기]를 누르면 내 설정으로 저장됩니다.")
 
     def save_config_only(self):
         c = self.current()
@@ -572,34 +707,38 @@ class ConfigGUI:
                                 f"(config.json은 [적용하기]로만 바뀜)")
         return c
 
-    def refresh_presets(self):
-        files = [f[:-5] for f in os.listdir(PRESET_DIR) if f.endswith(".json")]
-        self.preset_combo["values"] = files
-        if files:
-            self.preset_combo.current(0)
+    def apply_preset(self, path, name):
+        """프리셋을 화면에 적용. 일부 값만 있는 프리셋(시나리오)은 그 값만 바뀌고 나머지는 지금 화면 그대로."""
+        with open(path, encoding="utf-8") as f:
+            preset = json.load(f)
+        c = self.current()
+        c.update(preset)
+        self._loaded_config = {**self._loaded_config, **preset}  # 화면에 없는 키도 저장·실행에 반영
+        self.set_values(c)
+        self.status.config(text=f"프리셋 '{name}' 적용 (저장하려면 [적용하기], 그대로 실행해도 됨)")
 
     def save_preset(self):
-        name = simpledialog.askstring("프리셋", "이름:")
-        if name:
-            with open(os.path.join(PRESET_DIR, name + ".json"), "w", encoding="utf-8") as f:
-                json.dump(self.current(), f, ensure_ascii=False, indent=2)
-            self.refresh_presets()
-            self.status.config(text=f"프리셋 '{name}' 저장 완료")
-
-    def load_preset(self):
-        n = self.preset_combo.get()
-        if not n:
+        """지금 화면 값을 개인 프리셋(presets/user/)으로 저장 — git에 올라가지 않음."""
+        name = simpledialog.askstring("개인 프리셋 저장", "프리셋 이름:")
+        if not name:
             return
-        with open(os.path.join(PRESET_DIR, n + ".json"), encoding="utf-8") as f:
-            self._loaded_config = {**DEFAULT_CONFIG, **json.load(f)}
-        self.set_values(self._loaded_config)
-        self.status.config(text=f"프리셋 '{n}' 불러오기 완료")
+        name = name.strip().replace("/", "_").replace("\\", "_")
+        os.makedirs(USER_PRESET_DIR, exist_ok=True)
+        path = os.path.join(USER_PRESET_DIR, name + ".json")
+        if os.path.exists(path) and not messagebox.askyesno("확인", f"'{name}' 프리셋이 이미 있습니다. 덮어쓸까요?"):
+            return
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.current(), f, ensure_ascii=False, indent=2)
+        self._refresh_preset_buttons()
+        self.status.config(text=f"개인 프리셋 '{name}' 저장 (기본 탭 버튼에 추가됨)")
 
     def delete_preset(self):
+        """개인 프리셋만 삭제 (팀 프리셋은 GUI에서 지우지 않음)."""
         n = self.preset_combo.get()
-        if n and messagebox.askyesno("확인", f"'{n}' 삭제?"):
-            os.remove(os.path.join(PRESET_DIR, n + ".json"))
-            self.refresh_presets()
+        if n and messagebox.askyesno("확인", f"개인 프리셋 '{n}'을 삭제할까요?"):
+            os.remove(os.path.join(USER_PRESET_DIR, n + ".json"))
+            self._refresh_preset_buttons()
+            self.status.config(text=f"개인 프리셋 '{n}' 삭제")
 
     def _env(self):
         e = os.environ.copy()

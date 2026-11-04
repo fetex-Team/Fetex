@@ -57,7 +57,14 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | 노트북 재생성(실행 결과 포함) | `python notebooks/build_notebooks.py` |
 | 테스트 | `python tests/test_demand_model.py` · `python tests/test_weather_history.py` · `python tests/test_network_cost.py` · `python tests/test_replay_motion.py` · `python tests/test_module2.py` · `python tools/verify_region_fallback.py` |
 
-## 주요 설정 (`config.json`)
+## 설정 GUI와 프리셋
+- `python config_gui.py` — **기본** 탭(프리셋 버튼 + 자주 쓰는 값)과 **세부 설정** 탭(섹션별 전체 설정, 항목에 마우스를 올리면 설명).
+- 실행 버튼(플레이·학습·A/B·Unity)은 지금 화면 값으로 실행하고 `results/run_configs/<종류>_<시각>.json`에 남긴다. `config.json`은 그대로.
+- **[적용하기]** 를 눌러야 내 설정 `config.json`이 바뀐다 (개인 파일, git 제외).
+- 세부 설정의 **현재 화면을 프리셋으로 저장** → `presets/user/`(개인, git 제외)에 저장되고 기본 탭 버튼(★)에 나타난다.
+- 팀 기본값을 바꾸려면 `presets/default/기본.json`을 고쳐 커밋한다.
+
+## 주요 설정
 | 키 | 기본 | 의미 |
 |---|---|---|
 | `demand_source` | `real` | `real` = TIMS 실측 보정 외생 수요 / `synthetic` = 예전 카테고리 가정 모델 |
@@ -101,9 +108,9 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 ## 폴더 구조 (주요)
 ```
 main.py / config_gui.py                 실행 진입점 (시뮬레이션 / 설정 GUI)
-config.json / config_loader.py          설정 (config.json = 현재 값, config_loader.DEFAULT_CONFIG = 기본값)
-                                        GUI [적용하기]만 config.json을 바꾸고, 실행·A/B·학습은 화면 값을
-                                        results/run_configs/<종류>_<시각>.json에 저장해 MOBILITY_CONFIG로 씀
+config_loader.py                        설정 로더 (DEFAULT_CONFIG = 코드 기본값)
+presets/default/                        팀 공유 프리셋 (기본.json = 팀 기본 설정, 시나리오 4개) — git 포함
+presets/user/ · config.json             개인 프리셋 · 내 설정 — git 제외. config.json이 없으면 기본.json으로 시작
 measure_wait_time.py                    공용 실행·측정 루프 (여러 도구가 import)
 module1_simulation/    디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model),
                        지도·날씨·공휴일(geo_lookup, real_map_fetch, weather_*, holiday_utils), 재현성·TraCI 구독 도우미
@@ -112,7 +119,7 @@ module3_prediction/    예측 모델: train.py·evaluate.py(XGBoost vs CNN-LSTM)
 module4_dispatch/      배차: 헝가리안·커스텀 배차, 예측 재배치(forecast), RL 선배치, 할증
 scripts/               데이터 생성·학습·A/B 비교(multi_factor_compare + parallel_dispatch_worker)
 tools/                 실험·검증·Unity 내보내기·수요 로그 분석기·지역 검색 위젯
-tests/   notebooks/   eda/   docs/   presets/
+tests/   notebooks/   eda/   docs/
 data/external/         실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
 data/real_demand_logs/ 학습용 8주 호출 (scripts/generate_demand_logs.py로 재생성 가능)
 saved_models/          demand_v2.joblib, category_demand_*.pkl, xgboost/cnn (Module 3)
