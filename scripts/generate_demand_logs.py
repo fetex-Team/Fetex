@@ -36,6 +36,7 @@ sys.path.insert(0, ROOT)
 from config_loader import CFG                     # noqa: E402
 from demand_model import RealDemandModel          # noqa: E402
 from holiday_utils import is_holiday_date         # noqa: E402
+from weather_history import load_hourly_weather   # noqa: E402
 
 META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 OUT_DIR = os.path.join(ROOT, "data", "real_demand_logs")
@@ -67,7 +68,9 @@ def main(days: int, end: dt.date, seed, out_dir: str):
     for i in range(days):
         date = start + dt.timedelta(days=i)
         holiday = bool(is_holiday_date(date))
-        calls = model.build_schedule(date, 0, 24, seed, is_holiday=holiday)
+        hist = load_hourly_weather(date, CFG.get("region")) if CFG.get("use_historical_weather", True) else None
+        calls = model.build_schedule(date, 0, 24, seed, is_holiday=holiday,
+                                     hourly_precip_mm=hist["precipitation"] if hist else None)
         base = dt.datetime.combine(date, dt.time(0, 0))
         path = os.path.join(out_dir, f"demand_log_{region}실데이터{date.strftime('%y%m%d')}.csv")
         with open(path, "w", newline="", encoding="utf-8") as f:
@@ -82,8 +85,9 @@ def main(days: int, end: dt.date, seed, out_dir: str):
                             round(lat, 7), round(lng, 7), "", "", "", "generated"])
         total += len(calls)
         summary["days"].append({"date": date.isoformat(), "weekday": date.strftime("%a"), "holiday": holiday,
-                                "calls": len(calls),
-                                "expected": round(model.area_daily_calls(date, holiday) * model.scale, 1)})
+                                "calls": len(calls), "weather": hist["source"] if hist else None,
+                                "precip_mm": round(sum(hist["precipitation"]), 1) if hist else None,
+                                "expected": round(sum(model.hourly_calls(date, holiday, hourly_precip_mm=hist["precipitation"] if hist else None)), 1)})
         print(f"[생성] {date} {'공휴일/주말' if holiday or date.weekday() >= 5 else '평일'} {len(calls):,}건 -> {os.path.basename(path)}")
     summary["total_calls"] = total
     summary["model"] = model.summary(end, 0, 24)

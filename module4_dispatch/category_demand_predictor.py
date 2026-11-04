@@ -17,8 +17,10 @@ import os
 import sys
 from collections import deque
 
+import datetime
 import joblib
 import numpy as np
+import pandas as pd
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -42,7 +44,6 @@ class CategoryDemandPredictor:
         self.category_list = bundle["category_list"]
 
         # run_date: RL 에피소드 시작 시각의 실제 날짜(요일 계산용). 안 주면 오늘 날짜로 대체
-        import datetime
         self.run_date = run_date or datetime.date.today()
 
         max_lag = CFG["max_lag"]
@@ -51,39 +52,118 @@ class CategoryDemandPredictor:
         # 카테고리별 "최근 관측된 수요 건수" 이력 (decision interval 단위)
         self._history = {c: deque([0.0] * hist_len, maxlen=hist_len) for c in self.category_list}
 
+        # [성능] add_time_features()가 호출마다 korean_holidays()로 holidays.KR()을 새로 만들면
+        # (내부적으로 음력 변환 포함) RL 스텝마다(카테고리 수 배) 반복돼 체감 속도를 떨어뜨림.
+        # 에피소드 동안 쓰일 연도(전날 포함 최대 +1일 버퍼)만 미리 한 번 계산해 재사용.
+        from module2_preprocessing.time_features import korean_holidays
+        years = {self.run_date.year, (self.run_date + datetime.timedelta(days=1)).year}
+        self._holiday_dates = korean_holidays(years)
+
+    def reset(self, run_date=None):
+        """에피소드(또는 평가 실행) 시작 때 호출: 날짜(요일·공휴일 피처)를 맞추고 수요 이력을 비운다.
+        안 비우면 이전 에피소드 마지막 수요가 새 에피소드 초반 lag 피처로 새어 들어간다."""
+        if run_date is not None:
+            self.run_date = run_date
+            from module2_preprocessing.time_features import korean_holidays
+            years = {self.run_date.year, (self.run_date + datetime.timedelta(days=1)).year}
+            self._holiday_dates = korean_holidays(years)
+        self._wcache = {}
+        for c in self.category_list:
+            n = self._history[c].maxlen
+            self._history[c].clear()
+            self._history[c].extend([0.0] * n)
+
     def update(self, observed_counts: dict):
         """rl_env.py가 매 decision interval마다 실제 관측한 대기승객 수(또는 신규 수요)를 넣어줌"""
         for c in self.category_list:
             self._history[c].append(float(observed_counts.get(c, 0.0)))
 
+    def _weather_features(self, sim_dt) -> dict:
+        """학습 때(train.py / train_category_demand.py)와 같은 함수(merge_external_data)로 날씨 피처를 만든다.
+        - 날씨 파일(data/external/weather_*.csv)이 그 날짜를 포함하면 실제 관측값이 붙고,
+        - 포함하지 않으면 학습 때와 똑같이 값=NaN->0, weather_missing=1이 된다 (학습/실행 입력이 일치).
+        5분 칸 단위로 캐시해서 호출 비용을 줄인다."""
+        key = (sim_dt.date(), (sim_dt.hour * 60 + sim_dt.minute) // 5)
+        cache = getattr(self, "_wcache", None)
+        if cache is None:
+            cache = self._wcache = {}
+        if key in cache:
+            return cache[key]
+        from module2_preprocessing.external_data_merge import (
+            merge_external_data, find_weather_file, load_weather, EXTERNAL_FEATURE_COLS)
+        if getattr(self, "_weather_loaded", False) is False:
+            self._weather_loaded = True
+            self._weather = None
+            try:
+                path = find_weather_file()
+                if path and os.path.exists(path):
+                    self._weather = load_weather(path)
+            except Exception as e:
+                print(f"[경고] 날씨 파일을 읽지 못해 학습 때 날씨 없는 행과 같은 값으로 채웁니다: {e}")
+        bucket = pd.Timestamp(sim_dt).floor("5min")
+        row = merge_external_data(pd.DataFrame({"time_bucket": [bucket]}), weather=self._weather, verbose=False)
+        out = {}
+        for c in EXTERNAL_FEATURE_COLS:
+            v = row.iloc[0][c]
+            out[c] = 0.0 if pd.isna(v) else float(v)   # 학습 때 X.fillna(0)과 동일
+        cache[key] = out
+        return out
+
     def _build_features(self, category: str, sim_time: float) -> np.ndarray:
+        """학습 때(Module 2 create_features)와 같은 이름의 피처를 만들어 준다.
+
+        [병합 수정] 예전에는 lag_*, rolling_mean_short/long, hour/dayofweek/is_weekend, 날씨만
+        만들었는데, 지금 피처 테이블에는 rolling_mean_1h / rolling_std_1h / diff_1 /
+        same_time_last_week / has_last_week + 시간 피처 15종이 들어 있다. 빠진 이름은 전부
+        0으로 채워져 학습 때와 다른 입력이 들어가므로 여기서 직접 만들어 준다.
+        """
+        from module2_preprocessing.time_features import add_time_features
+
         hist = list(self._history[category])
         max_lag = CFG["max_lag"]
         short_w = CFG["rolling_short"]
         long_w = CFG["rolling_long"]
 
-        lags = {f"lag_{i}": hist[-i] for i in range(1, max_lag + 1)}
-        rolling = {
-            f"rolling_mean_{short_w}": float(np.mean(hist[-short_w:])) if short_w <= len(hist) else 0.0,
-            f"rolling_mean_{long_w}": float(np.mean(hist[-long_w:])) if long_w <= len(hist) else 0.0,
-        }
+        def _mean(n):
+            window = hist[-n:] if n <= len(hist) else hist
+            return float(np.mean(window)) if window else 0.0
 
-        import datetime
-        sim_dt = datetime.datetime.combine(self.run_date, datetime.time(0, 0)) + datetime.timedelta(seconds=sim_time)
-        calendar = {
-            "hour": sim_dt.hour,
-            "dayofweek": sim_dt.weekday(),
-            "is_weekend": 1 if sim_dt.weekday() >= 5 else 0,
-        }
+        def _std(n):
+            window = hist[-n:] if n <= len(hist) else hist
+            return float(np.std(window, ddof=1)) if len(window) > 1 else 0.0
 
-        # 학습 때(merge_external_data)와 동일한 방식 - 실측 없으니 config 범위 내 랜덤으로 대체
-        weather = {
-            "temperature": float(np.random.uniform(CFG["temp_min"], CFG["temp_max"])),
-            "precipitation": float(np.random.choice([0.0, 0.0, 0.0, 1.2, 5.5])),
-        }
+        feats = {f"lag_{i}": hist[-i] for i in range(1, max_lag + 1)}
+        feats[f"rolling_mean_{short_w}"] = _mean(short_w)
+        feats[f"rolling_mean_{long_w}"] = _mean(long_w)
+        # 이력 deque는 decision interval 단위라 "1시간 칸 수"를 정확히 모른다 —
+        # 가진 이력 전체를 1시간 창의 근사로 사용.
+        feats["rolling_mean_1h"] = _mean(len(hist))
+        feats["rolling_std_1h"] = _std(len(hist))
+        feats["diff_1"] = (hist[-1] - hist[-2]) if len(hist) >= 2 else 0.0
+        # 실시간 시뮬레이션에는 1주일 전 이력이 없다. 학습 테이블도 이 경우
+        # same_time_last_week=0 / has_last_week=0으로 채우므로 동일하게 맞춘다.
+        feats["same_time_last_week"] = 0.0
+        feats["has_last_week"] = 0
 
-        feats = {**lags, **rolling, **calendar, **weather}
-        return np.array([[feats.get(c, 0.0) for c in self.feature_cols]])
+        # 시간 피처: 학습 때와 똑같은 함수를 1행짜리 DataFrame에 적용해 이름/값 불일치 제거
+        sim_dt = (datetime.datetime.combine(self.run_date, datetime.time(0, 0))
+                  + datetime.timedelta(seconds=float(sim_time)))
+        tf = add_time_features(pd.DataFrame({"time_bucket": [pd.Timestamp(sim_dt)]}), ts_col="time_bucket",
+                              holiday_dates=self._holiday_dates)
+        for col in tf.columns:
+            if col != "time_bucket":
+                val = tf.iloc[0][col]
+                if not isinstance(val, str):
+                    feats[col] = float(val)
+
+        feats.update(self._weather_features(sim_dt))   # temperature/precipitation/wind_speed/is_rain/weather_missing/weather_interpolated
+
+        missing = [c for c in self.feature_cols if c not in feats]
+        if missing and not getattr(self, "_warned_missing", False):
+            print(f"[경고] 학습 피처 중 {len(missing)}개를 실시간으로 만들 수 없어 0으로 채웁니다: {missing[:8]}")
+            self._warned_missing = True
+
+        return np.array([[float(feats.get(c, 0.0)) for c in self.feature_cols]])
 
     def predict_by_zone(self, sim_time: float) -> dict:
         result = {}

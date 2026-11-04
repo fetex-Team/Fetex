@@ -91,13 +91,15 @@ class DemandLogRecorder:
         return lat, lon
 
     # ---------- 매 스텝 호출 ----------
-    def step(self, now_seconds: float, timeout_removed_pids: set = None):
-        for pid in traci.person.getIDList():
+    def step(self, now_seconds: float, timeout_removed_pids: set = None, current_pids: set = None):
+        for pid in (current_pids if current_pids is not None else traci.person.getIDList()):
             rec = self.records.get(pid)
             if rec is None:
                 rec = self._new_record(pid, now_seconds)
                 self.records[pid] = rec
-            if rec["pickup_sec"] is None:
+            # 논리적 타임아웃이 확정된 승객은 뒤늦게 탑승해도 'picked'로 덮어쓰지 않는다
+            # (측정 지표의 timeout 처리와 로그 상태를 일치시킴).
+            if rec["pickup_sec"] is None and pid not in (timeout_removed_pids or ()):
                 try:
                     vid = traci.person.getVehicle(pid)
                 except traci.exceptions.TraCIException:
@@ -144,15 +146,46 @@ class DemandLogRecorder:
         if filename is None:
             filename = f"demand_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
         path = os.path.join(self.out_dir, filename)
+        # 같은 이름(구역+전략_알고리즘+날짜)이면 파일을 늘리지 않고 시간대별로 병합함:
+        #  - 기존에 없던 시간대 -> 새 로그로 채움 / 새 로그에 없는 시간대 -> 기존 것 유지
+        #  - 양쪽에 다 있는 시간대 -> 행이 더 많은(=더 온전한) 쪽을 남김
+        # 병합 전 기존 파일은 sim_logs/backup/<이름>.bak 로 1개만 백업(.csv가 아니라 학습 글롭에 안 잡힘).
+        new_rows = []
+        for rec in self.records.values():
+            row = dict(rec)
+            row["wait_sec"] = (rec["pickup_sec"] - rec["request_sec"]) if rec["pickup_sec"] is not None else None
+            new_rows.append(row)
+        rows = new_rows
+        if os.path.exists(path):
+            try:
+                with open(path, "r", newline="", encoding="utf-8-sig") as f_old:
+                    old_rows = list(csv.DictReader(f_old))
+            except (OSError, csv.Error):
+                old_rows = []
+            if old_rows:
+                import shutil
+                bdir = os.path.join(self.out_dir, "backup")
+                os.makedirs(bdir, exist_ok=True)
+                shutil.copy2(path, os.path.join(bdir, filename + ".bak"))
+                def _by_hour(rs):
+                    d = {}
+                    for r in rs:
+                        d.setdefault(str(r.get("pickup_datetime", ""))[11:13], []).append(r)
+                    return d
+                old_h, new_h = _by_hour(old_rows), _by_hour(new_rows)
+                rows = []
+                for h in sorted(set(old_h) | set(new_h)):
+                    o, n_ = old_h.get(h, []), new_h.get(h, [])
+                    rows.extend(n_ if len(n_) >= len(o) else o)
+                print(f"[로그 병합] {filename}: 기존 {len(old_rows)}건 + 새 {len(new_rows)}건 -> {len(rows)}건 "
+                      f"(기존본은 backup/ 에 보관)")
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
-            w = csv.DictWriter(f, fieldnames=CSV_COLUMNS)
+            w = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction="ignore")
             w.writeheader()
-            for rec in self.records.values():
-                row = dict(rec)
-                row["wait_sec"] = (rec["pickup_sec"] - rec["request_sec"]) if rec["pickup_sec"] is not None else None
+            for row in rows:
                 w.writerow(row)
-        n = len(self.records)
-        n_picked = sum(1 for r in self.records.values() if r["status"] == "picked")
+        n = len(rows)
+        n_picked = sum(1 for r in rows if r.get("status") == "picked")
         print(f"[로그 저장] {path} (호출 {n}건, 탑승 {n_picked}건, geo변환={'SUMO' if self._geo_ok else 'bbox 선형매핑'})")
         return path
 

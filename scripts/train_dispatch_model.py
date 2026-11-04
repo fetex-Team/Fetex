@@ -36,9 +36,10 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from config_loader import CFG                                    # noqa: E402
+from log_selection import selected_log_paths                     # noqa: E402
 from module2_preprocessing.pipeline import build_feature_table   # noqa: E402
 from module2_preprocessing.time_series_prep import time_based_split  # noqa: E402
-from evaluate import calculate_metrics                           # noqa: E402
+from evaluate import calculate_metrics, fmt_pct                           # noqa: E402
 
 MODEL_PATH = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
 
@@ -62,20 +63,17 @@ def external_to_weather_csv(external_csv: str) -> str:
 
 
 def main(log_paths=None, external_csv=None):
-    logs = log_paths or [os.path.join(ROOT, "data", "sim_logs", "demand_log_*.csv")]
+    logs = log_paths or selected_log_paths()
     weather_path = external_to_weather_csv(external_csv) if external_csv else None
-    # 지도(runtime_meta)의 전체 셀로 학습해야 forecast_dispatcher의 셀 목록 검사를 통과함
-    # (실측 로그는 호출이 없는 셀이 빠질 수 있음)
-    meta_path = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
-    all_cells = None
-    if os.path.exists(meta_path):
-        with open(meta_path, encoding="utf-8") as f:
-            all_cells = sorted(set(json.load(f)["edge_cells"].values()))
-    feat = build_feature_table(logs, weather_path=weather_path, all_cells=all_cells)
+    feat = build_feature_table(logs, weather_path=weather_path)
     features = feat.attrs["feature_cols"]
     targets = feat.attrs["target_cols"]
-    if len(targets) < 6:
-        raise ValueError(f"타겟이 6개가 아닙니다: {targets}")
+    
+    # [결함 수정] 6개로 하드코딩된 검증을 제거하고, config.json 설정에 맞춰 
+    # 생성된 다중 타겟(target_cols) 개수를 그대로 유연하게 반영하도록 변경
+    if len(targets) == 0:
+        raise ValueError(f"타겟 컬럼이 존재하지 않습니다: {targets}")
+    print(f"[안내] 타겟 개수 {len(targets)}개로 유연한 MultiOutputRegressor 학습을 진행합니다.")
 
     train_df, _val, test_df, cuts = time_based_split(feat, CFG["test_size"])
     X_tr, Y_tr = train_df[features].fillna(0).values, train_df[targets].values
@@ -93,7 +91,7 @@ def main(log_paths=None, external_csv=None):
     pred = np.maximum(0, model.predict(X_te))
     per_h = {t: calculate_metrics(Y_te[:, i], pred[:, i]) for i, t in enumerate(targets)}
     overall = calculate_metrics(Y_te.ravel(), pred.ravel())
-    print(f"[테스트 전체] RMSE {overall['RMSE']:.4f} | MAE {overall['MAE']:.4f} | MAPE {overall['MAPE (%)']:.2f}%")
+    print(f"[테스트 전체] RMSE {overall['RMSE']:.4f} | MAE {overall['MAE']:.4f} | MAPE {fmt_pct(overall['MAPE (%)'])} | WAPE {fmt_pct(overall['WAPE (%)'])}")
     for t, m in per_h.items():
         print(f"  {t}: RMSE {m['RMSE']:.4f}  MAE {m['MAE']:.4f}")
 

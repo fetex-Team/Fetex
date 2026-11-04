@@ -1,0 +1,8 @@
+﻿date,strategy,demand_fingerprint,is_holiday,n_total_passengers,n_measured,service_rate,n_timeout_removed,avg_wait_sec,p90_wait_sec,true_avg_wait_sec_with_penalty,est_revenue_won,wall_min
+2026-09-07,forecast,32298c2462e4b301,False,5975,5901,0.9876,52,89.1,183.0,92.7,96154529,8.0
+2026-09-10,forecast,e92c2a9ea3e22ba8,False,7269,6253,0.8602,973,167.8,328.0,212.6,101890233,5.1
+2026-09-18,forecast,1213fbe5d2a1f5d5,False,6841,6217,0.9088,580,152.1,285.0,181.7,101303627,4.4
+2026-10-13,forecast,1e615d9ed7fb22b1,False,6430,6159,0.9579,235,121.2,242.0,135.1,100358540,6.0
+2026-10-14,forecast,aad6277cc3139d17,False,6397,6188,0.9673,179,112.2,221.0,123.1,100831083,6.3
+2026-10-18,forecast,ea6cd7762c083bcb,True,4622,4599,0.995,19,54.3,98.0,56.1,74938939,10.7
+2026-10-24,forecast,4e4f7fc0b6362a75,True,5297,5268,0.9945,18,65.0,122.0,66.5,85840037,10.1

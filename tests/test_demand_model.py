@@ -15,7 +15,6 @@ import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
-sys.path.insert(0, os.path.join(ROOT, "module1_simulation"))
 for m in ("geo_lookup", "weather_lookup"):          # config_loader가 외부 API를 부르지 않게 차단
     sys.modules.setdefault(m, types.ModuleType(m))
 
@@ -45,6 +44,8 @@ def _fixture(tmp):
     _write(hourly, ["hour", "weekday_trips", "weekend_trips"], [[h, 1, 1 if h < 12 else 3] for h in range(24)])
     dow = os.path.join(tmp, "dow.csv")
     _write(dow, ["dow", "trips"], [[k, 100] for k in dm.DOW_KEYS])
+    gangnam = os.path.join(tmp, "gangnam.csv")   # 평일 1.1배, 주말 0.8배
+    _write(gangnam, ["month", "all_daily", "weekday_daily", "weekend_daily"], [[m, 100, 110, 80] for m in range(1, 13)])
     # 칸 중심 근처에 도로 2개씩
     def cell_center(code):
         x0, y0, x1, y1 = dm.grid_bounds(code)
@@ -58,7 +59,7 @@ def _fixture(tmp):
     meta = {"edges": list(edge_latlng), "edge_latlng": {k: list(v) for k, v in edge_latlng.items()},
             "boundary_edges": ["a2", "b2"], "zones": {"subway_entrance": ["a1"]}, "department_store_edges": [],
             "config": {"lat_min": lat_min, "lat_max": lat_max, "lng_min": lng_min, "lng_max": lng_max}}
-    return meta, dict(tims_path=tims, hourly_path=hourly, dow_path=dow)
+    return meta, dict(tims_path=tims, hourly_path=hourly, dow_path=dow, gangnam_path=gangnam)
 
 
 def test_projection_matches_pyproj():
@@ -80,7 +81,7 @@ def test_volume_shares_and_determinism():
         model = dm.RealDemandModel(meta, {"real_demand_scale": 1.0}, **paths)
         date = dt.date(2025, 9, 1)          # 월요일, 평일 시간대는 균등(1/24)
         expected = model.area_daily_calls(date)
-        assert 3900 < expected < 4001       # 두 칸 모두 영역 안에 거의 다 들어감
+        assert 4290 < expected < 4401       # 두 칸 하루 약 4000건 x 평일 배율 1.1
         random.seed(1)
         s1 = model.build_schedule(date, 9, 23, seed=7)
         random.random(); random.shuffle(list(range(100)))   # 전역 난수를 건드려도
@@ -109,8 +110,23 @@ def test_weekend_profile_and_scale():
         rates = model.hourly_calls(sat)
         assert abs(rates[15] / rates[3] - 3.0) < 1e-9        # 주말 프로파일 사용
         assert abs(sum(rates) - model.area_daily_calls(sat) * 0.5) < 1e-6
+        assert abs(model.area_daily_calls(sat) / model.area_daily_calls(dt.date(2025, 9, 3)) - 0.8 / 1.1) < 1e-9
         # 평일 공휴일은 일요일 배율 + 주말 프로파일
         assert model.hourly_calls(dt.date(2025, 9, 3), is_holiday=True)[15] > model.hourly_calls(dt.date(2025, 9, 3))[15]
+
+
+def test_hourly_weather_factor():
+    with tempfile.TemporaryDirectory() as tmp:
+        meta, paths = _fixture(tmp)
+        model = dm.RealDemandModel(meta, {"weather_precip_coef_per_mm": 0.02, "weather_precip_cap_mm": 10}, **paths)
+        d = dt.date(2025, 9, 1)
+        precip = [0.0] * 24
+        precip[10], precip[11] = 5.0, 50.0                    # 50mm는 상한 10mm로 자름
+        dry, wet = model.hourly_calls(d), model.hourly_calls(d, hourly_precip_mm=precip)
+        assert abs(wet[10] / dry[10] - 1.10) < 1e-9 and abs(wet[11] / dry[11] - 1.20) < 1e-9
+        assert wet[9] == dry[9]
+        s_wet = model.build_schedule(d, 0, 24, seed=1, hourly_precip_mm=precip)
+        assert s_wet == model.build_schedule(d, 0, 24, seed=1, hourly_precip_mm=precip)
 
 
 def test_poi_weight_concentrates_within_cell():

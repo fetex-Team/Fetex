@@ -8,6 +8,7 @@ SpatialIndexer/TimeSeriesPreprocessor/merge_external_data 조합을 쓰므로
 from collections import Counter
 from pathlib import Path
 import joblib
+import os
 import numpy as np
 import pandas as pd
 import traci
@@ -41,7 +42,8 @@ def _external_to_weather(external):
         return None
     if 'time_bucket' not in external or 'temperature' not in external:
         return None
-    w = (external.groupby('time_bucket', as_index=False)[['temperature', 'precipitation']]
+    cols = [c for c in ('temperature', 'precipitation', 'wind_speed') if c in external]
+    w = (external.groupby('time_bucket', as_index=False)[cols]
          .mean().rename(columns={'time_bucket': 'time'}))
     w['time'] = pd.to_datetime(w['time'])
     for col in WEATHER_COLS:
@@ -68,6 +70,10 @@ class ForecastDispatcher:
         self.meta, self.calls, self.start = meta, calls, start
         # 합성 외부 관측이 오면 시간별 날씨 표로 바꿔 학습과 같은 병합 경로를 태운다.
         self.weather = _external_to_weather(external)
+        if self.weather is None:   # 외부 관측이 없으면 실측 날씨 파일을 한 번만 읽어 둔다(예측마다 다시 읽지 않게)
+            from module2_preprocessing.external_data_merge import find_weather_file, load_weather
+            path = find_weather_file()
+            self.weather = load_weather(path) if path and os.path.exists(path) else None
         self.prep = TimeSeriesPreprocessor()
         self.engine = SurgePricingEngine()
         # 피처 계산에 필요한 과거 구간: 1시간 이동평균(12칸) > lag(max_lag) > diff(2칸)

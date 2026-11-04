@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from config_loader import CFG
 from module2_preprocessing.spatial_indexing import SpatialIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, feature_columns, target_columns, to_naive_kst
+from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, feature_columns, target_columns
 from module2_preprocessing.external_data_merge import merge_external_data, EXTERNAL_FEATURE_COLS
 
 REQUIRED = ["pickup_datetime", "latitude", "longitude"]
@@ -41,31 +41,18 @@ def load_logs(paths) -> pd.DataFrame:
         files += sorted(glob.glob(p)) if any(ch in p for ch in "*?[") else [p]
     if not files:
         raise FileNotFoundError(f"로그 파일 없음: {paths}")
-    parts, dropped = [], {}
+    parts = []
     for f in files:
         d = pd.read_csv(f, usecols=lambda c: c in REQUIRED + ["request_sec"])
         missing = [c for c in REQUIRED if c not in d.columns]
         if missing:
             raise ValueError(f"{f}: 필수 컬럼 없음 {missing}")
-        # [검증] 타입: 위경도는 수치, 시각은 datetime(KST, tz 없음). 파싱 불가·tz 혼재는 ValueError.
-        for c in ("latitude", "longitude"):
-            d[c] = pd.to_numeric(d[c], errors="coerce")
-        d["pickup_datetime"] = to_naive_kst(d["pickup_datetime"], f"{os.path.basename(f)}:pickup_datetime")
-        # [검증] 결측 좌표 행 제거 + 건수 기록 (Data Spec 5장 완전성: 제거 건수·사유를 실행 로그로 남김)
-        n_before = len(d)
         d = d.dropna(subset=["latitude", "longitude"])
-        n_drop = n_before - len(d)
-        if n_drop:
-            dropped[os.path.basename(f)] = n_drop
-            print(f"[검증] {os.path.basename(f)}: 좌표 결측 {n_drop:,}건 제거 (사유: latitude/longitude NaN 또는 비수치)")
+        d["pickup_datetime"] = pd.to_datetime(d["pickup_datetime"])
         d["_source"] = os.path.basename(f)
         parts.append(d)
     df = pd.concat(parts, ignore_index=True)
-    if df.empty:
-        raise ValueError("유효한 호출 로그 행이 없습니다 (좌표 결측 제거 후 0건).")
-    print(f"[로그] {len(files)}개 파일, {len(df):,}건, {df['pickup_datetime'].min()} ~ {df['pickup_datetime'].max()}"
-          + (f" (좌표 결측 제거 합계 {sum(dropped.values()):,}건)" if dropped else " (좌표 결측 0건)"))
-    df.attrs["dropped_missing_coords"] = dropped
+    print(f"[로그] {len(files)}개 파일, {len(df):,}건, {df['pickup_datetime'].min()} ~ {df['pickup_datetime'].max()}")
     return df
 
 
@@ -80,26 +67,25 @@ def _time_range(df: pd.DataFrame):
 
 def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizons: int = None,
                         weather_path: str = None, h3_resolution: int = None, dropna: bool = True,
-                        verbose: bool = True, max_missing_ratio: float = None, all_cells=None) -> pd.DataFrame:
-    """all_cells: 지도 전체 H3 셀 목록. 주면 호출이 없는 셀도 0 수요로 포함 (서빙 시 셀 목록 일치용)."""
+                        verbose: bool = True) -> pd.DataFrame:
     df = load_logs(log_paths)
     start, end = _time_range(df)
 
     # 1) 공간 인덱싱
-    df = SpatialIndexer(h3_resolution=h3_resolution).process_dataframe(df, verbose=verbose)
+    df = SpatialIndexer(h3_resolution=h3_resolution).process_dataframe(df)
 
     # 2) (셀 × 칸) 집계 + 0 채움
     prep = TimeSeriesPreprocessor(freq=freq, max_lag=max_lag, horizons=horizons)
-    agg = prep.aggregate_demands(df, start=start, end=end, all_cells=all_cells)
+    agg = prep.aggregate_demands(df, start=start, end=end)
 
     # 3) 외부 데이터 (5분 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
-    # 학습 경로: 날씨 결측률 상한 검사 (Data Spec 5장 5% 미만). config weather_missing_max_ratio 로 조절, None이면 끔
-    agg = merge_external_data(agg, weather_path=weather_path, time_col="time_bucket", verbose=verbose,
-                              max_missing_ratio=max_missing_ratio if max_missing_ratio is not None else CFG.get("weather_missing_max_ratio", 0.05))
+    agg = merge_external_data(agg, weather_path=weather_path, time_col="time_bucket", verbose=verbose)
 
     # 4) 피처 + 타겟
     feat = prep.create_features(agg, dropna=dropna, verbose=verbose)
-    feat.attrs["feature_cols"] = list(feat.attrs.get("feature_cols", [])) + [c for c in EXTERNAL_FEATURE_COLS if c in feat.columns]
+    base_feature_cols = list(feat.attrs.get("feature_cols", []))
+    ext_cols = [c for c in EXTERNAL_FEATURE_COLS if c in feat.columns and c not in base_feature_cols]
+    feat.attrs["feature_cols"] = base_feature_cols + ext_cols
     feat.attrs["target_cols"] = target_columns(feat)
     feat.attrs["freq"] = prep.freq
     if verbose:
@@ -121,10 +107,13 @@ def save_feature_table(feat: pd.DataFrame, out_path: str):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--logs", nargs="+", default=[os.path.join(ROOT, "data", "sim_logs", "demand_log_*.csv")])
+    ap.add_argument("--logs", nargs="+", default=None, help="생략하면 config_gui에서 고른 로그(없으면 demand_log_*.csv 전체)")
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "processed", "features.csv"))
     ap.add_argument("--weather", default=None)
     ap.add_argument("--freq", default=None)
     a = ap.parse_args()
+    if a.logs is None:
+        from log_selection import selected_log_paths
+        a.logs = selected_log_paths()
     feat = build_feature_table(a.logs, freq=a.freq, weather_path=a.weather)
     save_feature_table(feat, a.out)

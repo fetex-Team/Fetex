@@ -16,7 +16,6 @@ create_features가 원래 spatial_col을 인자로 받게 설계돼 있어서 h3
 import glob
 import os
 import sys
-import argparse
 
 import joblib
 import pandas as pd
@@ -28,22 +27,23 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from config_loader import CFG
+from log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 from module2_preprocessing.category_indexing import CategoryIndexer
 from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
 from module2_preprocessing.external_data_merge import merge_external_data  # train.py와 동일하게 재사용
 
-# [병합 수정] train.py와 동일한 두 로그 소스를 함께 사용.
-#   data/sim_logs/demand_log_*.csv        : measure_wait_time.py / 병렬 워커가 남기는 새 로그
-#   data/raw/simulation_demand_log*.csv   : Fetex-ldk 쪽에서 축적된 예전 로그
-# (기존에는 data/raw만 읽어서 train.py와 다른 데이터로 학습되고 있었음)
+# [2026-09-21 중복 집계 수정] train.py와 같은 이유로 레거시 소스는 더 이상 합치지 않음.
+#   data/sim_logs/demand_log_*.csv        : measure_wait_time.py / 병렬 워커가 남기는 새 로그 (사용)
+#   data/raw/simulation_demand_log*.csv   : 예전 로그. measure_wait_time.py가 매 실행마다
+#     위 새 로그와 "같은 승객"을 여기에도 동시에 남겨서, 둘을 합치면 실행분마다 두 번
+#     집계됐음(날짜 부여 방식이 서로 달라 drop_duplicates로도 안 걸러짐). data/sim_logs가
+#     이제 항상 채워지므로 이 소스는 뺀다.
 DEMAND_LOG_DIR = os.path.join(PROJECT_ROOT, "data", "sim_logs")
 DEMAND_LOG_GLOB = os.path.join(DEMAND_LOG_DIR, "demand_log_*.csv")
-LEGACY_DEMAND_LOG_DIR = os.path.join(PROJECT_ROOT, "data", "raw")
-LEGACY_DEMAND_LOG_GLOB = os.path.join(LEGACY_DEMAND_LOG_DIR, "simulation_demand_log*.csv")
 
 # 학습 타겟: train.py와 동일하게 y_h1(t+1). Module 2 create_features가 y_h1..y_hH를 만들어 줌.
 TARGET = "y_h1"
-DEFAULT_OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl")
+OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl")
 
 CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]
 
@@ -51,7 +51,7 @@ CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entra
 def _load_all_demand_logs(log_glob: str = None):
     """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제).
     log_glob을 주면 그 파일들만 쓴다 (예: 실데이터 보정 로그 data/real_demand_logs/demand_log_*.csv)."""
-    paths = sorted(glob.glob(log_glob)) if log_glob else sorted(glob.glob(DEMAND_LOG_GLOB)) + sorted(glob.glob(LEGACY_DEMAND_LOG_GLOB))
+    paths = sorted(glob.glob(log_glob)) if log_glob else selected_log_paths(DEMAND_LOG_DIR)
     if not paths:
         return None
     frames = [pd.read_csv(p, parse_dates=["pickup_datetime"]) for p in paths]
@@ -61,11 +61,11 @@ def _load_all_demand_logs(log_glob: str = None):
     return merged
 
 
-def main(out_path=DEFAULT_OUT_PATH, log_glob=None):
+def main(log_glob: str = None):
     df = _load_all_demand_logs(log_glob)
     if df is None:
-        print("[에러] data/sim_logs/demand_log_*.csv 또는 data/raw/simulation_demand_log*.csv "
-              "로그가 없습니다. 먼저 `python measure_wait_time.py`를 한 번 이상 돌려주세요.")
+        print("[에러] data/sim_logs/demand_log_*.csv 로그가 없습니다. "
+              "먼저 `python measure_wait_time.py`를 한 번 이상 돌려주세요.")
         return
 
     indexer = CategoryIndexer()  # 기본: module1_simulation/sumo_config/ 사용
@@ -99,23 +99,27 @@ def main(out_path=DEFAULT_OUT_PATH, log_glob=None):
         # [병합 수정] y를 현재 칸 demand -> t+1 예측(y_h1)로 교체: train.py / RL의 예측 지평과 일치.
         X, y = cat_df[feature_cols].fillna(0), cat_df[TARGET].fillna(0)
         X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=CFG["test_size"], random_state=42, shuffle=False
+            X, y, test_size=CFG["test_size"], random_state=int(CFG["train_random_state"]), shuffle=False
         )
-        model = XGBRegressor(n_estimators=100, max_depth=4, learning_rate=0.1)
+        model = XGBRegressor(
+            n_estimators=int(CFG["xgb_n_estimators"]),
+            max_depth=int(CFG["xgb_max_depth"]),
+            learning_rate=float(CFG["xgb_learning_rate"]),
+            random_state=int(CFG["xgb_random_state"]),
+        )
         model.fit(X_train, y_train)
         rmse = ((model.predict(X_test) - y_test) ** 2).mean() ** 0.5
         print(f"[{category}] Train {len(X_train)} / Test {len(X_test)} | RMSE {rmse:.3f}")
         models[category] = model
 
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     joblib.dump({"models": models, "feature_cols": feature_cols, "target": TARGET,
-                 "category_list": list(models.keys())}, out_path)
-    print(f"[완료] {out_path} 에 카테고리별 모델 {len(models)}개 저장")
+                 "category_list": list(models.keys())}, OUT_PATH)
+    print(f"[완료] {OUT_PATH} 에 카테고리별 모델 {len(models)}개 저장")
 
 
 if __name__ == "__main__":
+    import argparse
     ap = argparse.ArgumentParser()
-    ap.add_argument("--out", default=DEFAULT_OUT_PATH, help="카테고리 모델 저장 경로")
-    ap.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 data/sim_logs + data/raw 로그)")
-    args = ap.parse_args()
-    main(args.out, args.logs)
+    ap.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 config_gui에서 고른 data/sim_logs 로그)")
+    main(ap.parse_args().logs)

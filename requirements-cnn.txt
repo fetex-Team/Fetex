@@ -1,3 +1,0 @@
--r requirements.txt
-# python train.py --cnn 사용 시 설치
-torch>=2.2

@@ -12,112 +12,99 @@ if PROJECT_ROOT not in sys.path:
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import numpy as np
 import pandas as pd
 import joblib
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.preprocessing import StandardScaler
 
 from config_loader import CFG
+from log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 
 # 하위 모듈 불러오기
 from module3_prediction.models import CNNLSTMModel, build_xgboost_model
-from evaluate import calculate_metrics
-from module2_preprocessing.spatial_indexing import SpatialIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
-from module2_preprocessing.external_data_merge import merge_external_data
+from evaluate import calculate_metrics, fmt_pct
+# [병합 2026-09-16] Module 2 단일 진입점(pipeline.py) 기반으로 통일.
+# 예전에 여기서 직접 부르던 SpatialIndexer/TimeSeriesPreprocessor 호출은
+# pipeline.build_feature_table() 내부로 이미 들어가 있어 더 이상 직접 쓰지 않음.
+from module2_preprocessing.pipeline import build_feature_table
+from module2_preprocessing.sim_log_recorder import latest_log_path
 
-# measure_wait_time.py의 run_and_measure()가 시뮬레이션을 돌릴 때마다 append하는
-# 실제 수요 로그. (단독 실행 / parallel_dispatch_worker.py / multi_factor_compare.py의
-# 병렬 워커 전부 여기에 로그를 남김 — run_simulation.py의 GUI 실행만 미포함)
-#
-# 여러 대(로컬/콜랍 등)에서 따로 돌린 로그를 합칠 때는, 파일을 직접 덮어쓰거나 diff 떠서
-# 수동 병합하지 말고 아래처럼 "simulation_demand_log" 로 시작하는 이름으로 나란히 두면 됨.
-# 예) simulation_demand_log.csv, simulation_demand_log_260912.csv, simulation_demand_log_colab1.csv
-# -> 여기서 자동으로 전부 찾아서 합치고 완전히 동일한 행(중복)만 제거함.
-DEMAND_LOG_DIR = os.path.join(PROJECT_ROOT, "data", "raw")
-DEMAND_LOG_GLOB = "simulation_demand_log*.csv"
+# measure_wait_time.py의 run_and_measure()가 매 스텝 DemandLogRecorder.step()으로 남기는
+# 실제 수요 로그. data/sim_logs/demand_log_*.csv 로 저장됨 (단독 실행 / parallel_dispatch_worker.py /
+# multi_factor_compare.py 병렬 워커 전부 여기에 로그를 남김).
+DEMAND_LOG_DIR = os.path.join(PROJECT_ROOT, "data", "sim_logs")
+DEMAND_LOG_GLOB = os.path.join(DEMAND_LOG_DIR, "demand_log_*.csv")
 
-# 로그가 이 건수보다 적으면 lag/rolling 피처 생성 시 dropna로 대부분 날아갈 수 있어 경고만 출력
+# [2026-09-21 중복 집계 수정] 팀원(Fetex-ldk) 버전에서 쓰던 축적 로그.
+# measure_wait_time.py가 실행 1회마다 이 파일과 data/sim_logs/demand_log_*.csv 양쪽에
+# "같은 승객 데이터"를 동시에 남기고 있어서(전자는 탑승 성공자만+랜덤 과거 90일 날짜,
+# 후자는 등장자 전체+config의 실제 sim_date), 두 소스를 같이 읽으면 매 실행분이 두 번
+# 집계되고 있었다(pickup_datetime이 서로 달라서 drop_duplicates로도 못 잡힘).
+# data/sim_logs가 이제 항상 채워지므로, measure_wait_time.py 주석에 적힌 원래 의도대로
+# 이 레거시 소스는 더 이상 읽지 않는다. (예전에 data/raw만 있던 시절의 기록을 쓰려면
+# prepare_real_sequence_dataset(log_path=LEGACY_DEMAND_LOG_GLOB)로 명시적으로 지정)
+LEGACY_DEMAND_LOG_DIR = os.path.join(PROJECT_ROOT, "data", "raw")
+LEGACY_DEMAND_LOG_GLOB = os.path.join(LEGACY_DEMAND_LOG_DIR, "simulation_demand_log*.csv")
+
+# [병합 전 feat3 버전에서 이식] 학습 타겟 하나만 쓸 때 피처 테이블 행이 이 건수보다 적으면
+# lag/rolling 피처 생성 시 dropna로 대부분 날아갈 수 있어 경고만 출력.
 MIN_RECOMMENDED_ROWS = 200
 
-
-def _load_all_demand_logs():
-    """data/raw/ 안의 simulation_demand_log*.csv 전부를 찾아 하나로 합치고 완전 중복 행 제거."""
-    paths = sorted(glob.glob(os.path.join(DEMAND_LOG_DIR, DEMAND_LOG_GLOB)))
-    if not paths:
-        return None, []
-
-    frames = []
-    for p in paths:
-        try:
-            frames.append(pd.read_csv(p, parse_dates=["pickup_datetime"]))
-        except Exception as e:
-            print(f"[경고] {p} 읽기 실패, 건너뜁니다: {e}")
-
-    if not frames:
-        return None, []
-
-    merged = pd.concat(frames, ignore_index=True)
-    before = len(merged)
-    merged = merged.drop_duplicates(subset=["pickup_datetime", "latitude", "longitude"])
-    after = len(merged)
-    if before != after:
-        print(f"[안내] 완전 중복 행 {before - after}건 제거 (병합 전 {before}건 -> 병합 후 {after}건)")
-    return merged, paths
+# 학습 타겟: Module 2 피처 테이블의 y_h1(t+1, 5분 뒤) ~ y_h6(t+6, 30분 뒤).
+# 아래 단일 출력 모델은 TARGET 한 개만 사용. 다중 시점(6개) 동시 예측은 y_h1..y_h6 전체를
+# y로 넘기고 CNNLSTMModel(output_dim=6) / MultiOutputRegressor(XGB)로 바꾸면 됨 (Module 3 담당).
+TARGET = "y_h1"
 
 
-def prepare_real_sequence_dataset(max_lag=None):
-    """Module 2 파이프라인을 거쳐 시계열 시퀀스(N, Seq_Len, Features) 데이터셋 생성"""
+def prepare_real_sequence_dataset(max_lag=None, log_path=None):
+    """
+    Module 2 파이프라인(module2_preprocessing.pipeline)으로 학습용 피처 테이블 생성.
+    - data/sim_logs/demand_log_*.csv (새 로그) + data/raw/simulation_demand_log*.csv (팀원
+      쪽에서 축적된 예전 로그) 를 모두 이어 붙여 사용 (log_path를 주면 그 파일/패턴만)
+    - [feat3에서 이식] 로그 파일이 몇 개 잡혔는지, 총 몇 건인지 안내 출력 + 건수가 너무 적으면 경고
+    - 로그가 하나도 없으면 에러 (가짜 랜덤 데이터 폴백 없음 — 평가 시 혼동 방지)
+    반환: X_mat, y_vec, feature_cols, max_lag  (기존 XGBoost/CNN-LSTM 학습 루프와 호환되는 형태)
+    """
     max_lag = max_lag if max_lag is not None else CFG["max_lag"]
+    # [중복 집계 수정] data/sim_logs만 사용 (위 LEGACY_DEMAND_LOG_GLOB 주석 참고).
+    logs = [log_path] if log_path else [DEMAND_LOG_GLOB]
 
-    df, found_paths = _load_all_demand_logs()
-    if df is not None:
+    if not log_path:
+        found_paths = selected_log_paths(DEMAND_LOG_DIR)
+        if not found_paths:
+            raise FileNotFoundError(
+                f"{DEMAND_LOG_DIR}에 수요 로그가 없습니다. "
+                f"먼저 `python measure_wait_time.py`(또는 A/B·멀티팩터 비교)를 한 번 이상 돌려 "
+                f"학습용 수요 로그를 쌓아주세요."
+            )
+        logs = found_paths
         file_list = ", ".join(os.path.basename(p) for p in found_paths)
-        print(f"[안내] 로그 파일 {len(found_paths)}개({file_list})에서 총 {len(df)}건을 "
-              f"학습 데이터로 사용합니다 ({DEMAND_LOG_DIR}).")
-        if len(df) < MIN_RECOMMENDED_ROWS:
-            print(f"[경고] 로그가 {len(df)}건뿐입니다 (권장 {MIN_RECOMMENDED_ROWS}건 이상). "
-                  f"lag/rolling 피처(max_lag={max_lag}) 생성 시 dropna로 대부분 날아갈 수 있으니, "
-                  f"measure_wait_time.py나 A/B·멀티팩터 비교를 몇 차례 더 돌려서 로그를 쌓는 것을 권장합니다.")
-    else:
-        print(f"[경고] {DEMAND_LOG_DIR}에 {DEMAND_LOG_GLOB} 로그가 없어 가상 데이터로 대체합니다. "
-              f"먼저 measure_wait_time.py / A·B 비교 / 멀티팩터 비교를 한 번 이상 돌려 "
-              f"학습용 수요 로그를 쌓아주세요.")
-        dates = pd.date_range("2026-08-28 18:00:00", periods=1000, freq="1min")
-        df = pd.DataFrame({
-            'pickup_datetime': dates,
-            'latitude': np.random.uniform(37.495, 37.505, 1000),
-            'longitude': np.random.uniform(127.020, 127.035, 1000)
-        })
+        print(f"[안내] 로그 파일 {len(found_paths)}개({file_list})를 학습 데이터로 사용합니다.")
 
-    df = merge_external_data(df)
+    feature_df = build_feature_table(logs, max_lag=max_lag)
 
-    indexer = SpatialIndexer()  # config.json의 h3_resolution 사용
-    df = indexer.process_dataframe(df, lat_col='latitude', lng_col='longitude')
-
-    prep = TimeSeriesPreprocessor(max_lag=max_lag)  # config.json의 freq 사용
-    agg_df = prep.aggregate_demands(df, timestamp_col='pickup_datetime', spatial_col='h3_index')
-    feature_df = prep.create_features(agg_df, spatial_col='h3_index')
-
+    if len(feature_df) < MIN_RECOMMENDED_ROWS:
+        print(f"[경고] 피처 테이블이 {len(feature_df)}행뿐입니다 (권장 {MIN_RECOMMENDED_ROWS}행 이상). "
+              f"lag/rolling 피처(max_lag={max_lag}) 생성 시 dropna로 대부분 날아갈 수 있으니, "
+              f"measure_wait_time.py나 A/B·멀티팩터 비교를 몇 차례 더 돌려서 로그를 쌓는 것을 권장합니다.")
     if len(feature_df) == 0:
+        # 0행으로 그냥 넘어가면 train_test_split에서 알아보기 힘든 sklearn 스택트레이스로
+        # 죽어버림. train_category_demand.py처럼 여기서 바로 알아볼 수 있는 에러로 끝냄.
         raise ValueError(
-            "피처 생성 후 남은 행이 0개입니다. 수요 로그가 너무 적거나(짧은 시뮬레이션 1~2회) "
-            "h3_index/시간 버킷이 너무 분산되어 lag/rolling 윈도우를 채우지 못했습니다. "
-            "시뮬레이션을 더 돌려 data/raw/simulation_demand_log.csv를 늘린 뒤 다시 시도하세요."
+            "[에러] lag/rolling 생성 후 데이터가 하나도 안 남았습니다. "
+            "measure_wait_time.py나 A/B·멀티팩터 비교를 더 돌려서 로그를 쌓아주세요 "
+            f"(현재 max_lag={max_lag}, 시뮬레이션 구간이 짧으면 lag/rolling 계산에 필요한 "
+            "시간칸 수를 못 채워서 전부 dropna로 날아갈 수 있습니다)."
         )
 
-    # 모델 입력 피처: ID, 문자열(time_slot), 미래 타겟(y_h*) 제외 (데이터 누수 방지)
-    feature_cols = [
-        c for c in feature_df.columns
-        if c not in ['time_bucket', 'h3_index', 'geohash', 'demand', 'time_slot']
-        and not c.startswith('y_h')
-    ]
+    feature_cols = feature_df.attrs["feature_cols"]
+    target_cols = feature_df.attrs["target_cols"]
+    if TARGET not in target_cols:
+        raise ValueError(f"TARGET={TARGET!r}이 피처 테이블의 target_cols({target_cols})에 없습니다.")
 
     # 2D Tabular Feature Matrix (XGBoost용)
     X_mat = feature_df[feature_cols].fillna(0).values
-    y_vec = feature_df['demand'].fillna(0).values
+    y_vec = feature_df[TARGET].fillna(0).values
 
     return X_mat, y_vec, feature_cols, max_lag
 
@@ -169,7 +156,7 @@ if __name__ == "__main__":
     # 성능 평가 (calculate_metrics 활용)
     xgb_preds = best_xgb.predict(X_test)
     xgb_metrics = calculate_metrics(y_test, xgb_preds)
-    print(f"[XGBoost Test 평가 지표] RMSE: {xgb_metrics['RMSE']:.4f} | MAE: {xgb_metrics['MAE']:.4f} | MAPE: {xgb_metrics['MAPE (%)']:.4f}%")
+    print(f"[XGBoost Test 평가 지표] RMSE: {xgb_metrics['RMSE']:.4f} | MAE: {xgb_metrics['MAE']:.4f} | MAPE: {fmt_pct(xgb_metrics['MAPE (%)'])} | WAPE: {fmt_pct(xgb_metrics['WAPE (%)'])}")
 
     joblib.dump({'model': best_xgb, 'feature_cols': feature_cols}, 'saved_models/xgboost_demand.pkl')
 
@@ -180,15 +167,10 @@ if __name__ == "__main__":
 
     num_features = X_train.shape[1]  # 피처 전체 사용
 
-    # 피처 스케일링: 단위가 서로 다른 피처(기온, 수요량, sin/cos 등)를 표준화하여 Loss 발산 방지
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-
-    X_train_seq = torch.tensor(X_train_scaled, dtype=torch.float32).unsqueeze(1)
+    X_train_seq = torch.tensor(X_train, dtype=torch.float32).unsqueeze(1)
     y_train_seq = torch.tensor(y_train, dtype=torch.float32).unsqueeze(1)
 
-    X_test_seq = torch.tensor(X_test_scaled, dtype=torch.float32).unsqueeze(1)
+    X_test_seq = torch.tensor(X_test, dtype=torch.float32).unsqueeze(1)
     y_test_seq = torch.tensor(y_test, dtype=torch.float32).unsqueeze(1)
 
     train_loader = DataLoader(
@@ -198,7 +180,7 @@ if __name__ == "__main__":
     )
 
     # hidden_dim, num_layers, kernel_size는 CNNLSTMModel 내부에서 config.json 값을 자동으로 사용
-    dl_model = CNNLSTMModel(input_dim=num_features, output_dim=1)
+    dl_model = CNNLSTMModel(input_dim=num_features)
     criterion = nn.MSELoss()
     optimizer = optim.Adam(dl_model.parameters(), lr=CFG["cnn_lr"])
 
@@ -223,14 +205,12 @@ if __name__ == "__main__":
     with torch.no_grad():
         dl_preds = dl_model(X_test_seq).numpy().flatten()
     dl_metrics = calculate_metrics(y_test, dl_preds)
-    print(f"[CNN-LSTM Test 평가 지표] RMSE: {dl_metrics['RMSE']:.4f} | MAE: {dl_metrics['MAE']:.4f} | MAPE: {dl_metrics['MAPE (%)']:.4f}%")
+    print(f"[CNN-LSTM Test 평가 지표] RMSE: {dl_metrics['RMSE']:.4f} | MAE: {dl_metrics['MAE']:.4f} | MAPE: {fmt_pct(dl_metrics['MAPE (%)'])} | WAPE: {fmt_pct(dl_metrics['WAPE (%)'])}")
 
     torch.save({
         'state_dict': dl_model.state_dict(),
         'input_dim': num_features,
-        'output_dim': 1,
-        'feature_cols': feature_cols,
-        'scaler': scaler
+        'feature_cols': feature_cols
     }, 'saved_models/cnn_lstm_demand.pt')
 
     print("\n[완료] 학습, 튜닝, 평가 및 모델 저장 완료!")

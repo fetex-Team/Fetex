@@ -1,16 +1,11 @@
-"""프로젝트 전체 설정의 단일 원본 (Single Source of Truth)."""
+"""프로젝트 전체 설정의 단일 원본."""
 import json
 import os
-import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)
-for _sub in ("module1_simulation", "module2_preprocessing", "module3_prediction", "module4_dispatch", "tools", "scripts"):
-    _sub_path = os.path.join(ROOT, _sub)
-    if os.path.exists(_sub_path) and _sub_path not in sys.path:
-        sys.path.insert(0, _sub_path)
-CONFIG_PATH = os.path.join(ROOT, "config.json")
+# build_env.py --config-path 옵션이 MOBILITY_CONFIG 환경변수에 경로를 넣어주는데,
+# 예전엔 여기서 이걸 읽지 않아서 --config-path가 조용히 무시되던 문제 수정.
+CONFIG_PATH = os.environ.get("MOBILITY_CONFIG", os.path.join(ROOT, "config.json"))
 
 DEFAULT_CONFIG = {
     # Module 1 - simulation / map
@@ -18,18 +13,30 @@ DEFAULT_CONFIG = {
     "num_normal_cars": 20, "num_taxis": 20, "num_auto_cars": 1,
     "num_obstacles": 2, "num_passengers": 1000,
     "region": "강남역", "use_real_map": True,
-    "sim_start_hour": 8, "sim_end_hour": 10,
+    "sim_start_hour": 9, "sim_end_hour": 23,
     "passenger_wait_timeout": 500,
     "passenger_seed": None,
-    "sim_date": "2026-09-07",  # 실측 수요·학습 로그 기준일 (scripts/generate_demand_logs.py는 이 전날까지 생성)
     # build_env.py가 CFG['passenger_mode']로 직접 인덱싱하므로(.get() 아님) 기본값 필수 —
     # config.json에 이 키가 없으면 KeyError로 죽는 문제 방지.
     "passenger_mode": "replay",
-    # 수요 출처: "real" = TIMS 500m 격자 실측(2025) + 서울시 시간대별 택시 통계로 보정한 외생 수요
-    #            "synthetic" = 카테고리 가정 모델(학교/회사/음식점 흡수→재스폰, 기본)
-    "demand_source": "synthetic",
-    "real_demand_scale": 1.0,        # 실측 호출량 중 이 시뮬레이션 택시들이 맡는 비율 (1.0 = 영역 전체 실측량)
+    # 수요 출처: "real" = TIMS 500m 격자 실측(2025) + 서울시 시간대별 택시 통계로 보정한 외생 수요(기본)
+    #            "synthetic" = 예전 카테고리 가정 모델(학교/회사/음식점 흡수→재스폰)
+    "demand_source": "real",
+    # 실측 호출량 중 카카오 T 플랫폼이 배차하는 비율 = 앱 호출 비율 약 80%(서울시, 2024 시민만족도 조사)
+    #   x 카카오 일반호출 점유율 96%(공정위, 2022) ≈ 0.77. 영역 전체 택시 수요를 보려면 1.0.
+    "real_demand_scale": 0.77,
     "real_internal_trip_km": 1.0,    # 이 거리보다 짧은 운행은 영역 안에서 하차 (나머지는 경계 도로로 나감)
+    # 그날의 실측 시간별 날씨(data/external/weather_<지역>_*.csv)가 있으면 수요에 반영 (없으면 실시간 '날씨적용')
+    "use_historical_weather": True,
+    "weather_precip_coef_per_mm": 0.0199,   # 강수 1mm당 호출 +1.99% (docs/weather_coefficient.md)
+    "weather_precip_cap_mm": 30.0,
+    # [시나리오] 영역 밖으로 나간 택시 복귀 지연 (external_trip_model.py). 기본 꺼짐.
+    "taxi_external_away": False,
+    "external_replacement_ratio": 0.918,   # 강남구 2025 하차/승차 = 85,218/92,858
+    "external_return_factor": 2.0,         # 운행시간(TIMS 격자 평균) x 2 = 갔다 오는 시간
+    # RL 학습 에피소드 날짜 범위 (평가 날짜와 겹치지 않게; 수요예측 학습 8주와 동일)
+    "rl_train_start": "2026-07-13",
+    "rl_train_end": "2026-09-06",
     "taxi_strategy": "patrol",
     "depart_jitter_sec": 300.0,
     "sumo_time_to_teleport": 300,
@@ -39,8 +46,14 @@ DEFAULT_CONFIG = {
     "taxi_fail_threshold": 5,
     "taxi_respawn_prefix": "taxi_respawn",
     "taxi_dispatch_algorithm": "greedy",
+    # 헝가리안 비용: "network" = 도로망 최단 이동시간(다익스트라, 권장·config.json 기본) / "euclidean" = 예전 직선 거리
+    "dispatch_cost": "euclidean",
     "taxi_idle_algorithm": "randomCircling",
     "suppress_sumo_warnings": False,
+    # "학습만 실행" 시 data/sim_logs/demand_log_*.csv를 새로 채우기 위해
+    # measure_wait_time.py 시뮬레이션을 먼저 돌릴지 여부. 로그가 이미 충분히
+    # 쌓여있으면 꺼서 시간을 아낄 수 있음 (config_gui.py의 체크박스와 연동).
+    "run_sim_before_training": True,
     # Dynamic passenger population / modal split
     "school_pop_base": 400,
     "company_pop_base": 100,
@@ -73,15 +86,52 @@ DEFAULT_CONFIG = {
     # Module 2
     "h3_resolution": 8, "freq": "5min", "max_lag": 6,
     "rolling_short": 3, "rolling_long": 6,
+    # create_features가 만드는 예측 지평 개수 (y_h1 ~ y_h{forecast_horizons}).
+    # time_series_prep.py는 .get()으로 읽지만 기본값을 여기 명시해 config_gui에서도 보이게 함.
+    "forecast_horizons": 6,
+    # scripts/generate_training_data.py / fetch_weather_history.py의 기준 시뮬레이션 날짜.
+    # generate_training_data.py가 cfg['sim_date']로 직접 인덱싱하므로 기본값 필수 (없으면 KeyError).
+    "sim_date": "2026-09-07",
     # Module 3
     "xgb_n_estimators": 100, "xgb_max_depth": 6, "xgb_learning_rate": 0.1,
     "test_size": 0.2,
     "cnn_hidden_dim": 64, "cnn_num_layers": 2, "cnn_kernel_size": 3,
-    "cnn_epochs": 30, "cnn_batch_size": 128, "cnn_lr": 0.001,
+    "cnn_epochs": 30, "cnn_batch_size": 16, "cnn_lr": 0.001,
     # Module 4
     "base_fare": 4800, "min_multiplier": 1.0, "max_multiplier": 3.0,
     "surge_coefficient": 0.4,
+    # [Surge Pricing 대체] RL 리워드에 더하는 "핫스팟 분포 일치도" 보상의 가중치.
+    # 0이면 기존(대기감소만 보상) 그대로 동작. rl_train.py가 이 값을 읽어서 씀.
+    "incentive_weight": 0.0,
+    # 유휴택시 중 몇 %가 핫스팟(학교/회사/음식점/지하철입구/버스정류장)에 있어야 하는지
+    # 목표 비율 (0~1). 0.5면 "절반은 핫스팟, 절반은 주거지역"이 이상적이라고 보는 것.
+    "target_hotspot_ratio": 0.8,
+    # RL 선배치 학습 설정. config_gui.py에서도 모두 조정할 수 있다.
+    "rl_max_decisions": 60,
+    "rl_total_timesteps": 20000,
+    "rl_rollout_steps": 256,
+    "rl_batch_size": 64,
+    "rl_seed": 42,
+    # 병렬로 띄울 SUMO/env 개수. 1이면 기존과 완전히 동일(단일 env). CPU 코어 수 이하로 권장.
+    # rl_train.py가 이 값으로 SubprocVecEnv 병렬 학습 여부를 결정함.
+    "rl_n_envs": 1,
+    "rl_learning_rate": 3e-4,
+    "rl_gamma": 0.99,
+    "rl_randomize_passenger_seed": True,
+    "rl_training_seed_base": 1000,
     "dispatch_use_euclidean": True,
+    # forecast_dispatcher.py가 CFG['reposition_fraction']로 직접 인덱싱 — 유휴택시 중 몇 %를
+    # 예측 핫스팟으로 재배치할지. 기본값이 없으면 forecast 전략 실행 시 KeyError로 죽음.
+    "reposition_fraction": 0.3,
+    # taxi_strategy="forecast" (module4_dispatch/forecast_repositioner.py): 예측 주기, 예측 구간(10분 칸 수),
+    # 칸별 목표 = 예측^power 비율(2/3: 가장 가까운 빈 택시까지 평균 거리 최소), 한 번 이동 최대 시간(초)
+    "forecast_tick_sec": 300,
+    "forecast_horizon_buckets": 3,
+    "forecast_alloc_power": 0.6667,
+    "forecast_max_move_sec": 180,
+    # 빈 택시가 전체의 30%보다 적으면(택시 부족) 재배치 중단. 검증 날짜(9/8, 9/17, 손님 100%)에서 0/0.2/0.3/0.4 비교 후 선택
+    "forecast_min_idle_ratio": 0.3,
+    "synthetic_rate": 1.5,
     "mock_available_taxis_min": 1, "mock_available_taxis_max": 20,
     "mock_taxi_count": 20, "mock_passenger_count": 20,
     # Synthetic training/demo data (kept explicit so it is no longer hidden)
@@ -111,7 +161,7 @@ DEFAULT_CONFIG = {
     #   "sim_date"=위 sim_date 고정(평가·A/B용, 날짜가 같아야 비교가 공정함)
     #   "alternate"=과거 90일 중 평일/공휴일을 번갈아 뽑음(학습 로그 생성용)
     #   "random"=과거 90일 중 랜덤
-    "run_date_mode": "random",
+    "run_date_mode": "alternate",
     # 공휴일일 때 택시 선택 확률에 곱하는 배율 (평일은 항상 1.0). 날씨 가산 후에 곱함.
     #   school: 등교 / company: 출근 / restaurant: 음식점 방문 / general: 기본 수요(num_passengers 가챠)
     #   lunch, evening: 점심 이동, 퇴근은 "아침에 회사가 흡수한 인원"에서 파생되므로 1.0 권장(이중 감소 방지)
@@ -136,79 +186,23 @@ REGION_PRESETS = {
     "NYC(맨해튼)": {"lat_min": 40.755, "lat_max": 40.765, "lng_min": -73.990, "lng_max": -73.975, "temp_min": 5.0, "temp_max": 20.0},
 }
 
-
-def load_config(config_path=None, live_api=False, verbose=False):
-    """
-    config.json에서 설정을 안전하고 신속하게 불러옵니다.
-    - live_api=False(기본값): 외부 네트워크 API(지오코딩, 실시간날씨) 호출 없이 로컬 프리셋과 JSON 값만 읽어 0초 만에 완결 (독립 실행 및 재현성 보장).
-    - live_api=True: 실시간 Nominatim/Open-Meteo API를 명시적으로 조회하여 좌표/기온을 갱신.
-    """
-    # 우선순위: 명시 경로 > MOBILITY_CONFIG(build_env.py --config-path가 설정) > 기본 config.json
-    env_path = os.environ.get("MOBILITY_CONFIG")
-    path = config_path or env_path or CONFIG_PATH
-    if path != CONFIG_PATH and not os.path.exists(path):
-        raise FileNotFoundError(f"지정한 설정 파일이 없습니다: {path}")
+def load_config(config_path=None):
+    path = config_path or CONFIG_PATH
     user_cfg = {}
     if os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
-                user_cfg = json.load(f)
-            if verbose:
-                print(f"[안내] {os.path.basename(path)}에서 설정값을 불러왔습니다.")
+            with open(path, "r", encoding="utf-8") as f: user_cfg = json.load(f)
+            print("[안내] config.json에서 설정값을 불러왔습니다.")
         except (json.JSONDecodeError, OSError) as e:
-            if verbose:
-                print(f"[경고] config.json을 읽지 못해 기본값을 사용합니다: {e}")
+            print(f"[경고] config.json을 읽지 못해 기본값을 사용합니다: {e}")
     else:
-        if verbose:
-            print("[안내] config.json이 없어 기본값을 사용합니다.")
-
+        print("[안내] config.json이 없어 기본값을 사용합니다.")
     merged = {**DEFAULT_CONFIG, **user_cfg}
-    region = merged.get("region", "강남역")
-
-    if live_api:
-        _apply_region_coords(merged, region, verbose=verbose)
-        _apply_live_weather(merged, region)
-    else:
-        # 오프라인/테스트 모드: 좌표/날씨 키가 비어있으면 안전하게 로컬 프리셋으로 채움 (무부작용)
-        if "lat_min" not in merged or "lng_min" not in merged:
-            preset = REGION_PRESETS.get(region, REGION_PRESETS.get("강남역", {}))
-            for k, v in preset.items():
-                if k not in merged:
-                    merged[k] = v
-        if merged.get("weather_bonus_enabled"):
-            # 날씨 보정을 켠 경우에만 현재 날씨(기온·강수·풍속)를 조회 (실패하면 보정 없이 진행)
-            _apply_live_weather(merged, region)
-
+    _apply_region_coords(merged, merged.get("region", "홍대입구"))
+    _apply_live_weather(merged, merged.get("region", "홍대입구"))
     return merged
 
-
-def get_config(overrides=None, **kwargs):
-    """
-    단위 테스트 및 모듈별 격리 실행을 위해 특정 파라미터만 오버라이드한 설정 딕셔너리를 반환합니다.
-    예: cfg = get_config(h3_resolution=9, max_lag=3)
-    """
-    cfg = load_config(live_api=False, verbose=False).copy()
-    if overrides and isinstance(overrides, dict):
-        cfg.update(overrides)
-    if kwargs:
-        cfg.update(kwargs)
-    return cfg
-
-
-def get_module_config(module_name: str) -> dict:
-    """특정 모듈에 연관된 설정값만 추출하여 반환 (모듈 독립 테스트 지원)"""
-    cfg = load_config(live_api=False, verbose=False)
-    prefix_map = {
-        "module1": ["grid_", "num_", "sim_", "passenger_", "taxi_", "school_", "company_", "residential_", "lunch_", "evening_", "restaurant_"],
-        "module2": ["h3_", "freq", "max_lag", "rolling_", "weather_"],
-        "module3": ["xgb_", "cnn_", "test_size", "train_random_state"],
-        "module4": ["base_fare", "min_multiplier", "max_multiplier", "surge_", "dispatch_", "mock_"],
-    }
-    prefixes = prefix_map.get(module_name.lower(), [])
-    return {k: v for k, v in cfg.items() if any(k.startswith(p) or k == p for p in prefixes)}
-
-
-def _apply_region_coords(merged, region, verbose=False):
+def _apply_region_coords(merged, region):
     merged.pop("region_unresolved", None)
     coords = None
     try:
@@ -220,17 +214,14 @@ def _apply_region_coords(merged, region, verbose=False):
         grid_height_m = merged.get("grid_y", 3) * merged.get("grid_length", 200)
         margin_m = max(grid_width_m, grid_height_m) / 2
         result = lookup_region(region, margin_m=margin_m)
-        coords = {k: result[k] for k in ("lat_min", "lat_max", "lng_min", "lng_max")}
-        if verbose:
-            print(f"[안내] '{region}' 좌표를 실시간 API(Nominatim)로 조회했습니다.")
+        coords = {k: result[k] for k in ("lat_min","lat_max","lng_min","lng_max")}
+        print(f"[안내] '{region}' 좌표를 실시간 API(Nominatim)로 조회했습니다.")
     except Exception as e:
-        if verbose:
-            print(f"[안내] 좌표 API 조회 실패({type(e).__name__}) - 프리셋으로 대체합니다.")
+        print(f"[안내] 좌표 API 조회 실패({type(e).__name__}) — 프리셋으로 대체합니다.")
     if coords:
         merged.update(coords)
         temp = REGION_PRESETS.get(region, {})
-        merged["temp_min"] = temp.get("temp_min", 15.0)
-        merged["temp_max"] = temp.get("temp_max", 25.0)
+        merged["temp_min"] = temp.get("temp_min", 15.0); merged["temp_max"] = temp.get("temp_max", 25.0)
     elif region in REGION_PRESETS:
         merged.update(REGION_PRESETS[region])
     else:
@@ -238,7 +229,7 @@ def _apply_region_coords(merged, region, verbose=False):
         # 설정 화면(GUI)은 계속 열 수 있게 값은 채워 두되, 표시를 남겨 build_env.py가 지도 생성을 거부한다.
         print(f"[경고] '{region}' 좌표를 찾지 못했고 프리셋도 없습니다. 지역명을 확인하거나 네트워크를 연결하세요. "
               f"(지도 생성은 중단됩니다)")
-        merged.update(REGION_PRESETS["강남역"])
+        merged.update(REGION_PRESETS["홍대입구"])
         merged["region_unresolved"] = region
 
 def _apply_live_weather(merged, region):
@@ -249,15 +240,26 @@ def _apply_live_weather(merged, region):
         weather = get_current_weather(lat, lng)
         if weather:
             temp = weather["temperature"]
-            merged["temp_min"] = round(temp - 2.0, 1)
-            merged["temp_max"] = round(temp + 2.0, 1)
-            merged["current_temperature"] = round(temp, 1)
-            merged["current_precipitation"] = round(weather["precipitation"], 2)
+            merged["temp_min"] = round(temp - 2.0, 1); merged["temp_max"] = round(temp + 2.0, 1)
+            merged["current_temperature"] = round(temp, 1); merged["current_precipitation"] = round(weather["precipitation"], 2)
             if weather.get("wind_speed") is not None:
                 merged["current_wind_speed"] = round(weather["wind_speed"], 1)
     except Exception:
         pass
 
+CFG = load_config()
 
-# 전역 설정 싱글톤 (사이드이펙트 없이 조용하고 빠르게 로드)
-CFG = load_config(live_api=False, verbose=False)
+def reload_config():
+    """
+    config.json의 최신 설정을 다시 읽어 CFG에 반영한다.
+
+    CFG 객체 자체는 유지하고 내부 내용만 갱신한다.
+    따라서 다른 파일에서 이미 `from config_loader import CFG`
+    로 가져간 참조도 그대로 최신값을 사용할 수 있다.
+    """
+    latest = load_config()
+
+    CFG.clear()
+    CFG.update(latest)
+
+    return CFG

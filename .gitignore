@@ -1,55 +1,43 @@
-# --- 인증키 / 비밀값 ---
-.env
-.env.*
-!.env.example
-*.key
-secrets.json
-
-# --- Python ---
+# 캐시
 __pycache__/
-*.py[cod]
-.venv/
-venv/
-.ipynb_checkpoints/
+*.pyc
 
-# --- 대용량 데이터 / 산출물 ---
-data/raw/
-realdata/*.csv
-!realdata/TRANS_250M_IN_SAMPLE.csv
-_result_*.json
-data/eda/*.html
-
-# --- OS ---
-Thumbs.db
-desktop.ini
-.DS_Store
-
-# --- 강화학습 임시 체크포인트 ---
+# 백업/체크포인트 (제일 큰 후보)
+saved_models_backups/
+demand_v2_backups/
+rl_model_backups/
 module4_dispatch/checkpoints/
+data/sim_logs/backup/
+_backup_custom_dispatch/
+logs/
 
-# --- 에디터 / IDE ---
-.vscode/
-.idea/
-*.swp
-*~
+# 재생성되는 SUMO 빌드 산출물 (build_env.py가 다시 만듦)
+module1_simulation/sumo_config*/
 
-# --- 로그 및 테스트 캐시 ---
-*.log
-*.stderr
-*.out
-nc_stderr.txt
-.pytest_cache/
-.coverage
-htmlcov/
+# 압축본/임시 결과
+*.zip
+_result_combo*.json
 
-# --- SUMO 대용량 덤프 ---
-tripinfo*.xml
-vehroutes*.xml
-*.dump
-
+# 최종 RL 모델 하나만 예외로 포함
+!module4_dispatch/rl_reposition_model.zip
+# auto-added
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.zip
+tree.txt
+node_modules/
+.env
 push_*.bat
 # 재생성 가능한 대용량 산출물 (scripts/generate_demand_logs.py, tools/record_motion_truth.py, tools/fleet_sizing.py)
 data/real_demand_logs/
 results/motion_eval/truth_stride1.json
 results/motion_eval/map.json
 results/fleet_sizing/*.log
+
+# Unity 재생 내보내기 때마다 생기는 시각별 백업 (최신본은 results/unity_replay/에 있음)
+results/unity_replay/backup/20*
+
+# 개인 인증키 (절대 커밋하지 않음)
+secrets/

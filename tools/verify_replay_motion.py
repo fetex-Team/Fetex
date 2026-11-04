@@ -32,6 +32,10 @@ OFFROAD_TOL_M = 1.0   # 차선 가장자리에서 이만큼까지는 허용 (차
 
 
 def load(path):
+    if str(path).endswith(".gz"):
+        import gzip
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return json.load(f)
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
 
