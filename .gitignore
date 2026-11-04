@@ -38,3 +38,6 @@ results/fleet_sizing/*.log
 
 # Unity 재생 내보내기 때마다 생기는 시각별 백업 (최신본은 results/unity_replay/에 있음)
 results/unity_replay/backup/20*
+
+# 개인 인증키 (절대 커밋하지 않음)
+secrets/

@@ -183,6 +183,80 @@
         "days_better": 2,
         "days": 7
       }
+    },
+    "forecast": {
+      "service_rate": {
+        "mean": 0.9942000000000001,
+        "n": 7,
+        "diff_mean": 4.285714285712228e-05,
+        "diff_ci95": [
+          -0.0020140769087646205,
+          0.002099791194478865
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 23.714285714285715,
+        "n": 7,
+        "diff_mean": 0.8571428571428571,
+        "diff_ci95": [
+          -9.720883180371898,
+          11.435168894657613
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 3,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 59.699999999999996,
+        "n": 7,
+        "diff_mean": -0.3999999999999986,
+        "diff_ci95": [
+          -3.0203093303399617,
+          2.2203093303399646
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 110.14285714285714,
+        "n": 7,
+        "diff_mean": -1.1428571428571428,
+        "diff_ci95": [
+          -7.051200323145032,
+          4.765486037430746
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 61.84285714285714,
+        "n": 7,
+        "diff_mean": -0.3428571428571437,
+        "diff_ci95": [
+          -3.74981885576166,
+          3.0641045700473724
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 3,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 76340275.71428572,
+        "n": 7,
+        "diff_mean": 4655.571428571428,
+        "diff_ci95": [
+          -165340.1491971412,
+          174651.29205428404
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      }
     }
   },
   "same_demand_per_date": {

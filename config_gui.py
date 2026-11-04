@@ -17,7 +17,7 @@ PRESET_DIR = os.path.join(ROOT, "presets")
 os.makedirs(PRESET_DIR, exist_ok=True)
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
-STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned"]
+STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
 
 FACTOR_OPTIONS = {
     "taxi_strategy": ("택시 전략 (체크)", STRATEGIES),

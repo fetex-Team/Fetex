@@ -165,6 +165,8 @@ def main():
     ap.add_argument("--jobs", type=int, default=2)
     ap.add_argument("--name", default=None)
     ap.add_argument("--fresh", action="store_true", help="저장된 실행 결과를 지우고 처음부터")
+    ap.add_argument("--set", nargs="*", default=[], metavar="KEY=VALUE",
+                    help="시나리오 위에 덮어쓸 설정 (예: forecast_min_idle_ratio=0.3). 값은 JSON으로 해석")
     a = ap.parse_args()
 
     name = a.name or a.scenario
@@ -174,7 +176,14 @@ def main():
         shutil.rmtree(out / "runs", ignore_errors=True)
     log_dir.mkdir(parents=True, exist_ok=True)
     cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
-    cfg.update({"write_demand_logs": False, "run_date_mode": "sim_date", **SCENARIOS[a.scenario]})
+    extra = {}
+    for kv in a.set:
+        k, _, v = kv.partition("=")
+        try:
+            extra[k] = json.loads(v)
+        except json.JSONDecodeError:
+            extra[k] = v
+    cfg.update({"write_demand_logs": False, "run_date_mode": "sim_date", **SCENARIOS[a.scenario], **extra})
     fd, cfg_path = tempfile.mkstemp(prefix="repeat_cfg_", suffix=".json")
     with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(cfg, f, ensure_ascii=False)
@@ -200,7 +209,7 @@ def main():
         w.writeheader()
         w.writerows(sorted(rows, key=lambda r: (r["date"], r["strategy"])))
     summary = summarize(rows, a.baseline)
-    summary.update({"scenario": a.scenario, "overrides": SCENARIOS[a.scenario]})
+    summary.update({"scenario": a.scenario, "overrides": {**SCENARIOS[a.scenario], **extra}})
     (out / "summary.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
     md = to_markdown(summary)
     (out / "summary.md").write_text(md + "\n", encoding="utf-8")

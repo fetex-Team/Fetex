@@ -123,6 +123,14 @@ DEFAULT_CONFIG = {
     # forecast_dispatcher.py가 CFG['reposition_fraction']로 직접 인덱싱 — 유휴택시 중 몇 %를
     # 예측 핫스팟으로 재배치할지. 기본값이 없으면 forecast 전략 실행 시 KeyError로 죽음.
     "reposition_fraction": 0.3,
+    # taxi_strategy="forecast" (module4_dispatch/forecast_repositioner.py): 예측 주기, 예측 구간(10분 칸 수),
+    # 칸별 목표 = 예측^power 비율(2/3: 가장 가까운 빈 택시까지 평균 거리 최소), 한 번 이동 최대 시간(초)
+    "forecast_tick_sec": 300,
+    "forecast_horizon_buckets": 3,
+    "forecast_alloc_power": 0.6667,
+    "forecast_max_move_sec": 180,
+    # 빈 택시가 전체의 30%보다 적으면(택시 부족) 재배치 중단. 검증 날짜(9/8, 9/17, 손님 100%)에서 0/0.2/0.3/0.4 비교 후 선택
+    "forecast_min_idle_ratio": 0.3,
     "synthetic_rate": 1.5,
     "mock_available_taxis_min": 1, "mock_available_taxis_max": 20,
     "mock_taxi_count": 20, "mock_passenger_count": 20,

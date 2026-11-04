@@ -214,6 +214,21 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
     away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))
 
+    # [전략] taxi_strategy="forecast": 수요 예측(demand_v2)으로 빈 택시를 미리 보냄 (module4_dispatch/forecast_repositioner.py)
+    forecast_repositioner = None
+    if taxi_strategy == "forecast":
+        if spawn_manager._real_model is None:
+            raise SystemExit("forecast 전략은 실데이터 수요 모드(demand_source=real)에서만 쓸 수 있습니다.")
+        from module4_dispatch.forecast_repositioner import ForecastRepositioner
+        from module4_dispatch.network_cost import NetworkTravelTime, net_file_from_sumocfg
+        _tt = getattr(hungarian_dispatcher, "travel_time", None) or NetworkTravelTime.cached(net_file_from_sumocfg(_sumo_cfg))
+        forecast_repositioner = ForecastRepositioner(
+            meta, run_date, bool(spawn_manager.is_holiday), sim_start_hour, spawn_manager._real_model,
+            spawn_manager.schedule, meta.get("passenger_seed") if meta.get("passenger_seed") is not None else 42,
+            travel_time=_tt)
+        print(f"[안내] 예측 기반 재배치: {forecast_repositioner.tick_sec:.0f}초마다 칸별 "
+              f"{forecast_repositioner.horizon * 10}분 수요 예측 -> 빈 택시 λ^{forecast_repositioner.power:.2f} 비율 배치")
+
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
     if sim_end_seconds is None:
         print("[경고] sim_end_hour를 어디서도 찾지 못해 안전상 24시간 분량으로 자동 종료합니다.")
@@ -258,6 +273,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                 if dispatched_now:  # 방금 배정된 택시는 RL 재배치 후보/기록기의 idle 목록에서 제외
                     _busy = set(dispatched_now)
                     idle_taxis = [v for v in idle_taxis if v not in _busy]
+            if forecast_repositioner is not None:
+                forecast_repositioner.maintain(now, idle_taxis=idle_taxis)
             if rl_maintainer:
                 rl_maintainer.maintain(now, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour,
                                        current_pids=current_pids, idle_taxis=idle_taxis)  # 추가
@@ -319,7 +336,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                 teleport_count += traci.simulation.getStartingTeleportNumber()
                 recorder.capture(
                     now, depart_time, pickup_time, arrived_pids,
-                    pax_manager.removed_pids, set(), rl_maintainer, teleport_count,
+                    pax_manager.removed_pids, set(), rl_maintainer or forecast_repositioner, teleport_count,
                     vehicle_ids=current_vids, idle_taxis=idle_taxis, person_ids=current_pids,
                     is_last=sim_end_seconds is not None and now >= sim_end_seconds,
                 )
@@ -429,6 +446,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         "est_revenue_won": (round(n_measured * spawn_manager.mean_fare_won)
                             if getattr(spawn_manager, "mean_fare_won", None) else None),
         "external_away": away_model.summary() if away_model is not None else None,
+        "forecast_reposition": forecast_repositioner.summary() if forecast_repositioner is not None else None,
         "dispatch_cost": (hungarian_dispatcher.cost_mode if hungarian_dispatcher is not None else None),
         "dispatch_cost_stats": (dict(hungarian_dispatcher.cost_stats) if hungarian_dispatcher is not None else None),
         "waits": waits,

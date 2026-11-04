@@ -1,0 +1,45 @@
+{
+  "dates": [
+    "2026-09-08",
+    "2026-09-17"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "forecast": {
+      "service_rate": {
+        "mean": 0.8818,
+        "n": 2
+      },
+      "n_timeout_removed": {
+        "mean": 799.0,
+        "n": 2
+      },
+      "avg_wait_sec": {
+        "mean": 154.8,
+        "n": 2
+      },
+      "p90_wait_sec": {
+        "mean": 296.0,
+        "n": 2
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 193.55,
+        "n": 2
+      },
+      "est_revenue_won": {
+        "mean": 102020590.0,
+        "n": 2
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-08": true,
+    "2026-09-17": true
+  },
+  "scenario": "network_dispatch_full",
+  "overrides": {
+    "dispatch_cost": "network",
+    "real_demand_scale": 1.0,
+    "forecast_min_idle_ratio": 0.4
+  }
+}

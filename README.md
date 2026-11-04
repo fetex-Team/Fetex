@@ -78,6 +78,7 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | **patrol** | 80.6초 → **60.1초** | 306 → **266명** |
 | prepositioned | 86.5초 → 69.6초 | 306 → 315명 |
 | rl_prepositioned | 91.2초 → 75.5초 | 316 → 330명 |
+| **forecast** (예측 재배치, 새 전략) | — → **59.4초** | — → 294명 |
 
 - **헝가리안 매칭 비용을 직선 거리 → 다익스트라 도로 이동시간으로 바꿔 세 전략 모두 평균 대기 10~20초 단축** (`"dispatch_cost": "network"`, 기본값)
 - 가장 좋은 조합: **순찰 + 헝가리안(도로 이동시간)**. 미리 옮겨 두는 전략(선배치·RL)은 7일 모두 평균 대기가 더 길다
@@ -88,6 +89,7 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 
 ## 문서
 - [`REPORT.md`](REPORT.md) — 통합 보고서
+- [`docs/design/`](docs/design/README.md) — 설계 결정 기록 (무엇을 왜 바꿨는지, 근거 수치)
 - [`docs/real_data_calibration.md`](docs/real_data_calibration.md) — 실측 수요 보정 방법·검증
 - [`docs/replay_motion.md`](docs/replay_motion.md) — Unity 차량 회전 궤적 문제와 수정
 - [`docs/module1_map_verification.md`](docs/module1_map_verification.md) — 지도·외부데이터 검증 (1번)
