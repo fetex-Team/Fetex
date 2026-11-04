@@ -102,6 +102,8 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 ```
 main.py / config_gui.py                 실행 진입점 (시뮬레이션 / 설정 GUI)
 config.json / config_loader.py          설정 (config.json = 현재 값, config_loader.DEFAULT_CONFIG = 기본값)
+                                        GUI [적용하기]만 config.json을 바꾸고, 실행·A/B·학습은 화면 값을
+                                        results/run_configs/<종류>_<시각>.json에 저장해 MOBILITY_CONFIG로 씀
 measure_wait_time.py                    공용 실행·측정 루프 (여러 도구가 import)
 module1_simulation/    디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model),
                        지도·날씨·공휴일(geo_lookup, real_map_fetch, weather_*, holiday_utils), 재현성·TraCI 구독 도우미

@@ -9,10 +9,10 @@ config_gui.py의 "🧪 A/B 비교하기" 다이얼로그에서 사용자가 고�
 4) 모든 결과 JSON이 도착할 때까지 대기 후 순위표로 비교 출력
 
 사용법:
-    python multi_factor_compare.py '[{"taxi_strategy":"patrol","taxi_dispatch_algorithm":"greedy"}, ...]'
+    python scripts/multi_factor_compare.py '[{"taxi_strategy":"patrol","taxi_dispatch_algorithm":"greedy"}, ...]'
 
-주의: 실행 중 config.json이 combos[0] 값으로 덮어써집니다 (기존 parallel_dispatch_orchestrator.py와
-동일한 제약). 팀 공용 config.json을 쓰고 있다면 실행 전에 팀에 공유하는 것을 권장합니다.
+config.json은 바뀌지 않는다. combos[0] 값은 results/run_configs/ab_<시각>.json에 저장되고,
+build_env와 워커는 MOBILITY_CONFIG로 그 파일을 읽는다.
 """
 import os
 import sys
@@ -27,7 +27,6 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝�
 sys.path.insert(0, ROOT)
 
 MODULE1 = os.path.join(ROOT, "module1_simulation")
-CONFIG_PATH = os.path.join(ROOT, "config.json")
 
 # build_env.py와 동일한 규칙: "hungarian"은 SUMO 내장 알고리즘이 아니라
 # traci 콜백으로 직접 배정하는 모드이므로 SUMO 쪽엔 "traci"로 알려줘야 함
@@ -50,7 +49,8 @@ def decide_run_dates(combos: list) -> list:
     반환: 조합 순서대로의 datetime.date 리스트
     """
     from module1_simulation.holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
+    from config_loader import active_config_path
+    with open(active_config_path(), "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
     cache = {}
@@ -75,14 +75,13 @@ def decide_run_dates(combos: list) -> list:
 
 
 def build_shared_map(base_combo: dict):
-    """combos[0] 값을 config.json에 반영해서 공용 맵을 1회 생성."""
+    """combos[0] 값으로 공용 맵을 1회 생성. config.json은 그대로 두고 실행용 설정 파일(results/run_configs/)에
+    반영한 뒤 MOBILITY_CONFIG로 build_env와 워커들이 같은 파일을 읽게 한다."""
+    from config_loader import use_run_config
     print(f"[오케스트레이터] 공용 맵 생성 중... (기준 조합: {base_combo})")
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    # holiday_mode(평일/공휴일 비교)는 이번 비교에만 쓰는 값이라 config.json에는 남기지 않음
-    cfg.update({k: v for k, v in base_combo.items() if k != "holiday_mode"})
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    # holiday_mode(평일/공휴일 비교)는 조합별로 runtime_meta에 따로 넣으므로 공용 설정에는 넣지 않음
+    path = use_run_config({k: v for k, v in base_combo.items() if k != "holiday_mode"}, "ab")
+    print(f"[오케스트레이터] 이번 비교 설정: {os.path.relpath(path, ROOT)} (config.json은 변경 안 함)")
 
     build_env_path = os.path.join(MODULE1, "build_env.py")
     subprocess.run([sys.executable, build_env_path, "--config-dir", "sumo_config_combo0"],

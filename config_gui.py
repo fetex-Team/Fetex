@@ -10,7 +10,7 @@ for _stream in (sys.stdout, sys.stderr):
 from datetime import datetime
 from tkinter import ttk, messagebox, simpledialog
 from tools.region_autocomplete import RegionSearchEntry
-from config_loader import DEFAULT_CONFIG
+from config_loader import DEFAULT_CONFIG, write_run_config
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 PRESET_DIR = os.path.join(ROOT, "presets")
@@ -563,6 +563,15 @@ class ConfigGUI:
         self._loaded_config = c.copy()
         self.status.config(text="설정을 적용했습니다. (config.json 저장 완료)")
 
+    def _prepare_run_config(self, label):
+        """실행 버튼용: 화면 값을 results/run_configs/<label>_<시각>.json에 저장하고 이후 실행이 그 파일을 쓰게 한다.
+        config.json은 [적용하기]를 눌렀을 때만 바뀐다. 반환: 화면 값 dict"""
+        c = self.current()
+        self._run_config_path = write_run_config(c, label)
+        self.status.config(text=f"이번 실행 설정: {os.path.relpath(self._run_config_path, ROOT)} "
+                                f"(config.json은 [적용하기]로만 바뀜)")
+        return c
+
     def refresh_presets(self):
         files = [f[:-5] for f in os.listdir(PRESET_DIR) if f.endswith(".json")]
         self.preset_combo["values"] = files
@@ -597,6 +606,9 @@ class ConfigGUI:
         e["PYTHONIOENCODING"] = "utf-8"
         e["PYTHONUTF8"] = "1"
         e["PYTHONHASHSEED"] = "0"  # 실행 재현성 (reproducibility.py 참고)
+        # 실행 버튼이 만든 실행용 설정을 자식 프로세스가 읽게 함 (config_loader의 MOBILITY_CONFIG)
+        if getattr(self, "_run_config_path", None):
+            e["MOBILITY_CONFIG"] = self._run_config_path
         return e
 
     def _run(self, script, args=(), blocking=False, env_extra=None):
@@ -619,7 +631,7 @@ class ConfigGUI:
             return False
 
     def run_main(self):
-        self.save_config_only()
+        self._prepare_run_config("play")
         if self._run(os.path.join("module1_simulation", "build_env.py"), blocking=True):
             self._run("main.py")
 
@@ -724,10 +736,7 @@ class ConfigGUI:
         return f"실제 종료 step {steps:,} >= 10,000, rl_model_backups/{os.path.basename(dst)} 에 보존"
 
     def run_training(self):
-        c = self.current()
-
-        with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-            json.dump(c, f, ensure_ascii=False, indent=2)
+        c = self._prepare_run_config("train")
 
         # [새 학습 라인] 기존 라인(build_env 이후)을 기다리지 않고 지금 바로 동시에 시작
         v2_proc, v2_state = self._start_v2_line(bool(c.get("force_regenerate_demand_v2", False)))
@@ -945,7 +954,7 @@ class ConfigGUI:
                 messagebox.showwarning("경고", "생성할 전략을 하나 이상 선택하세요.")
                 return
 
-            self.save_config_only()
+            self._prepare_run_config("unity")
             cmd_args = ["--strategies"] + selected_strats + ["--algorithm", algo_var.get(), "--stride", stride_var.get()]
             if copy_var.get() and has_unity:
                 cmd_args += ["--unity-dir", unity_default_path]
@@ -1080,7 +1089,7 @@ class ConfigGUI:
                     _c["holiday_mode"] = "today"   # 미체크: 오늘 날짜 기준 자동 판정
 
             win.destroy()
-            self.save_config_only()
+            self._prepare_run_config("ab")
             model_path = dict(models)[model_var.get()]
             self._run(os.path.join("scripts", "multi_factor_compare.py"), [json.dumps(combos, ensure_ascii=False)],
                       env_extra={"AI_CATEGORY_MODEL_PATH": model_path})

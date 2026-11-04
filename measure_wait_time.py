@@ -49,7 +49,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from module1_simulation.taxi_manager import TaxiFleetManager
 from module1_simulation.passenger_manager import PassengerTimeoutManager, riding_map
 from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
-from config_loader import CFG
+from config_loader import CFG, use_run_config
 from module1_simulation.holiday_utils import pick_run_date, is_holiday_date, count_existing_logs
 from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
 from module1_simulation.step_snapshot import fetch_idle_taxis
@@ -58,7 +58,6 @@ from module2_preprocessing.sim_log_recorder import DemandLogRecorder  # [Module 
 from module1_simulation.external_trip_model import ExternalTripAwayModel
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
-CONFIG_PATH = os.path.join(ROOT, "config.json")
 SUMO_CFG = os.path.join(ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
 META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 DEMAND_LOG_PATH = os.path.join(ROOT, "data", "raw", "simulation_demand_log.csv")
@@ -158,14 +157,9 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     sim_end_hour = meta.get("sim_end_hour")
     sim_start_hour = meta.get("sim_start_hour", 0)
     if sim_end_hour is None:
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                fallback_cfg = json.load(f)
-            sim_end_hour = fallback_cfg.get("sim_end_hour")
-            if sim_end_hour is not None:
-                print(f"[안내] runtime_meta.json에 sim_end_hour가 없어 config.json에서 읽어왔습니다 ({sim_end_hour}시).")
-        except Exception:
-            sim_end_hour = None
+        sim_end_hour = CFG.get("sim_end_hour")  # 실행 중인 설정(MOBILITY_CONFIG 반영)에서 폴백
+        if sim_end_hour is not None:
+            print(f"[안내] runtime_meta.json에 sim_end_hour가 없어 설정에서 읽어왔습니다 ({sim_end_hour}시).")
 
     # [공휴일] 실행 날짜를 스폰 매니저 생성 *전에* 정함. 시드와 무관한 난수(rng)를 써서
     # passenger_seed가 고정이어도 날짜가 매번 바뀜 (예전엔 random.seed 직후 randint라 항상 같은 날짜였음).
@@ -458,16 +452,13 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
 
 def set_strategy_in_config(strategy: str):
-    """config.json의 taxi_strategy 값을 바꿔치기 (build_env.py가 재실행될 때 반영됨)"""
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    cfg["taxi_strategy"] = strategy
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    """이번 실행의 taxi_strategy를 바꾼다. config.json은 그대로 두고 실행용 설정 파일(results/run_configs/)에
+    반영해 이후 rebuild_env()의 build_env.py와 이 프로세스가 같은 값을 읽게 한다."""
+    use_run_config({"taxi_strategy": strategy}, "strategy")
 
 
 def rebuild_env():
-    """build_env.py를 다시 실행해서 현재 config.json 기준으로 도로망/승객/택시를 재생성"""
+    """build_env.py를 다시 실행해서 현재 설정(MOBILITY_CONFIG 또는 config.json) 기준으로 도로망/승객/택시를 재생성"""
     import subprocess
     build_env_path = os.path.join(ROOT, "module1_simulation", "build_env.py")
     subprocess.run([sys.executable, build_env_path], check=True, cwd=ROOT)
@@ -518,12 +509,8 @@ def compare_strategies():
 
 
 def set_dispatch_algorithm_in_config(algo: str):
-    """config.json의 taxi_dispatch_algorithm 값을 바꿔치기"""
-    with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    cfg["taxi_dispatch_algorithm"] = algo
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    """이번 실행의 taxi_dispatch_algorithm을 바꾼다 (config.json은 그대로, set_strategy_in_config 참고)."""
+    use_run_config({"taxi_dispatch_algorithm": algo}, "dispatch")
 
 
 def compare_dispatch_algorithms(algo_a: str = "greedy", algo_b: str = "hungarian"):

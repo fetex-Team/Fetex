@@ -263,3 +263,38 @@ def reload_config():
     CFG.update(latest)
 
     return CFG
+
+# ---------------------------------------------------------------------------
+# 실행용 설정 파일: config.json은 GUI [적용하기]로만 바뀌고, 실행·비교는 이 파일을 쓴다.
+# 자식 프로세스는 MOBILITY_CONFIG 환경변수로 같은 파일을 읽는다 (CONFIG_PATH 참고).
+# ---------------------------------------------------------------------------
+RUN_CONFIG_DIR = os.path.join(ROOT, "results", "run_configs")
+
+
+def active_config_path():
+    """지금 실행이 읽는 설정 파일 (MOBILITY_CONFIG가 있으면 그것, 없으면 config.json)."""
+    return os.environ.get("MOBILITY_CONFIG", os.path.join(ROOT, "config.json"))
+
+
+def write_run_config(cfg, label="run"):
+    """cfg를 results/run_configs/<label>_<시각>.json에 저장하고 경로를 반환 (config.json은 그대로)."""
+    from datetime import datetime
+    os.makedirs(RUN_CONFIG_DIR, exist_ok=True)
+    path = os.path.join(RUN_CONFIG_DIR, f"{label}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    return path
+
+
+def use_run_config(overrides, label="run"):
+    """현재 설정 파일 + overrides로 실행용 설정을 만들고, 이 프로세스의 CFG와 이후 자식 프로세스가 그것을 쓰게 한다."""
+    base = {}
+    if os.path.exists(active_config_path()):
+        with open(active_config_path(), "r", encoding="utf-8") as f:
+            base = json.load(f)
+    base.update(overrides)
+    path = write_run_config(base, label)
+    os.environ["MOBILITY_CONFIG"] = path
+    CFG.clear()
+    CFG.update(load_config(path))
+    return path

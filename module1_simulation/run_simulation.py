@@ -27,7 +27,6 @@ from module4_dispatch.custom_dispatchers import make_dispatcher
 from module1_simulation.step_snapshot import fetch_idle_taxis
 from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer
 
-CONFIG_PATH = os.path.join(ROOT, "config.json")
 SUMO_CFG = os.path.join(ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
 META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 DEMAND_LOG_PATH = os.path.join(ROOT, "data", "raw", "simulation_demand_log.csv")
@@ -103,16 +102,11 @@ def run_sumo_gui(sumo_binary: str = "sumo-gui", output_dir=None, gui_delay: floa
     sim_end_hour = meta.get("sim_end_hour")
     if sim_end_hour is None:
         # runtime_meta.json에 sim_end_hour가 없는 경우(구버전 build_env.py로 생성됐거나
-        # 저장 누락) config.json에서 직접 읽어와 폴백. 이게 없으면 max_steps=9999까지
+        # 저장 누락) 실행 중인 설정(MOBILITY_CONFIG 반영)에서 폴백. 이게 없으면 max_steps=9999까지
         # 그냥 다 돌아버려서 설정한 시간대가 무시되는 문제가 있었음.
-        try:
-            with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-                fallback_cfg = json.load(f)
-            sim_end_hour = fallback_cfg.get("sim_end_hour")
-            if sim_end_hour is not None:
-                print(f"[안내] runtime_meta.json에 sim_end_hour가 없어 config.json에서 읽어왔습니다 ({sim_end_hour}시).")
-        except Exception:
-            sim_end_hour = None
+        sim_end_hour = CFG.get("sim_end_hour")
+        if sim_end_hour is not None:
+            print(f"[안내] runtime_meta.json에 sim_end_hour가 없어 설정에서 읽어왔습니다 ({sim_end_hour}시).")
 
     # 학교/회사/음식점 승객을 실시간으로 생성·소멸(흡수→재스폰)시키는 매니저
     spawn_manager = PassengerSpawnManager(
