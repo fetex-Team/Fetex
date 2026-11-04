@@ -1,0 +1,53 @@
+{
+  "dates": [
+    "2026-09-07",
+    "2026-09-10",
+    "2026-09-18",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-18",
+    "2026-10-24"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "patrol": {
+      "service_rate": {
+        "mean": 0.9941571428571429,
+        "n": 7
+      },
+      "n_timeout_removed": {
+        "mean": 22.857142857142858,
+        "n": 7
+      },
+      "avg_wait_sec": {
+        "mean": 60.1,
+        "n": 7
+      },
+      "p90_wait_sec": {
+        "mean": 111.28571428571429,
+        "n": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 62.18571428571429,
+        "n": 7
+      },
+      "est_revenue_won": {
+        "mean": 76335620.14285715,
+        "n": 7
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-07": true,
+    "2026-09-10": true,
+    "2026-09-18": true,
+    "2026-10-13": true,
+    "2026-10-14": true,
+    "2026-10-18": true,
+    "2026-10-24": true
+  },
+  "scenario": "base",
+  "overrides": {
+    "edge_speed_output": "results/repeat/speed_check/edgespeed"
+  }
+}

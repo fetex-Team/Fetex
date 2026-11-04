@@ -41,3 +41,8 @@ results/unity_replay/backup/20*
 
 # 개인 인증키 (절대 커밋하지 않음)
 secrets/
+
+# 외부 원자료 (용량 큼, 출처에서 다시 받기)
+data/external/topis/
+# 검증용 시간별 도로 속도 원본 (용량 큼, tools/repeat_experiments.py --set edge_speed_output=... 로 다시 생성)
+results/repeat/*/edgespeed/

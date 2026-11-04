@@ -131,6 +131,8 @@ DEFAULT_CONFIG = {
     "forecast_max_move_sec": 180,
     # 빈 택시가 전체의 30%보다 적으면(택시 부족) 재배치 중단. 검증 날짜(9/8, 9/17, 손님 100%)에서 0/0.2/0.3/0.4 비교 후 선택
     "forecast_min_idle_ratio": 0.3,
+    # 검증용: 폴더를 주면 1시간 단위 도로별 평균 속도(SUMO edgeData) 저장. 비교: tools/compare_topis_speed.py
+    "edge_speed_output": None,
     "synthetic_rate": 1.5,
     "mock_available_taxis_min": 1, "mock_available_taxis_max": 20,
     "mock_taxi_count": 20, "mock_passenger_count": 20,

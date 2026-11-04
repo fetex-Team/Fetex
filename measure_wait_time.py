@@ -253,7 +253,17 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     )
 
     vehicle_subscriptions.reset()   # 새 SUMO 실행: 구독 기록 초기화
-    traci.start([sumo_binary, "-c", _sumo_cfg])
+    _sumo_args = [sumo_binary, "-c", _sumo_cfg]
+    # [검증] edge_speed_output=폴더: 1시간 단위 도로별 평균 속도(SUMO edgeData)를 저장 -> tools/compare_topis_speed.py가 TOPIS 실측과 비교
+    if CFG.get("edge_speed_output"):
+        _ed_dir = os.path.abspath(CFG["edge_speed_output"]); os.makedirs(_ed_dir, exist_ok=True)
+        _ed_name = f"edgespeed_{run_date.isoformat()}_{taxi_strategy}_h{sim_start_hour:02d}"
+        _ed_add = os.path.join(_ed_dir, _ed_name + ".add.xml")
+        with open(_ed_add, "w", encoding="utf-8") as _f:
+            _f.write(f'<additional><edgeData id="hourly" period="3600" excludeEmpty="true" '
+                     f'file="{_ed_name}.xml"/></additional>\n')
+        _sumo_args += ["--additional-files", _ed_add]
+    traci.start(_sumo_args)
 
     step = 0
     _wall0 = time.time()      # [진단] 실제 경과 시간 측정용
