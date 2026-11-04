@@ -1,0 +1,10 @@
+{
+  "images": [
+    "sumo_60s.png",
+    "sumo_180s.png",
+    "sumo_300s.png"
+  ],
+  "completed": true,
+  "passengers": 5,
+  "picked_up": 5
+}

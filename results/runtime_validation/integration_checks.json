@@ -1,0 +1,34 @@
+[
+  {
+    "case": "empty_before_school",
+    "passed": true,
+    "total": 252,
+    "generated": {
+      "school_morning": 201
+    }
+  },
+  {
+    "case": "population_1000",
+    "passed": true,
+    "total": 836,
+    "generated": {
+      "residential_gacha": 110,
+      "school_morning": 201,
+      "company_morning": 459
+    }
+  },
+  {
+    "case": "population_20000",
+    "passed": true,
+    "total": 3050,
+    "generated": {
+      "residential_gacha": 2039,
+      "school_morning": 201,
+      "company_morning": 459
+    }
+  },
+  {
+    "case": "gangnam_same_seed_repeat",
+    "passed": true
+  }
+]

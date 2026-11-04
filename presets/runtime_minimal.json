@@ -1,0 +1,11 @@
+{
+  "region": "강남역", "use_real_map": false, "resolve_external_data": false,
+  "grid_x": 3, "grid_y": 3, "grid_length": 200,
+  "num_normal_cars": 20, "num_taxis": 3, "num_auto_cars": 1, "num_obstacles": 2,
+  "num_passengers": 0, "dynamic_passengers": false, "passenger_mode": "fixed",
+  "fixed_passenger_departures": [0, 60, 120, 180, 240],
+  "sim_start_hour": 7, "sim_end_hour": 8, "scenario_date": "2026-09-18",
+  "passenger_seed": 42, "passenger_wait_timeout": 500,
+  "taxi_strategy": "patrol", "taxi_dispatch_algorithm": "hungarian",
+  "taxi_idle_algorithm": "randomCircling", "h3_resolution": 8
+}

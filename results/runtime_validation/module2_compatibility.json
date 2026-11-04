@@ -1,0 +1,10 @@
+{
+  "checks_passed": 42,
+  "temporary_directory": "platform tempfile.TemporaryDirectory",
+  "original_test_file_modified": false,
+  "optional_fallbacks": [
+    "pygeohash",
+    "holidays"
+  ],
+  "note": "Direct Windows invocation has a hard-coded /tmp/m2_test path; functions were run with an explicit portable temporary directory."
+}
