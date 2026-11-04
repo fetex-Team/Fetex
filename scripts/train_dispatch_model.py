@@ -5,7 +5,7 @@
 배경
 - Module 2 파이프라인(module2_preprocessing.pipeline)은 t+1~t+6 타겟(y_h1..y_h6)을 만들지만,
   train.py의 기본 학습은 단일 타겟(y_h1)이다.
-- 재배치(forecast_dispatcher)는 30분(6구간) 예측 합을 쓰므로 6개 타겟을 동시에 내는 모델이 필요하다.
+- 재배치(forecast_repositioner)는 6구간 예측을 쓰므로 6개 타겟을 동시에 내는 모델이 필요하다.
 - train.py 주석의 확장 방법("y_h1..y_h6 전체를 y로 넘기고 MultiOutputRegressor(XGB)") 그대로 구현했다.
 
 사용
@@ -18,7 +18,7 @@
 산출물: saved_models/demand_v2.joblib
     {version: 2, model(MultiOutput XGB), feature_cols, target_cols, cells, data_until,
      max_lag, rolling_short, rolling_long}
-forecast_dispatcher.py가 이 계약(키·검증값)을 그대로 읽는다.
+module4_dispatch/forecast_repositioner.py가 이 계약(키·검증값)을 그대로 읽는다.
 """
 import os
 import sys
@@ -102,6 +102,7 @@ def main(log_paths=None, external_csv=None):
         "target_cols": list(targets),
         "cells": sorted(feat["h3_index"].unique()),
         "data_until": str(feat["time_bucket"].max()),
+        "freq": feat.attrs.get("freq", CFG["freq"]),
         "max_lag": CFG["max_lag"],
         "rolling_short": CFG["rolling_short"],
         "rolling_long": CFG["rolling_long"],

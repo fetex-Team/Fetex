@@ -82,8 +82,9 @@ class CategoryDemandPredictor:
         """학습 때(train.py / train_category_demand.py)와 같은 함수(merge_external_data)로 날씨 피처를 만든다.
         - 날씨 파일(data/external/weather_*.csv)이 그 날짜를 포함하면 실제 관측값이 붙고,
         - 포함하지 않으면 학습 때와 똑같이 값=NaN->0, weather_missing=1이 된다 (학습/실행 입력이 일치).
-        5분 칸 단위로 캐시해서 호출 비용을 줄인다."""
-        key = (sim_dt.date(), (sim_dt.hour * 60 + sim_dt.minute) // 5)
+        학습과 같은 집계 칸(config freq) 단위로 캐시해서 호출 비용을 줄인다."""
+        bucket = pd.Timestamp(sim_dt).floor(CFG["freq"])
+        key = bucket
         cache = getattr(self, "_wcache", None)
         if cache is None:
             cache = self._wcache = {}
@@ -100,7 +101,6 @@ class CategoryDemandPredictor:
                     self._weather = load_weather(path)
             except Exception as e:
                 print(f"[경고] 날씨 파일을 읽지 못해 학습 때 날씨 없는 행과 같은 값으로 채웁니다: {e}")
-        bucket = pd.Timestamp(sim_dt).floor("5min")
         row = merge_external_data(pd.DataFrame({"time_bucket": [bucket]}), weather=self._weather, verbose=False)
         out = {}
         for c in EXTERNAL_FEATURE_COLS:

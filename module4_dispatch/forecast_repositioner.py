@@ -63,6 +63,12 @@ class ForecastRepositioner:
         self.start_dt = _dt.datetime.combine(run_date, _dt.time(0)) + _dt.timedelta(hours=sim_start_hour)
         if pd.Timestamp(art["data_until"]) > pd.Timestamp(self.start_dt):
             raise ValueError(f"예측 모델이 시뮬레이션 날짜({run_date}) 이후 데이터로 학습됐습니다 (누수).")
+        # 학습 때 전처리 설정이 지금과 달라도 피처 이름은 같아 조용히 틀린 입력이 들어가므로 여기서 막는다
+        diff = {k: (art[k], CFG[k]) for k in ("max_lag", "rolling_short", "rolling_long") if k in art and art[k] != CFG[k]}
+        if art.get("freq") and art["freq"] != CFG["freq"]:
+            diff["freq"] = (art["freq"], CFG["freq"])
+        if diff:
+            raise ValueError(f"예측 모델과 지금 전처리 설정이 다릅니다 (모델, 지금): {diff}. 같은 설정으로 다시 학습하세요.")
         self.model, self.features = art["model"], art["feature_cols"]
         self.prep = TimeSeriesPreprocessor()
         self.bucket = pd.Timedelta(self.prep.freq)
@@ -149,6 +155,11 @@ class ForecastRepositioner:
         missing = set(self.features) - set(cur.columns)
         if missing or len(cur) != len(self.cells):
             raise ValueError(f"예측 피처를 만들 수 없습니다: {sorted(missing)}")
+        # 수요 이력 피처(lag/rolling/diff)가 비면 관측 구간이 부족한 것 → 0으로 채워 예측하지 않고 멈춘다
+        # (날씨 NaN은 관측 공백이라 학습과 같이 0으로 채움)
+        hist_cols = [c for c in self.features if c.startswith(("lag_", "rolling_")) or c == "diff_1"]
+        if cur[hist_cols].isna().any().any():
+            raise ValueError("예측에 필요한 과거 호출 관측 구간이 부족합니다 (lag/rolling 결측).")
         return np.maximum(0, np.asarray(self.model.predict(cur[self.features].fillna(0.0))))
 
     # ---- 2), 3) 배치·이동 ----

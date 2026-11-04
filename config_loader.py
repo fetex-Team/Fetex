@@ -120,7 +120,7 @@ DEFAULT_CONFIG = {
     "rl_randomize_passenger_seed": True,
     "rl_training_seed_base": 1000,
     "dispatch_use_euclidean": True,
-    # forecast_dispatcher.py가 CFG['reposition_fraction']로 직접 인덱싱 — 유휴택시 중 몇 %를
+    # forecast_repositioner.py가 CFG['reposition_fraction']을 사용 — 유휴택시 중 몇 %를
     # 예측 핫스팟으로 재배치할지. 기본값이 없으면 forecast 전략 실행 시 KeyError로 죽음.
     "reposition_fraction": 0.3,
     # taxi_strategy="forecast" (module4_dispatch/forecast_repositioner.py): 예측 주기, 예측 구간(10분 칸 수),

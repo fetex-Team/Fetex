@@ -5,7 +5,7 @@
 배경
 - build_env.py로 지도를 다시 만들면 도로·H3 셀 구성이 바뀐다.
 - 예측 모델(saved_models/demand_v2.joblib)은 학습 당시의 셀 목록을 기억하고,
-  forecast_dispatcher는 셀이 다르면 실행을 거부한다(잘못된 예측 방지).
+  forecast_repositioner는 셀이 다르면 실행을 거부한다(잘못된 예측 방지).
 - 그래서 지도를 새로 만들면: 이 스크립트로 데이터 재생성 → train_dispatch_model.py로 재학습.
 
 생성 범위: sim_date 전날까지 days일치 (기본 8일 — 지난주 동일 시간대 피처가 실제 값을 갖도록).

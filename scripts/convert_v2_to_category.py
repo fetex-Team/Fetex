@@ -57,7 +57,7 @@ def cell_mismatch_message(art: dict):
     if map_cells == v2_cells:
         return None
     return (f"demand_v2.joblib 의 H3 셀 {len(v2_cells)}개가 현재 맵의 셀 {len(map_cells)}개와 다릅니다 "
-            f"(공통 {len(set(map_cells) & set(v2_cells))}개). forecast_dispatcher 는 셀이 다른 모델을 거부합니다. "
+            f"(공통 {len(set(map_cells) & set(v2_cells))}개). forecast_repositioner 는 셀이 다른 모델을 거부합니다. "
             f"맵을 바꿨다면 scripts/generate_training_data.py → scripts/train_dispatch_model.py 로 다시 만들어야 합니다.")
 
 
