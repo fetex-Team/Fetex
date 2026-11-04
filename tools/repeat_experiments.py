@@ -170,7 +170,8 @@ def main():
     if a.fresh:
         shutil.rmtree(out / "runs", ignore_errors=True)
     log_dir.mkdir(parents=True, exist_ok=True)
-    cfg = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+    from config_loader import read_user_config
+    cfg = read_user_config()  # config.json (없으면 팀 기본 프리셋)
     extra = {}
     for kv in a.set:
         k, _, v = kv.partition("=")

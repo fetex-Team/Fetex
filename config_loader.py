@@ -6,6 +6,24 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 # build_env.py --config-path 옵션이 MOBILITY_CONFIG 환경변수에 경로를 넣어주는데,
 # 예전엔 여기서 이걸 읽지 않아서 --config-path가 조용히 무시되던 문제 수정.
 CONFIG_PATH = os.environ.get("MOBILITY_CONFIG", os.path.join(ROOT, "config.json"))
+# config.json은 개인 설정(git 제외). 없으면 팀 기본 프리셋으로 시작한다.
+USER_CONFIG_PATH = os.path.join(ROOT, "config.json")
+PRESET_DIR = os.path.join(ROOT, "presets")
+DEFAULT_PRESET_DIR = os.path.join(PRESET_DIR, "default")   # 팀 공유 프리셋 (git 포함)
+USER_PRESET_DIR = os.path.join(PRESET_DIR, "user")         # 개인 프리셋 (git 제외)
+DEFAULT_PRESET_PATH = os.path.join(DEFAULT_PRESET_DIR, "기본.json")
+
+
+def read_user_config(path=None) -> dict:
+    """설정 파일 원본(dict)을 읽는다. path 생략 시 지금 실행이 쓰는 설정(MOBILITY_CONFIG 또는 config.json).
+    config.json이 아직 없으면(처음 받은 상태) 팀 기본 프리셋(presets/default/기본.json)을 쓴다."""
+    path = path or os.environ.get("MOBILITY_CONFIG") or USER_CONFIG_PATH
+    if not os.path.exists(path) and os.path.abspath(path) == os.path.abspath(USER_CONFIG_PATH):
+        path = DEFAULT_PRESET_PATH
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
+        return json.load(f)
 
 DEFAULT_CONFIG = {
     # Module 1 - simulation / map
@@ -192,11 +210,14 @@ def load_config(config_path=None):
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f: user_cfg = json.load(f)
-            print("[안내] config.json에서 설정값을 불러왔습니다.")
+            print(f"[안내] {os.path.basename(path)}에서 설정값을 불러왔습니다.")
         except (json.JSONDecodeError, OSError) as e:
-            print(f"[경고] config.json을 읽지 못해 기본값을 사용합니다: {e}")
+            print(f"[경고] {os.path.basename(path)}을 읽지 못해 기본값을 사용합니다: {e}")
+    elif os.path.abspath(path) == os.path.abspath(USER_CONFIG_PATH) and os.path.exists(DEFAULT_PRESET_PATH):
+        user_cfg = read_user_config(DEFAULT_PRESET_PATH)
+        print("[안내] config.json이 없어 팀 기본 프리셋(presets/default/기본.json)을 사용합니다.")
     else:
-        print("[안내] config.json이 없어 기본값을 사용합니다.")
+        print("[안내] 설정 파일이 없어 기본값을 사용합니다.")
     merged = {**DEFAULT_CONFIG, **user_cfg}
     _apply_region_coords(merged, merged.get("region", "홍대입구"))
     _apply_live_weather(merged, merged.get("region", "홍대입구"))
@@ -288,10 +309,7 @@ def write_run_config(cfg, label="run"):
 
 def use_run_config(overrides, label="run"):
     """현재 설정 파일 + overrides로 실행용 설정을 만들고, 이 프로세스의 CFG와 이후 자식 프로세스가 그것을 쓰게 한다."""
-    base = {}
-    if os.path.exists(active_config_path()):
-        with open(active_config_path(), "r", encoding="utf-8") as f:
-            base = json.load(f)
+    base = read_user_config()
     base.update(overrides)
     path = write_run_config(base, label)
     os.environ["MOBILITY_CONFIG"] = path

@@ -99,7 +99,8 @@ def scenarios(base):
 def experiments(out, limit=None):
     from measure_wait_time import isolated_run
     from runtime_validation import source_fingerprint
-    base=json.loads((ROOT/'config.json').read_text(encoding='utf-8'))
+    from config_loader import read_user_config
+    base=read_user_config()  # config.json (없으면 팀 기본 프리셋)
     # 저장된 지도와 구역을 복제하여 온라인 지도 변경 영향을 배제한다.
     base.update(resolve_external_data=False,shared_map_dir=str(ROOT/'module1_simulation/sumo_config'),
                 passenger_mode='legacy',dynamic_passengers=True,scenario_date='2026-09-18',

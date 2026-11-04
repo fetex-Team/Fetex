@@ -164,10 +164,14 @@ def combo_table(df):
 
 
 def configured_multipliers():
-    """config.json의 holiday_multipliers. (config_loader를 import하면 지역 좌표 실시간 조회가 돌아서 직접 읽음)"""
+    """config.json의 holiday_multipliers. (config_loader를 import하면 지역 좌표 실시간 조회가 돌아서 직접 읽음)
+    config.json(개인 설정)이 없으면 팀 기본 프리셋 presets/default/기본.json — config_loader.read_user_config와 같은 규칙."""
     import json
+    path = os.path.join(ROOT, "config.json")
+    if not os.path.exists(path):
+        path = os.path.join(ROOT, "presets", "default", "기본.json")
     try:
-        with open(os.path.join(ROOT, "config.json"), "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return dict(json.load(f).get("holiday_multipliers") or {})
     except Exception:
         return {}

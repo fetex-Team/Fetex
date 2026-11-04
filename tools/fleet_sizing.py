@@ -67,7 +67,8 @@ def main():
     ap.add_argument("--date", default=None, help="기본: config의 sim_date")
     ap.add_argument("--jobs", type=int, default=2)
     a = ap.parse_args()
-    base = json.loads((ROOT / "config.json").read_text(encoding="utf-8"))
+    from config_loader import read_user_config
+    base = read_user_config()  # config.json (없으면 팀 기본 프리셋)
     date = a.date or base.get("sim_date")
     out = ROOT / "results" / "fleet_sizing"
     out.mkdir(parents=True, exist_ok=True)
