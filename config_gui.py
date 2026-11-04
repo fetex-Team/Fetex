@@ -140,6 +140,37 @@ CHOICES = [
     ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
 ]
 
+# 원클릭 시나리오 프리셋 (Unity 시연·벤치마크용). 누르면 화면 값만 바뀌고 [적용하기]로 저장한다.
+# freq·h3_resolution은 저장된 예측 모델(demand_v2, 10분·res 8)과 맞아야 해서 프리셋이 바꾸지 않는다.
+SCENARIO_PRESETS = {
+    "🚀 강남역 출근길 (08~10시)": {
+        "region": "강남역", "use_real_map": True, "sim_start_hour": 8, "sim_end_hour": 10,
+        "num_taxis": 25, "num_normal_cars": 25,
+        "taxi_strategy": "prepositioned", "taxi_dispatch_algorithm": "hungarian", "max_multiplier": 3.0,
+    },
+    "🌙 강남역 불금 저녁 (18~22시)": {
+        "region": "강남역", "use_real_map": True, "sim_start_hour": 18, "sim_end_hour": 22,
+        "num_taxis": 35, "num_normal_cars": 40,
+        "taxi_strategy": "forecast", "taxi_dispatch_algorithm": "hungarian", "max_multiplier": 3.0,
+    },
+    "⚡ 초고속 테스트 (1시간)": {
+        "region": "강남역", "use_real_map": False, "sim_start_hour": 8, "sim_end_hour": 9,
+        "num_taxis": 10, "num_normal_cars": 5,
+        "taxi_strategy": "patrol", "taxi_dispatch_algorithm": "greedy", "max_multiplier": 1.5,
+    },
+    "🏙️ 홍대입구 심야 (22~24시)": {
+        "region": "홍대입구", "use_real_map": True, "sim_start_hour": 22, "sim_end_hour": 24,
+        "num_taxis": 20, "num_normal_cars": 15,
+        "taxi_strategy": "prepositioned", "taxi_dispatch_algorithm": "hungarian", "max_multiplier": 3.0,
+    },
+}
+
+# 핵심 제어 탭에 다시 모아 보여줄 자주 쓰는 값 (다른 탭과 같은 변수를 공유)
+CORE_CHOICES = ["taxi_strategy", "taxi_dispatch_algorithm", "demand_source", "holiday_mode"]
+CORE_NUMERICS = ["num_taxis", "num_normal_cars", "sim_start_hour", "sim_end_hour", "passenger_wait_timeout",
+                 "real_demand_scale", "xgb_n_estimators", "xgb_max_depth", "xgb_learning_rate", "cnn_epochs",
+                 "base_fare", "max_multiplier", "surge_coefficient"]
+
 
 class ConfigGUI:
     def __init__(self, root):
@@ -153,7 +184,9 @@ class ConfigGUI:
 
     def _build(self):
         ttk.Label(self.root, text="CONFIG GUI — 프로젝트 전체 실험/시뮬레이션 설정",
-                  font=("맑은 고딕", 14, "bold")).pack(pady=10)
+                  font=("맑은 고딕", 14, "bold")).pack(pady=(10, 0))
+        ttk.Label(self.root, text="자주 쓰는 값은 '핵심 제어' 탭, 세부 값은 모듈별 탭. 모든 변경은 [적용하기]로 config.json에 저장됩니다.",
+                  foreground="#64748b").pack(pady=(2, 8))
 
         bottom_frame = ttk.Frame(self.root)
         bottom_frame.pack(fill="x", side="bottom", padx=12, pady=(0, 8))
@@ -164,6 +197,8 @@ class ConfigGUI:
         for tab, items in NUMERIC_GROUPS.items():
             self._numeric_tab(nb, tab, items)
         self._special_tab(nb)
+        # 다른 탭의 변수가 다 만들어진 뒤 같은 변수를 공유하는 핵심 제어 탭을 맨 앞에 끼워 넣는다
+        self._quick_tab(nb)
 
         pf = ttk.LabelFrame(bottom_frame, text="프리셋", padding=8)
         pf.pack(fill="x", padx=12, pady=4)
@@ -202,7 +237,8 @@ class ConfigGUI:
                 "num_taxis", "num_auto_cars", "num_obstacles", "num_passengers",
             ],
             "시뮬레이션 & 로직 기준": [
-                "sim_start_hour", "sim_end_hour", "passenger_wait_timeout", "depart_jitter_sec",
+                "sim_start_hour", "sim_end_hour", "passenger_wait_timeout",
+                "real_demand_scale", "real_internal_trip_km", "depart_jitter_sec",
                 "sumo_time_to_teleport", "taxi_remaining_edges_threshold",
                 "taxi_target_pick_attempts", "taxi_fail_threshold", "taxi_primary_prob",
             ],
@@ -423,6 +459,55 @@ class ConfigGUI:
             ttk.Entry(row, textvariable=var, width=10).pack(side="right", padx=4)
             ttk.Scale(row, from_=lo, to=hi, variable=var, length=220).pack(side="right", fill="x", expand=True)
         self._toggle_weather_frame()
+
+    def _quick_tab(self, nb):
+        """핵심 제어 탭: 원클릭 시나리오 프리셋 + 자주 쓰는 값. 위젯은 다른 탭과 같은 tk 변수를 공유한다."""
+        frame = ttk.Frame(nb, padding=12)
+        nb.insert(0, frame, text="🌟 핵심 제어")
+        nb.select(0)
+
+        box = ttk.LabelFrame(frame, text="🚀 원클릭 시나리오 프리셋 (누른 뒤 [적용하기]로 저장)", padding=8)
+        box.pack(fill="x", pady=(0, 10))
+        for title, preset in SCENARIO_PRESETS.items():
+            ttk.Button(box, text=title, command=lambda p=preset, t=title: self._apply_quick_preset(p, t)).pack(
+                side="left", fill="x", expand=True, padx=3)
+
+        env = ttk.LabelFrame(frame, text="지역·전략", padding=8)
+        env.pack(fill="x", pady=4)
+        labels = {key: label for key, label, _ in CHOICES}
+        values = {key: vals for key, _, vals in CHOICES}
+        for key in CORE_CHOICES:
+            r = ttk.Frame(env)
+            r.pack(fill="x", pady=3)
+            ttk.Label(r, text=labels[key], width=30).pack(side="left")
+            ttk.Combobox(r, textvariable=self.choice_vars[key], values=values[key], state="readonly", width=20).pack(side="right")
+        ttk.Checkbutton(env, text="실제 OSM 지도 사용", variable=self.bool_vars["use_real_map"]).pack(anchor="w", pady=4)
+
+        nums = ttk.LabelFrame(frame, text="핵심 수치", padding=8)
+        nums.pack(fill="x", pady=6)
+        items = {item[0]: item for group in NUMERIC_GROUPS.values() for item in group}
+        for key in CORE_NUMERICS:
+            _, label, lo, hi, _, _ = items[key]
+            var = self.vars[key][0]
+            row = ttk.Frame(nums)
+            row.pack(fill="x", pady=3)
+            ttk.Label(row, text=label, width=34).pack(side="left")
+            ttk.Entry(row, textvariable=var, width=12).pack(side="right", padx=4)
+            ttk.Scale(row, from_=lo, to=hi, variable=var, length=300).pack(side="right", fill="x", expand=True)
+
+    def _apply_quick_preset(self, preset, name):
+        """시나리오 프리셋 값을 화면에 반영 (config.json 저장은 [적용하기])."""
+        for k, val in preset.items():
+            if k == "region":
+                self.region.set(val)
+            elif k in self.choice_vars:
+                self.choice_vars[k].set(str(val))
+            elif k in self.bool_vars:
+                self.bool_vars[k].set(bool(val))
+            elif k in self.vars:
+                var, _, isint = self.vars[k]
+                var.set(int(val) if isint else float(val))
+        self.status.config(text=f"시나리오 프리셋 적용: '{name}' (저장하려면 [적용하기])")
 
     def current(self):
         c = {**DEFAULT_CONFIG, **self._loaded_config}
