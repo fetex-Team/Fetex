@@ -13,6 +13,11 @@ DEFAULT_CONFIG = {
     "num_normal_cars": 20, "num_taxis": 20, "num_auto_cars": 1,
     "num_obstacles": 2, "num_passengers": 1000,
     "region": "강남역", "use_real_map": True,
+    # 지도 현실화 (real_map_fetch.py). 비교 실험용으로만 예전 값("open", "osm_default")을 쓴다.
+    "map_bus_lanes": "bus_only",        # 중앙버스전용차로(24시간)는 버스 전용
+    "map_speed_limits": "seoul_5030",   # 제한속도 없는 도로: 간선 50km/h, 이면도로 30km/h
+    "signal_plans": "real",             # 경찰청 신호 운영계획 적용 (data/external/signal_plans_gangnam.json). "guess" = 지도 기본 신호
+    "speed_profile": "topis",           # 시간대별 실측 속도 보정 (data/external/speed_profile_gangnam.json). "free_flow" = 제한속도 그대로
     "sim_start_hour": 9, "sim_end_hour": 23,
     "passenger_wait_timeout": 500,
     "passenger_seed": None,

@@ -46,3 +46,5 @@ secrets/
 data/external/topis/
 # 검증용 시간별 도로 속도 원본 (용량 큼, tools/repeat_experiments.py --set edge_speed_output=... 로 다시 생성)
 results/repeat/*/edgespeed/
+# 경찰청 신호 API 원본 (용량 큼, tools/fetch_signal_plans.py로 다시 받기). 시뮬레이션은 data/external/signal_plans_gangnam.json만 읽음
+data/external/signal_plans/

@@ -1,6 +1,7 @@
 """공휴일/실행 날짜 판정 유틸 (프로젝트 루트에 두세요).
 
 - is_holiday_date(d): 토·일 또는 한국 공휴일이면 True (holidays 패키지 필요, 없으면 주말만 휴일 취급)
+- is_public_holiday(d): 한국 공휴일만 True (토·일 자체는 False)
 - resolve_is_holiday(sim_date, mode): holiday_mode("auto"/"weekday"/"holiday")에 따라 최종 판정
 - pick_run_date(...): run_date_mode("sim_date"/"alternate"/"random")에 따라 이번 실행의 날짜 결정
 """
@@ -40,6 +41,16 @@ def is_holiday_date(value) -> bool:
         if not _warned:
             _warned = True
             print("[경고] holidays 패키지가 없어 주말만 휴일로 판정합니다 (pip install holidays).")
+        return False
+    if d.year not in _kr_cache:
+        _kr_cache[d.year] = _holidays.KR(years=[d.year])
+    return d in _kr_cache[d.year]
+
+
+def is_public_holiday(value) -> bool:
+    """한국 공휴일(관공서 공휴일)만 True. 토·일 자체는 False — 요일별 신호 계획·속도 보정처럼 토요일과 일요일을 구분할 때 쓴다."""
+    d = _to_date(value)
+    if d is None or _holidays is None:
         return False
     if d.year not in _kr_cache:
         _kr_cache[d.year] = _holidays.KR(years=[d.year])

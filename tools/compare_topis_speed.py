@@ -1,7 +1,7 @@
 """
 시뮬레이션 도로 속도와 TOPIS 실측 통행속도(서울시 택시 GPS 기반)를 같은 도로·같은 시간대로 비교한다.
 
-    python tools/compare_topis_speed.py [edgeData 폴더=results/repeat/speed_check/edgespeed]
+    python tools/compare_topis_speed.py [edgeData 폴더=results/repeat/speed_check/edgespeed] [결과 이름]
     입력: data/external/topis_links_gangnam.csv          (tools/topis_links.py, coverage>=0.5만 사용)
           data/external/topis_speed_gangnam_YYYYMM.csv   (tools/extract_topis_speed.py)
           <폴더>/edgespeed_<날짜>_<전략>_hHH.xml         (config edge_speed_output, 1시간 단위 SUMO edgeData)
@@ -66,6 +66,9 @@ def edge_lengths():
 
 def main():
     folder = sys.argv[1] if len(sys.argv) > 1 else os.path.join(ROOT, "results", "repeat", "speed_check", "edgespeed")
+    global OUT
+    if len(sys.argv) > 2:                     # 결과 폴더 이름 (예: after_calib) -> results/topis_speed/<이름>/
+        OUT = os.path.join(OUT, sys.argv[2])
     links = load_links()
     exact, by_dow = load_topis(links)
     elen = edge_lengths()

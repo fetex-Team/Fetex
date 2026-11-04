@@ -214,6 +214,24 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
     away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))
 
+    # [현실화] 실제 신호 운영계획(경찰청)과 시간대별 실측 속도 보정(TOPIS) — module1_simulation/signal_plans.py, speed_profile.py
+    from module1_simulation.signal_plans import SignalPlanController
+    from module1_simulation.speed_profile import SpeedProfileController
+    from module4_dispatch.network_cost import TimeVaryingTravelTime, net_file_from_sumocfg as _net_of
+    _is_hol = bool(getattr(spawn_manager, "is_holiday", False))
+    signal_ctrl = SignalPlanController.from_config(CFG, run_date, sim_start_hour, _is_hol)
+    _shared_tt = None
+    if hungarian_dispatcher is not None and getattr(hungarian_dispatcher, "travel_time", None) is not None \
+            and CFG.get("speed_profile", "topis") == "topis":
+        _shared_tt = TimeVaryingTravelTime(_net_of(_sumo_cfg))
+        hungarian_dispatcher.travel_time = _shared_tt          # 배차와 재배치가 같은 시간대별 이동 시간 표를 본다
+    speed_ctrl = SpeedProfileController.from_config(CFG, _net_of(_sumo_cfg), run_date, sim_start_hour, _is_hol,
+                                                    travel_time=_shared_tt)
+    if signal_ctrl:
+        print(f"[안내] 실제 신호 계획 적용: {', '.join(v['name'] for v in signal_ctrl.data.values())}")
+    if speed_ctrl:
+        print("[안내] 시간대별 실측 속도 보정 적용 (TOPIS)")
+
     # [전략] taxi_strategy="forecast": 수요 예측(demand_v2)으로 빈 택시를 미리 보냄 (module4_dispatch/forecast_repositioner.py)
     forecast_repositioner = None
     if taxi_strategy == "forecast":
@@ -272,6 +290,10 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         while step < max_steps:
             traci.simulationStep()
             now = traci.simulation.getTime()
+            if signal_ctrl:
+                signal_ctrl.maintain(now)
+            if speed_ctrl:
+                speed_ctrl.maintain(now)
             # [성능] 맵 전체 상태 조회는 스텝당 딱 한 번. 하위 매니저/기록기는 이 값을 재사용한다.
             current_pids = set(traci.person.getIDList())
             current_vids = set(traci.vehicle.getIDList())
@@ -457,6 +479,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                             if getattr(spawn_manager, "mean_fare_won", None) else None),
         "external_away": away_model.summary() if away_model is not None else None,
         "forecast_reposition": forecast_repositioner.summary() if forecast_repositioner is not None else None,
+        "signal_plans": signal_ctrl.summary() if signal_ctrl else None,
+        "speed_profile": speed_ctrl.summary() if speed_ctrl else None,
         "dispatch_cost": (hungarian_dispatcher.cost_mode if hungarian_dispatcher is not None else None),
         "dispatch_cost_stats": (dict(hungarian_dispatcher.cost_stats) if hungarian_dispatcher is not None else None),
         "waits": waits,

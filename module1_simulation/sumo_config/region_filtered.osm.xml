@@ -22657,10 +22657,10 @@
   <nd ref="4865883254" />
   <nd ref="9230542305" />
   <nd ref="4865883250" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bus" v="designated" />
   <tag k="busway" v="lane" />
-  <tag k="highway" v="tertiary" />
+  <tag k="highway" v="busway" />
   <tag k="oneway" v="yes" />
  </way>
  <way id="494952002" visible="true" version="5" changeset="174409264" timestamp="2025-11-09T10:12:55Z" user="Prikoldes01" uid="15750986">
@@ -34720,7 +34720,7 @@
   <nd ref="9621002352" />
   <nd ref="9787433282" />
   <nd ref="9621002351" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -34849,7 +34849,7 @@
   <nd ref="9623430989" />
   <nd ref="9623430991" />
   <nd ref="9623430990" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -34862,7 +34862,7 @@
   <nd ref="9623430992" />
   <nd ref="9623430994" />
   <nd ref="9623430993" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -34875,7 +34875,7 @@
   <nd ref="9623430989" />
   <nd ref="9623430995" />
   <nd ref="9623430992" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -34888,7 +34888,7 @@
   <nd ref="9623430990" />
   <nd ref="9623430996" />
   <nd ref="9623430993" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -34947,7 +34947,7 @@
   <nd ref="9625914997" />
   <nd ref="9625914999" />
   <nd ref="9625914998" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -35318,7 +35318,7 @@
   <nd ref="10220955576" />
   <nd ref="9711448901" />
   <nd ref="9711448900" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -35567,7 +35567,7 @@
   <nd ref="9852383849" />
   <nd ref="10220955585" />
   <nd ref="9852383848" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -35862,7 +35862,7 @@
   <nd ref="11245194265" />
   <nd ref="9889607758" />
   <nd ref="11245194266" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bicycle" v="yes" />
   <tag k="foot" v="yes" />
   <tag k="footway" v="crossing" />
@@ -36312,10 +36312,10 @@
   <nd ref="11847324484" />
   <nd ref="12741729342" />
   <nd ref="12741729343" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bus" v="designated" />
   <tag k="busway" v="lane" />
-  <tag k="highway" v="tertiary" />
+  <tag k="highway" v="busway" />
   <tag k="lanes" v="1" />
   <tag k="oneway" v="yes" />
  </way>
@@ -36329,9 +36329,9 @@
   <nd ref="11174478315" />
   <nd ref="11174484659" />
   <nd ref="7168332284" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bus" v="designated" />
-  <tag k="highway" v="tertiary" />
+  <tag k="highway" v="busway" />
   <tag k="lanes" v="1" />
   <tag k="oneway" v="yes" />
  </way>
@@ -36344,10 +36344,10 @@
   <nd ref="9230542307" />
   <nd ref="11174484662" />
   <nd ref="4865883253" />
-  <tag k="access" v="yes" />
+  <tag k="access" v="no" />
   <tag k="bus" v="designated" />
   <tag k="busway" v="lane" />
-  <tag k="highway" v="tertiary" />
+  <tag k="highway" v="busway" />
   <tag k="oneway" v="yes" />
  </way>
  <way id="1412494311" visible="true" version="1" changeset="168522953" timestamp="2025-07-05T13:15:11Z" user="Uxie111" uid="23056225">

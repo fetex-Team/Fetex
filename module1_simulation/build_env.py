@@ -133,7 +133,9 @@ def create_network_and_routes():
         from real_map_fetch import build_real_map_network
         print(f"[안내] 실제 지도 모드 — '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
         net_file, raw_osm_path = build_real_map_network(
-            CFG["lat_min"], CFG["lat_max"], CFG["lng_min"], CFG["lng_max"], config_dir
+            CFG["lat_min"], CFG["lat_max"], CFG["lng_min"], CFG["lng_max"], config_dir,
+            open_bus_lanes=CFG.get("map_bus_lanes", "bus_only") == "open",
+            speed_limits=CFG.get("map_speed_limits", "seoul_5030"),
         )
     else:
         print(f"{CFG['grid_x']}x{CFG['grid_y']} 블럭 도로망 생성 중... (블록 길이 {CFG['grid_length']}m)")
