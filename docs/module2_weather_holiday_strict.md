@@ -27,7 +27,7 @@
 
 ## 2. 예측 정확도 — 8주 합성 데이터 ablation
 
-`python scripts/feature_ablation.py data/generated/calls.csv --external data/generated/external.csv`
+`python scripts/feature_ablation.py data/generated/calls.csv --external data/generated/external.csv` (당시 명령 — 합성 데이터·`--external`은 2026-11-06 삭제, 지금은 `python scripts/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"`)
 (8주: 2026-07-06~08-30, 36,786건, 셀 8개, 시간순 뒤 20% test, sklearn HistGradientBoosting — 맥에서는 xgboost로 자동 전환)
 
 | 피처 그룹 (누적) | 피처 수 | MAE | RMSE | WAPE | 기존 34 대비 MAE |

@@ -5,8 +5,8 @@
 Data Spec 3장 피처 34개(기준) 위에 9/17 강화분(휴일 4, 날씨 파생 3, 어제 동일칸 2)을 그룹 단위로 누적 추가하며
 시간순 분할(뒤 20% test)에서 6개 타깃(y_h1~y_h6)의 MAE·RMSE를 잰다. 나이브(직전 칸 값 유지)와 계절 나이브(지난주 동일칸)도 같이 둔다.
 
-    python scripts/feature_ablation.py data/generated/calls.csv --external data/generated/external.csv
-    python scripts/feature_ablation.py data/sim_logs/demand_log_*.csv            # 시뮬 로그 + data/external 날씨 파일
+    python scripts/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"   # 실측 보정 로그 + data/external 날씨 파일
+    python scripts/feature_ablation.py "data/sim_logs/demand_log_*.csv"           # 시뮬레이션 로그
     옵션: --test-size 0.2  --model auto|xgb|hgb  --out data/eda/feature_ablation.md
 
 모델: xgboost가 있으면 운영 모델과 같은 XGBRegressor(config 값), 없으면 sklearn HistGradientBoostingRegressor(같은 계열).
@@ -64,21 +64,6 @@ def make_model(kind: str):
         learning_rate=CFG.get("xgb_learning_rate", 0.1), random_state=42))
 
 
-def external_to_hourly_weather_csv(external_csv: str) -> str:
-    """합성 외부 관측(time_bucket×h3_index, 5분) → 시각별 날씨 표(셀 평균, 5분 간격 유지). forecast_dispatcher._external_to_weather와 같은 축약.
-    (부록 A의 예전 합성 데이터 ablation 재현용.)"""
-    ext = pd.read_csv(external_csv)
-    ext["time_bucket"] = pd.to_datetime(ext["time_bucket"])
-    w = ext.groupby("time_bucket", as_index=False)[["temperature", "precipitation"]].mean().rename(columns={"time_bucket": "time"})
-    # 5분 관측을 그대로 둔다 — merge_external_data가 관측 간격을 추정해 각 5분 칸에 자기 관측을 붙인다
-    w["wind_speed"] = np.nan
-    out = os.path.join(ROOT, "data", "external", "weather_from_external_5min.csv")
-    os.makedirs(os.path.dirname(out), exist_ok=True)
-    w.to_csv(out, index=False)
-    print(f"[외부 관측 → 시각별 날씨] {external_csv} → {out} ({len(w)}행)")
-    return out
-
-
 def metrics(y, p) -> dict:
     y, p = np.asarray(y, float), np.asarray(p, float)
     err = np.abs(y - p)
@@ -88,9 +73,7 @@ def metrics(y, p) -> dict:
             "under_pos": float((p[pos] < y[pos]).mean() * 100) if pos.any() else float("nan")}   # 양수 구간 과소예측률
 
 
-def run(logs, external=None, test_size=0.2, model_kind="auto", out=None, weather_path=None):
-    if external:
-        weather_path = external_to_hourly_weather_csv(external)
+def run(logs, test_size=0.2, model_kind="auto", out=None, weather_path=None):
     feat = build_feature_table(logs, weather_path=weather_path, verbose=True)
     targets = feat.attrs["target_cols"]
     train, _, test, cuts = time_based_split(feat, test_size)
@@ -142,7 +125,6 @@ def run(logs, external=None, test_size=0.2, model_kind="auto", out=None, weather
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("logs", nargs="+")
-    ap.add_argument("--external", default=None, help="합성 외부 관측 CSV (time_bucket×h3_index) → 시간별 날씨로 변환해 결합")
     ap.add_argument("--weather", default=None, help="시간별 날씨 CSV 직접 지정")
     ap.add_argument("--test-size", type=float, default=0.2)
     ap.add_argument("--model", default="auto", choices=["auto", "xgb", "hgb"])
@@ -151,5 +133,5 @@ if __name__ == "__main__":
     logs = []
     for p in a.logs:
         logs += sorted(glob.glob(p)) if any(ch in p for ch in "*?[") else [p]
-    md, _ = run(logs, a.external, a.test_size, a.model, a.out, a.weather)
+    md, _ = run(logs, a.test_size, a.model, a.out, a.weather)
     print("\n" + md)

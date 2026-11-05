@@ -238,7 +238,7 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 ## 부록 A. 시공간 데이터 특성 분석(EDA)·전처리 상세 — Module 2 (담당 윤세빈)
 
 > 그림·수치는 `notebooks/03_EDA_8weeks.ipynb`(실행 결과 포함)와 `data/eda/8w/`, ablation은 `data/eda/feature_ablation_8w_synthetic.md`.
-> 재실행: `python eda/eda_8w.py` (8주 calls.csv·external.csv를 `data/generated_8w/`(저장소 밖 보관)에 두거나 `python scripts/generate_training_data.py --days 56`으로 재생성), `python scripts/feature_ablation.py data/generated/calls.csv --external data/generated/external.csv`.
+> 재실행: `python eda/eda_8w.py`, `python scripts/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"` — 2026-11-06부터 합성(목업) 생성기를 삭제해 **실측 보정 로그**로 계산된다. 아래 A.1~A.8 수치는 예전 합성 데이터(5분, 8주) 결과라 다시 실행하면 달라진다.
 > 1일치 예비 분석(2026-09-10)은 `notebooks/01_EDA_and_Spatial.ipynb`에 남겨 두었고, 아래는 8주 데이터로 확정한 결과다.
 
 ### A.1 데이터

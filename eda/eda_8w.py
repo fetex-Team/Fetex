@@ -1,14 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-[Module 2 / T5] 8주 합성 데이터 EDA — 시간·공간·날씨·휴일 패턴, 정상성, 자기상관 그림과 수치를 한 번에 만든다.
+[Module 2 / T5] 8주 수요 EDA (실측 보정 호출 로그) — 시간·공간·날씨·휴일 패턴, 정상성, 자기상관 그림과 수치를 한 번에 만든다.
 
-    python eda/eda_8w.py                                   # data/generated/calls.csv + external.csv
-    python eda/eda_8w.py --calls <calls.csv> --external <external.csv> --out data/eda/8w
+    python eda/eda_8w.py                                   # data/real_demand_logs/demand_log_*.csv + data/external 실측 날씨
+    python eda/eda_8w.py --logs "<로그 글롭>" --out data/eda/8w
 
 산출물 (out 폴더): 01_daily.png 02_hour_dow_heatmap.png 03_cell_profiles.png 04_weekday_holiday.png
                   05_weather_rain.png 06_weather_temp.png 07_rain_day.png 08_stationarity.png 09_acf.png
                   summary.md (REPORT 2장에 붙이는 수치 표)
-설계: 호출 로그의 h3_index 컬럼을 그대로 쓰므로 h3 패키지 없이도 돈다. 외부 관측은 5분×셀이라 셀 평균으로 시각별 표를 만든다.
+설계: 로그 읽기·H3 변환은 Module 2(pipeline.load_logs, SpatialIndexer), 날씨는 학습과 같은 실측 시간별 파일(find_weather_file)을 쓴다.
 정상성: statsmodels가 있으면 adfuller(p-value), 없으면 같은 회귀를 numpy로 풀어 통계량과 MacKinnon 임계값(1%/5%/10%)으로 판정.
 """
 import os, sys, argparse, warnings
@@ -37,8 +37,11 @@ def _style(ax, title=None):
 
 
 # ---------- 데이터 ----------
-def load(calls_path, external_path, freq="5min"):
-    calls = pd.read_csv(calls_path, parse_dates=["pickup_datetime"])
+def load(log_glob, weather_path=None, freq="5min"):
+    from module2_preprocessing.pipeline import load_logs
+    from module2_preprocessing.spatial_indexing import SpatialIndexer
+    from module2_preprocessing.external_data_merge import find_weather_file, load_weather
+    calls = SpatialIndexer().process_dataframe(load_logs(log_glob), verbose=False)
     calls["time_bucket"] = calls["pickup_datetime"].dt.floor(freq)
     cells = sorted(calls["h3_index"].unique())
     buckets = pd.date_range(calls["time_bucket"].min().normalize(), calls["time_bucket"].max(), freq=freq)
@@ -46,10 +49,11 @@ def load(calls_path, external_path, freq="5min"):
            .reindex(pd.MultiIndex.from_product([buckets, cells], names=["time_bucket", "h3_index"]), fill_value=0).reset_index())
     agg["hour"] = agg["time_bucket"].dt.hour; agg["dow"] = agg["time_bucket"].dt.dayofweek; agg["date"] = agg["time_bucket"].dt.date
     ext = None
-    if external_path and os.path.exists(external_path):
-        e = pd.read_csv(external_path, parse_dates=["time_bucket"])
-        ext = e.groupby("time_bucket")[["temperature", "precipitation"] + [c for c in ("traffic_index", "event_flag", "is_holiday") if c in e.columns]].mean()
-        agg = agg.merge(ext, left_on="time_bucket", right_index=True, how="left")
+    weather_path = weather_path or find_weather_file()
+    if weather_path and os.path.exists(weather_path):
+        w = load_weather(weather_path).set_index("time")[["temperature", "precipitation"]]
+        ext = w.reindex(agg["time_bucket"].dt.floor("h").unique())   # 시간별 관측 → 같은 시각의 칸에 붙임
+        agg = agg.merge(ext, left_on=agg["time_bucket"].dt.floor("h"), right_index=True, how="left").drop(columns="key_0", errors="ignore")
     try:
         import holidays as _h
         hol = set(_h.country_holidays("KR", years=sorted(set(agg["time_bucket"].dt.year))).keys())
@@ -222,15 +226,23 @@ def fig_acf(agg, out, max_lag=48):
     return acf, sig, ci, seasonal
 
 
-def main(calls_path, external_path, out):
+def _table(df):
+    """마크다운 표 (tabulate가 없으면 일반 텍스트 표)."""
+    try:
+        return df.to_markdown()
+    except ImportError:
+        return df.to_string()
+
+
+def main(log_glob, weather_path, out):
     os.makedirs(out, exist_ok=True)
-    calls, agg, ext, hol = load(calls_path, external_path)
+    calls, agg, ext, hol = load(log_glob, weather_path)
     daily = fig_daily(agg, out); tab = fig_hour_dow(agg, out); tot, prof = fig_cells(agg, out)
     per_day, hol_in = fig_weekday(agg, out, hol); wx = fig_weather(agg, out)
     st = fig_stationarity(agg, out); acf, sig, ci, seasonal = fig_acf(agg, out)
 
     peak_hour = tab.mean(axis=0).idxmax(); peak_dow = tab.sum(axis=1).idxmax()
-    L = [f"# 8주 합성 데이터 EDA 요약 ({calls['pickup_datetime'].min():%Y-%m-%d} ~ {calls['pickup_datetime'].max():%Y-%m-%d})", "",
+    L = [f"# 8주 수요 EDA 요약 ({calls['pickup_datetime'].min():%Y-%m-%d} ~ {calls['pickup_datetime'].max():%Y-%m-%d})", "",
          f"- 호출 {len(calls):,}건, {agg['date'].nunique()}일, 셀 {agg['h3_index'].nunique()}개, 5분칸 {agg['time_bucket'].nunique():,}개 → (셀×칸) {len(agg):,}행",
          f"- 수요 0인 칸 {(agg['demand'] == 0).mean() * 100:.1f}%, 칸당 평균 {agg['demand'].mean():.3f}건, 최대 {agg['demand'].max()}건",
          f"- 일별 호출 평균 {daily.mean():.0f}건 (최소 {daily.min()} / 최대 {daily.max()}), 요일별 하루 평균: " + ", ".join(f"{DOW[i]} {v:.0f}" for i, v in tab.sum(axis=1).items()),
@@ -241,8 +253,8 @@ def main(calls_path, external_path, out):
         L += ["## 날씨", "| 강수(mm) | 호출 비율(시간대·셀 통제) | 칸 수 |", "|---|---:|---:|"]
         L += [f"| {p} | {m:.3f} | {int(n):,} |" for p, (m, n) in rain.iterrows()]
         L += ["", "| 기온 구간 | 호출 비율 | 칸 수 |", "|---|---:|---:|"] + [f"| {b} | {m:.3f} | {int(n):,} |" for b, (m, n) in temp.iterrows()]
-        L += ["", f"- 강수 자기상관: 5분 {ac1:.3f}, 1시간 {ac12:.3f} (실측 강남역 1시간 0.77) → 합성 강수는 지속성이 없어 미래 강수를 과거로 예측할 수 없음", ""]
-    L += ["## 정상성 (ADF)", st.to_markdown() if hasattr(st, "to_markdown") else st.to_string(), "",
+        L += ["", f"- 강수 자기상관: 5분 {ac1:.3f}, 1시간 {ac12:.3f} (실측 강남역 1시간 0.77)", ""]
+    L += ["## 정상성 (ADF)", _table(st), "",
           "## 자기상관", f"- 셀 평균 ACF 유의 lag {sig}개 (±{ci:.3f}), lag1 {acf[1]:.3f}, lag6 {acf[6]:.3f}, lag12 {acf[12]:.3f}",
           f"- 계절 lag: 1일 전 {seasonal['1일']:.3f}, 1주 전 {seasonal['1주']:.3f}", ""]
     md = "\n".join(L)
@@ -253,10 +265,8 @@ def main(calls_path, external_path, out):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    # 기본 입력: data/generated_8w (8주, 저장소 밖 보관) 가 있으면 그것, 없으면 data/generated
-    gen = "generated_8w" if os.path.exists(os.path.join(ROOT, "data", "generated_8w", "calls.csv")) else "generated"
-    ap.add_argument("--calls", default=os.path.join(ROOT, "data", gen, "calls.csv"))
-    ap.add_argument("--external", default=os.path.join(ROOT, "data", gen, "external.csv"))
+    ap.add_argument("--logs", default=os.path.join(ROOT, "data", "real_demand_logs", "demand_log_*.csv"))
+    ap.add_argument("--weather", default=None, help="시간별 날씨 CSV (기본: data/external의 실측 파일)")
     ap.add_argument("--out", default=os.path.join(ROOT, "data", "eda", "8w"))
     a = ap.parse_args()
-    main(a.calls, a.external, a.out)
+    main(a.logs, a.weather, a.out)

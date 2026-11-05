@@ -102,14 +102,8 @@ NUMERIC_GROUPS = {
         ("rl_n_envs", "RL 병렬 env 개수 (CPU 코어 수 이하 권장, 1=병렬 안 씀)", 1, 32, 0, 1),
         ("rl_batch_size", "RL batch size", 8, 1024, 0, 1), ("rl_seed", "RL random seed", 0, 2147483647, 0, 1),
         ("rl_learning_rate", "RL 학습률", 0.00001, 0.01, 6, 0), ("rl_gamma", "RL 장기 보상 비율(gamma)", 0.8, 1, 3, 0),
-        ("mock_available_taxis_min", "테스트 가용택시 최소", 0, 500, 0, 1),
-        ("mock_available_taxis_max", "테스트 가용택시 최대", 0, 500, 0, 1),
-        ("mock_taxi_count", "배차 테스트 택시 수", 1, 500, 0, 1),
-        ("mock_passenger_count", "배차 테스트 승객 수", 1, 500, 0, 1),
     ],
     "공통/실험": [
-        ("demo_data_rows", "학습 데모 데이터 행 수", 100, 100000, 0, 1),
-        ("demo_data_minutes", "추론 데모 데이터 길이", 10, 100000, 0, 1),
         ("xgb_random_state", "XGB random state", 0, 2147483647, 0, 1),
         ("train_random_state", "학습 random state", 0, 2147483647, 0, 1),
     ],
@@ -148,7 +142,6 @@ WEATHER_NUMERICS = [
 ]
 TEXTS = [
     ("sim_date", "시뮬레이션 기준 날짜 (YYYY-MM-DD)"),
-    ("demo_data_start", "데모 데이터 시작 시각"),
     ("taxi_respawn_prefix", "택시 재생성 ID 접두어"),
 ]
 HOLIDAY_MULT_ITEMS = [
@@ -203,9 +196,7 @@ DETAIL_SECTIONS = [
                           "xgb_random_state", "train_random_state"]),
     ("강화학습 (RL)", ["rl_max_decisions", "rl_total_timesteps", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
                    "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed"]),
-    ("학습 실행 옵션·테스트 데이터", ["run_sim_before_training", "mock_available_taxis_min",
-                            "mock_available_taxis_max", "mock_taxi_count", "mock_passenger_count", "demo_data_rows",
-                            "demo_data_minutes", "demo_data_start", "taxi_respawn_prefix"]),
+    ("학습 실행 옵션", ["run_sim_before_training", "taxi_respawn_prefix"]),
 ]
 
 # 항목 설명 — GUI에서 마우스를 올리면 뜬다. GUI에 없는 항목도 설명은 여기에 둔다 (기본.json에는 주석 불가).
@@ -337,13 +328,6 @@ TIPS = {
     "rl_gamma": "미래 보상 할인율(gamma).",
     "rl_randomize_passenger_seed": "RL 학습 때 에피소드마다 다른 승객 호출 패턴을 쓴다.",
     "run_sim_before_training": "'학습만 실행' 때 시뮬레이션을 먼저 돌려 학습 로그를 만든다. 끄면 기존 로그로 바로 학습.",
-    "mock_available_taxis_min": "배차 단위 테스트용 가용 택시 최소 수.",
-    "mock_available_taxis_max": "배차 단위 테스트용 가용 택시 최대 수.",
-    "mock_taxi_count": "배차 단위 테스트 택시 수.",
-    "mock_passenger_count": "배차 단위 테스트 승객 수.",
-    "demo_data_rows": "학습 데모(가짜) 데이터 행 수.",
-    "demo_data_minutes": "추론 데모 데이터 길이(분).",
-    "demo_data_start": "데모 데이터 시작 시각.",
     "taxi_respawn_prefix": "다시 생성된 택시 ID 앞에 붙이는 접두어.",
 
     # ---- GUI 화면에는 없고 기본.json으로만 바꾸는 항목 ----
@@ -361,5 +345,4 @@ TIPS = {
     "forecast_alloc_power": "forecast 전략: 칸별 목표 택시 = 예측^power 비율. 2/3이면 가장 가까운 빈 택시까지 평균 거리가 최소.",
     "forecast_max_move_sec": "forecast 전략: 재배치 한 번에 이동할 최대 시간(초).",
     "forecast_min_idle_ratio": "forecast 전략: 빈 택시가 전체의 이 비율보다 적으면(택시 부족) 재배치 중단. 9/8·9/17 검증에서 0/0.2/0.3/0.4 비교 후 0.3.",
-    "synthetic_rate": "data/generate.py 가짜 학습 데이터의 기본 호출률 (시간대 피크 곡선에 곱함). 양수여야 함.",
 }
