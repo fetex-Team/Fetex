@@ -54,6 +54,7 @@ desktop.ini
 
 # GUI 실행마다 쓰는 임시 설정 (config.json은 [적용하기]로만 바뀜)
 results/run_configs/
+results/run_status/
 
 # 개인 설정 (팀 기본값은 presets/default/기본.json). 개인 프리셋 presets/user/는 지금은 git에 올림
 config.json

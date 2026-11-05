@@ -1,8 +1,12 @@
-"""AI Mobility 전체 설정 GUI. GUI의 모든 실험/시뮬레이션 파라미터는 config.json으로 저장됩니다."""
-import json, os, shutil, subprocess, sys, tkinter as tk, zipfile
+"""AI Mobility 설정 GUI — 설정값 편집·프리셋·저장만 맡는다.
+
+실행 버튼은 화면 값을 실행용 설정 파일(results/run_configs/)로 저장하고 main.py <명령>을 새 콘솔 창에서 띄운 뒤,
+main.py가 기록하는 진행 상황(results/run_status/)을 읽어 상태 줄과 완료·오류 팝업에 보여 준다.
+[적용하기]를 눌렀을 때만 config.json이 바뀐다."""
+import json, os, subprocess, sys, tkinter as tk
 
 # 이 스크립트(GUI) 자신이 print()로 콘솔에 직접 찍는 한글이, 컴퓨터/콘솔의 기본
-# 코드페이지(cp949 등)에 걸려 깨지는 걸 방지. _run()이 자식 프로세스에 넣어주는
+# 코드페이지(cp949 등)에 걸려 깨지는 걸 방지. _launch()가 자식 프로세스에 넣어주는
 # PYTHONIOENCODING=utf-8는 이 프로세스 자기 자신에게는 적용되지 않기 때문에 따로 필요함.
 for _stream in (sys.stdout, sys.stderr):
     if _stream and hasattr(_stream, "reconfigure"):
@@ -18,6 +22,7 @@ from config_schema import (  # 설정 항목 정의(데이터)
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
+STATUS_DIR = os.path.join(ROOT, "results", "run_status")   # main.py 진행 상황 파일
 
 
 def _project_python():
@@ -423,272 +428,63 @@ class ConfigGUI:
             self._refresh_preset_buttons()
             self.status.config(text=f"개인 프리셋 '{n}' 삭제")
 
-    def _env(self):
-        e = os.environ.copy()
-        e["PYTHONIOENCODING"] = "utf-8"
-        e["PYTHONUTF8"] = "1"
-        e["PYTHONHASHSEED"] = "0"  # 실행 재현성 (reproducibility.py 참고)
-        # 실행 버튼이 만든 실행용 설정을 자식 프로세스가 읽게 함 (config_loader의 MOBILITY_CONFIG)
+    # ---------------------------------------------------------------- 실행 (main.py에 맡김)
+    def _launch(self, command, args=(), title=None, popup_done=False, model=None):
+        """main.py <command>를 새 콘솔 창에서 실행하고, 진행 상황 파일을 1초마다 읽어 상태 줄·팝업에 표시.
+        실행 순서는 main.py가 가지고, GUI는 설정 파일(_prepare_run_config)과 진행 표시만 맡는다."""
+        title = title or command
+        status_path = os.path.join(STATUS_DIR, f"{command}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json")
+        cmd = [PYTHON, os.path.join(ROOT, "main.py"), command, "--status", status_path]
         if getattr(self, "_run_config_path", None):
-            e["MOBILITY_CONFIG"] = self._run_config_path
-        return e
-
-    def _run(self, script, args=(), blocking=False, env_extra=None):
-        path = os.path.join(ROOT, script)
+            cmd += ["--config", self._run_config_path]
+        if model:
+            cmd += ["--model", model]
+        cmd += list(args)
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "PYTHONHASHSEED": "0"}
         try:
-            env = self._env()
-            if env_extra:
-                env.update({str(k): str(v) for k, v in env_extra.items()})
-            if blocking:
-                return subprocess.run([PYTHON, path, *args], cwd=ROOT, env=env, check=True)
-            if os.name == "nt":
-                inner_cmd = subprocess.list2cmdline([PYTHON, path, *args])
-                full_cmd = f'cmd /k call {inner_cmd}'
-                subprocess.Popen(full_cmd, cwd=ROOT, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
-                return True
-            subprocess.Popen([PYTHON, path, *args], cwd=ROOT, env=env)
-            return True
+            if os.name == "nt":   # 끝나도 창이 남아 로그를 볼 수 있게 cmd /k
+                proc = subprocess.Popen(f"cmd /k call {subprocess.list2cmdline(cmd)}", cwd=ROOT, env=env,
+                                        creationflags=subprocess.CREATE_NEW_CONSOLE)
+            else:
+                proc = subprocess.Popen(cmd, cwd=ROOT, env=env)
         except Exception as e:
             messagebox.showerror("실행 오류", str(e))
-            return False
+            return
+        self.status.config(text=f"[{title}] 시작 — 자세한 로그는 새 콘솔 창에 나옵니다.")
+        self.root.after(1000, self._watch, proc, status_path, title, popup_done)
+        return proc
+
+    def _watch(self, proc, status_path, title, popup_done):
+        try:
+            with open(status_path, encoding="utf-8") as f:
+                st = json.load(f)
+        except (OSError, ValueError):
+            st = {}
+        state = st.get("state")
+        if state == "done":
+            self.status.config(text=f"[{title}] 완료")
+            if popup_done:
+                messagebox.showinfo(f"{title} 완료", f"{title} 완료.\n\n{st.get('summary', '')}")
+            return
+        if state == "error":
+            self.status.config(text=f"[{title}] 실패: {st.get('error', '')}")
+            messagebox.showerror(f"{title} 오류", f"{st.get('error', '')}\n\n자세한 내용은 실행 콘솔 창을 확인하세요.")
+            return
+        if proc.poll() is not None:
+            self.status.config(text=f"[{title}] 실행 창이 닫혀 중단되었습니다.")
+            return
+        if state == "running":
+            step = st.get("step", "")
+            self.status.config(text=f"[{title}] {step + ' ' if step else ''}{st.get('text', '')}")
+        self.root.after(1000, self._watch, proc, status_path, title, popup_done)
 
     def run_main(self):
         self._prepare_run_config("play")
-        if self._run(os.path.join("module1_simulation", "build_env.py"), blocking=True):
-            self._run("main.py")
-
-    def _backup_saved_models(self, rl_total_timesteps: int, skip_v2: bool = False):
-        """train.py가 saved_models/를 덮어쓰기 전에, 날짜/시각 붙여서 통째로 백업.
-        rl_total_timesteps가 1만 미만인 짧은 테스트 실행이면 백업을 건너뜀."""
-        if rl_total_timesteps < 10000:
-            self.status.config(text=f"백업 생략 (rl_total_timesteps={rl_total_timesteps} < 10000, 테스트성 실행)")
-            self.root.update()
-            return
-        src = os.path.join(ROOT, "saved_models")
-        if not os.path.isdir(src) or not os.listdir(src):
-            return  # 백업할 기존 모델이 없으면 스킵
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        dst = os.path.join(ROOT, "saved_models_backups", timestamp)
-        os.makedirs(os.path.dirname(dst), exist_ok=True)
-        # skip_v2: 새 학습 라인이 demand_v2.joblib을 쓰는 중이면 반쪽짜리 파일을 복사하지 않도록 제외
-        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("demand_v2.joblib") if skip_v2 else None)
-        self.status.config(text=f"기존 모델을 saved_models_backups/{timestamp}에 백업했습니다.")
-        self.root.update()
-
-
-    def _start_v2_line(self, force=False):
-        """[새 학습 라인] demand_v2.joblib이 있으면 SKIP, 없으면 scripts/train_dispatch_model.py를 백그라운드로 시작.
-        force=True(GUI 체크박스)면 demand_v2.joblib이 있어도 다시 생성하고, 덮어쓰기 전에 기존 파일을 demand_v2_backups/에 복사해 둔다.
-        기존 라인과 독립적으로 돌며, 여기서 종료된다. 반환: (Popen 또는 None, 상태 'skip'/'started'/'no_data'/'error:...')"""
-        v2 = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
-        if os.path.exists(v2) and not force:
-            return None, "skip"
-        calls = os.path.join("data", "generated", "calls.csv")
-        ext = os.path.join("data", "generated", "external.csv")
-        if not (os.path.exists(os.path.join(ROOT, calls)) and os.path.exists(os.path.join(ROOT, ext))):
-            return None, "no_data"
-        try:
-            if os.path.exists(v2):  # 강제 재생성: 새 라인이 덮어쓰기 전에 기존 파일 보존
-                bak = os.path.join(ROOT, "demand_v2_backups", f"demand_v2_{datetime.now().strftime('%Y%m%d_%H%M%S')}.joblib")
-                os.makedirs(os.path.dirname(bak), exist_ok=True)
-                shutil.copy2(v2, bak)
-                print(f"[새 학습 라인] 강제 재생성: 기존 demand_v2.joblib을 {os.path.relpath(bak, ROOT)} 에 백업했습니다.")
-            os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
-            with open(os.path.join(ROOT, "logs", "train_v2.log"), "w", encoding="utf-8") as logf:
-                proc = subprocess.Popen(
-                    [PYTHON, os.path.join(ROOT, "scripts", "train_dispatch_model.py"), calls, "--external", ext],
-                    cwd=ROOT, env=self._env(), stdout=logf, stderr=subprocess.STDOUT,
-                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-                )
-        except Exception as e:
-            return None, f"error:{e}"
-        return proc, "started"
-
-    def _v2_cell_warning(self):
-        """demand_v2.joblib의 H3 셀 vs 방금 만든 맵(runtime_meta.json)의 셀을 비교.
-        다르면 경고 문구를, 같거나 비교 불가면 None을 반환."""
-        try:
-            r = subprocess.run(
-                [PYTHON, os.path.join(ROOT, "scripts", "convert_v2_to_category.py"), "--check-cells"],
-                cwd=ROOT, env=self._env(), capture_output=True, text=True, encoding="utf-8",
-            )
-        except Exception:
-            return None
-        return r.stdout.strip() if r.returncode == 3 and r.stdout.strip() else None
-
-    def _finish_v2_line(self, proc, state):
-        """[3단계] 새 라인이 만든 demand_v2.joblib을 받아 category_demand_from_v2.pkl로 변환.
-        (RL 학습 앞으로 옮겨짐 - 변환 결과가 있어야 RL이 그걸 참고해서 학습할 수 있음)"""
-        if state == "no_data":
-            return "변환 생략 - demand_v2.joblib도, 학습 데이터(data/generated/calls.csv, external.csv)도 없음"
-        if state.startswith("error"):
-            return f"변환 생략 - 새 라인 시작 실패 ({state})"
-        if state == "started":
-            self.status.config(text="3/4 새 학습 라인(demand_v2) 완료 대기 중...")
-            self.root.update()
-            rc = proc.wait()
-            if rc != 0 or not os.path.exists(os.path.join(ROOT, "saved_models", "demand_v2.joblib")):
-                return f"변환 생략 - 새 학습 라인 실패 (종료코드 {rc}), logs/train_v2.log 확인"
-        self.status.config(text="3/4 demand_v2 -> 카테고리 모델 변환 중...")
-        self.root.update()
-        cell_warn = self._v2_cell_warning()
-        if not self._run(os.path.join("scripts", "convert_v2_to_category.py"), blocking=True):
-            return "변환 실패 (오류 팝업 참고)"
-        msg = "saved_models/category_demand_from_v2.pkl 생성"
-        if state == "skip":
-            msg += " (demand_v2.joblib이 이미 있어 새 학습은 SKIP)"
-        if cell_warn:
-            msg += f"\n   [경고] {cell_warn}"
-        return msg
-
-    def _backup_rl_model(self):
-        """RL 학습이 끝난 뒤, 저장된 zip의 실제 종료 step이 10,000 이상일 때만 백업."""
-        model = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")
-        try:
-            with zipfile.ZipFile(model) as z:
-                steps = int(json.loads(z.read("data").decode("utf-8"))["num_timesteps"])
-        except Exception as e:
-            return f"백업 생략 - 실제 종료 step 확인 불가 ({e})"
-        if steps < 10000:
-            return f"백업 생략 - 실제 종료 step {steps:,} < 10,000"
-        dst_dir = os.path.join(ROOT, "rl_model_backups")
-        os.makedirs(dst_dir, exist_ok=True)
-        dst = os.path.join(dst_dir, f"rl_reposition_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{steps}steps.zip")
-        shutil.copy2(model, dst)
-        return f"실제 종료 step {steps:,} >= 10,000, rl_model_backups/{os.path.basename(dst)} 에 보존"
+        self._launch("play", title="플레이")
 
     def run_training(self):
-        c = self._prepare_run_config("train")
-
-        # [새 학습 라인] 기존 라인(build_env 이후)을 기다리지 않고 지금 바로 동시에 시작
-        v2_proc, v2_state = self._start_v2_line(bool(c.get("force_regenerate_demand_v2", False)))
-        print({
-            "skip": "[새 학습 라인] demand_v2.joblib이 이미 있어 SKIP합니다 (프로세스를 띄우지 않음).",
-            "no_data": "[새 학습 라인] data/generated/calls.csv 또는 external.csv가 없어 시작하지 못했습니다.",
-            "started": "[새 학습 라인] 백그라운드로 시작했습니다. 별도 창은 없고 진행 상황은 logs/train_v2.log 에서 확인하세요.",
-        }.get(v2_state, f"[새 학습 라인] 시작 실패: {v2_state}"))
-
-        try:
-            self.status.config(text="0/4 sumo 환경(build_env.py) 재생성 중...")
-            self.root.update()
-
-            if not self._run(os.path.join("module1_simulation", "build_env.py"), blocking=True):
-                self.status.config(text="build_env.py 실행 실패 - 학습 중단")
-                return
-
-            # v2를 SKIP한 경우, 방금 만든 맵과 셀이 맞는지 여기서 바로 알림
-            if v2_state == "skip":
-                v2_cell_warn = self._v2_cell_warning()
-                if v2_cell_warn:
-                    print("[경고] demand_v2.joblib 학습을 SKIP했지만 " + v2_cell_warn)
-
-            if c.get("run_sim_before_training", True):
-                import time as _time, log_selection as _ls
-                _sim_t0 = _time.time()
-                n_sim_runs = 3
-                for i in range(n_sim_runs):
-                    self.status.config(text=f"0.5/4 시뮬레이션으로 학습 로그 생성 중... ({i + 1}/{n_sim_runs})")
-                    self.root.update()
-                    if not self._run("measure_wait_time.py", blocking=True):
-                        self.status.config(text="시뮬레이션(로그 생성) 실행 실패 - 학습 중단")
-                        return
-                _added = _ls.add_new_logs_to_selection(_sim_t0)
-                if _added:
-                    print(f"[로그 선택] 방금 만든 로그 {len(_added)}개를 학습 선택 목록에 추가했습니다: {', '.join(_added)}")
-            else:
-                self.status.config(text="0.5/4 시뮬레이션 생략 (기존 로그로 학습)")
-                self.root.update()
-
-            self.status.config(text="1/4 기존 모델 백업 중...")
-            self.root.update()
-            self._backup_saved_models(int(c.get("rl_total_timesteps", 20000)), skip_v2=(v2_proc is not None and v2_proc.poll() is None))
-
-            self.status.config(text="1/4 train.py 실행 중...")
-            self.root.update()
-            self._run(os.path.join("module3_prediction", "train.py"), blocking=True)
-
-            # 기존 category_demand_models.pkl은 보존하고, 이번 학습 결과는 별도 파일로 저장한다.
-            category_new_path = os.path.join(ROOT, "saved_models", "category_demand_models_new.pkl")
-            self.status.config(text="2/4 category demand 새 모델 학습 중...")
-            self.root.update()
-            if not self._run(
-                os.path.join("module3_prediction", "train_category_demand.py"),
-                args=("--out", category_new_path),
-                blocking=True,
-            ):
-                self.status.config(text="category demand 학습 실패 - 학습 중단")
-                return
-
-            # 5단계를 RL 학습보다 앞으로 옮김: demand_v2 변환이 먼저 끝나야
-            # RL이 그 결과(category_demand_from_v2.pkl)를 학습 중에 참고할 수 있다.
-            # (예전엔 RL 학습 뒤에 변환이 끝나서, 그 학습 사이클의 RL은 변환 결과를
-            #  전혀 못 쓰고 있었음 — 구조적으로 순서가 늦어 못 쓰는 상태였음)
-            self.status.config(text="3/4 새 학습 라인(demand_v2) 완료 대기 + 변환 중...")
-            self.root.update()
-            v2_msg = self._finish_v2_line(v2_proc, v2_state)
-
-            # 파일 존재 여부만 보면, 예전에 만들어진 category_demand_from_v2.pkl이
-            # 이번엔 변환이 실패/생략됐는데도 "이번 것"으로 오인될 수 있다.
-            # 이번 호출이 실제로 변환을 완료했다는 것("saved_models/... 생성"으로 시작하는
-            # 성공 메시지)까지 확인해야 안전하다.
-            v2_converted_path = os.path.join(ROOT, "saved_models", "category_demand_from_v2.pkl")
-            v2_converted_this_run = v2_msg.startswith("saved_models/category_demand_from_v2.pkl 생성")
-            
-            # [결함 수정] H3 셀 모델을 무지성으로 복제한 v2 변환본 대신, 
-            # 카테고리별로 완벽하게 정상 학습된(train_category_demand.py) 모델을 항상 사용하도록 강제 고정
-            category_model_for_rl = category_new_path
-            rl_source_note = "category_demand_models_new.pkl (카테고리 전용 정상 학습 모델 - RL 오염 방지)"
-
-            self.status.config(text="4/4 강화학습 실행 중...")
-            self.root.update()
-            rl_ok = self._run(
-                os.path.join("module4_dispatch", "rl_train.py"),
-                blocking=True,
-                env_extra={"AI_CATEGORY_MODEL_PATH": category_model_for_rl},
-            )
-
-            # RL 백업: 위 두 학습 라인과 무관한 별도 처리 (RL이 정상 종료됐을 때만)
-            rl_backup_msg = self._backup_rl_model() if rl_ok else "백업 생략 - RL 학습이 정상 종료되지 않음"
-
-            # 이번 라운드에서 RL이 실제로 참고한 카테고리 모델을 파이프라인 고정 이름
-            # (category_demand_models.pkl)으로 "승격"한다. 이렇게 해야 이번 라운드가
-            # 끝난 뒤 곧바로 ▶ 플레이(measure_wait_time.py)를 눌러도, RL이 학습 때
-            # 참고했던 것과 같은 수요예측을 실행 시점에도 그대로 이어서 쓴다.
-            # 다음 라운드 시작 시 _backup_saved_models()가 이걸 포함해서 통째로
-            # 날짜 붙여 백업해두므로, saved_models/는 항상 "최신 활성 세트"로 채워져
-            # 있고 예전 세트는 saved_models_backups/에 라운드별로 쌓이는 구조가 된다.
-            active_path = os.path.join(ROOT, "saved_models", "category_demand_models.pkl")
-            if rl_ok and os.path.abspath(category_model_for_rl) != os.path.abspath(active_path):
-                shutil.copy2(category_model_for_rl, active_path)
-                promote_msg = f"category_demand_models.pkl <- {os.path.basename(category_model_for_rl)} (승격 완료)"
-            elif not rl_ok:
-                promote_msg = "승격 생략 - RL 학습이 정상 종료되지 않음 (기존 category_demand_models.pkl 유지)"
-            else:
-                promote_msg = "승격 불필요 - 이미 category_demand_models.pkl을 그대로 사용함"
-
-            self.status.config(text="전체 학습 완료")
-            messagebox.showinfo(
-                "학습 완료",
-                "전체 학습이 완료되었습니다.\n\n"
-                "생성/갱신 파일 (saved_models/):\n"
-                "• category_demand_models.pkl (활성 - 방금 승격됨)\n"
-                "• category_demand_models_new.pkl / category_demand_from_v2.pkl (이번 라운드 원본)\n"
-                "• rl_reposition_model.zip (module4_dispatch/, 별도 백업됨)\n\n"
-                f"[승격] {promote_msg}\n"
-                f"[RL이 학습에 참고한 수요예측] {rl_source_note}\n"
-                f"[RL 백업] {rl_backup_msg}\n"
-                f"[demand_v2 변환] {v2_msg}",
-            )
-
-        except subprocess.CalledProcessError as e:
-            self.status.config(text="학습 중 오류 발생")
-            messagebox.showerror(
-                "학습 오류",
-                f"학습 과정에서 오류가 발생했습니다.\n\n실패한 단계의 종료 코드: {e.returncode}",
-            )
-        except Exception as e:
-            self.status.config(text="학습 중 오류 발생")
-            messagebox.showerror("학습 오류", str(e))
+        self._prepare_run_config("train")
+        self._launch("train", title="학습", popup_done=True)
 
     def open_unity_replay_dialog(self):
         """유니티 재생 데이터(Replay JSON) 생성을 위한 설정 다이얼로그."""
@@ -782,7 +578,7 @@ class ConfigGUI:
                 cmd_args += ["--unity-dir", unity_default_path]
 
             win.destroy()
-            self._run(os.path.join("tools", "export_unity_replay.py"), cmd_args)
+            self._launch("unity", cmd_args, title="Unity 재생 생성")
 
         run_btn = tk.Button(action_bar, text="🚀 유니티 재생 데이터 생성 시작", command=run_export,
                             bg="#2563eb", fg="white", font=("Malgun Gothic", 11, "bold"),
@@ -913,8 +709,7 @@ class ConfigGUI:
             win.destroy()
             self._prepare_run_config("ab")
             model_path = dict(models)[model_var.get()]
-            self._run(os.path.join("scripts", "multi_factor_compare.py"), [json.dumps(combos, ensure_ascii=False)],
-                      env_extra={"AI_CATEGORY_MODEL_PATH": model_path})
+            self._launch("compare", [json.dumps(combos, ensure_ascii=False)], title="A/B 비교", model=model_path)
 
         ttk.Button(win, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=15, fill="x", padx=15)
 
@@ -1010,7 +805,7 @@ class ConfigGUI:
                             "로그는 거기서 체크박스로 고르면 돼요. (끝낼 때는 열린 콘솔 창을 닫기)",
                   justify="left").pack(side="left")
         ttk.Button(top, text="브라우저로 열기",
-                   command=lambda: (win.destroy(), self._run(os.path.join("tools", "analyzer_server.py")))).pack(side="right")
+                   command=lambda: (win.destroy(), self._launch("analyzer", title="분석기"))).pack(side="right")
         ttk.Label(win, text="아래는 표/CSV/그래프 리포트(report.md)를 만들 때 쓸 로그예요. (학습용 로그 선택에는 영향 없음)\n"
                             "결과는 data/analysis/<날짜_시각>/ 에 저장돼요.",
                   padding=(12, 6), justify="left").pack(anchor="w")
@@ -1026,7 +821,7 @@ class ConfigGUI:
                 return
             win.destroy()
             paths = [os.path.join(ROOT, "data", "sim_logs", n) for n in names]
-            self._run(os.path.join("tools", "analyze_demand_logs.py"), ["--logs", *paths])
+            self._launch("analyze", ["--logs", *paths], title="로그 리포트")
 
         bar = ttk.Frame(win)
         bar.pack(fill="x", padx=12, pady=10)

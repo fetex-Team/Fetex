@@ -25,13 +25,13 @@
 - GridSearch CV: KFold → TimeSeriesSplit
 
 ## 사용 순서
-1. `python measure_wait_time.py` (또는 `python main.py`) → 로그 CSV 생성
+1. `python measure_wait_time.py` (또는 `python main.py play`) → 로그 CSV 생성
 2. `python train.py` → 로그로 학습
 
 ## 남은 이슈
 - 시뮬레이션 9~11시(2시간) / 10분 = 12칸 → lag 6·rolling 6 결측 제거 후 셀당 6행, test는 시간칸 1~2개뿐. 시뮬레이션 시간을 늘리거나 freq를 5분으로 줄이는 것 검토 필요
 - `external_data_merge.py`의 기온/강수는 여전히 랜덤 → 모델에 노이즈만 추가됨
-- `main.py`는 아직 가짜 데이터 사용 (파이프라인 데모용)
+- ~~`main.py`는 아직 가짜 데이터 사용~~ → 지금 `main.py`는 실행 진입점(play/train 등)이고 데이터를 직접 다루지 않음
 - 기존 `saved_models/`는 이전 피처 기준이라 재학습 필요
 
 ## 2026-09-10 실행 결과 (첫 실제 로그)

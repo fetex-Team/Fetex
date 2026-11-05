@@ -35,15 +35,17 @@ venv\Scripts\activate
 $env:PYTHONUTF8="1"; chcp 65001; [Console]::OutputEncoding=[System.Text.Encoding]::UTF8   # 한글 출력 깨짐 방지
 pip install -r requirements.txt          # eclipse-sumo 포함 (SUMO 별도 설치 불필요)
 
-python module1_simulation/build_env.py   # 1) 지도·POI·차량 생성 (같은 범위 OSM은 저장본 재사용)
-python main.py                           # 2) SUMO GUI로 보기
-python config_gui.py                     #    또는 설정 화면에서 실행·A/B 비교
+python config_gui.py                     # 1) 설정 화면에서 값 고르고 [▶ 플레이]·학습·A/B 실행
+python main.py play                      #    또는 터미널에서: 지도 생성 → SUMO GUI로 보기
 python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대기시간·서비스율·추정 매출)
 ```
 
 ### 주요 명령
 | 목적 | 명령 |
 |---|---|
+| 지도 생성 + SUMO GUI 시뮬레이션 | `python main.py play` (`--config 설정.json`, 기존 지도로 바로: `--no-build`) |
+| 학습 전체(지도 → 로그 → 수요예측 → v2 변환 → RL) | `python main.py train` |
+| A/B 비교 · Unity 재생 · 로그 리포트 | `python main.py compare '<조합 JSON>'` · `python main.py unity --stride 5` · `python main.py analyze --logs <CSV...>` |
 | 전략 3개 공정 비교 + Unity 재생 파일 | `python tools/export_unity_replay.py --stride 5 --unity-dir <Unity>/Assets/StreamingAssets` |
 | 택시 대수 산정 | `python tools/fleet_sizing.py --taxis 50 70 --strategy prepositioned` |
 | 실측 날씨 받기(네트워크 필요) | `python scripts/fetch_weather_history.py 2026-07-01 2026-10-27` |
@@ -59,7 +61,8 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 
 ## 설정 GUI와 프리셋
 - `python config_gui.py` — **기본** 탭(프리셋 버튼 + 자주 쓰는 값)과 **세부 설정** 탭(섹션별 전체 설정, 항목에 마우스를 올리면 설명).
-- 실행 버튼(플레이·학습·A/B·Unity)은 지금 화면 값으로 실행하고 `results/run_configs/<종류>_<시각>.json`에 남긴다. `config.json`은 그대로.
+- 실행 버튼(플레이·학습·A/B·Unity)은 지금 화면 값을 `results/run_configs/<종류>_<시각>.json`에 저장하고 `python main.py <명령> --config <그 파일>`을 새 콘솔 창에서 실행한다. `config.json`은 그대로.
+  진행 단계는 GUI 아래 상태 줄에, 자세한 로그는 콘솔 창에 나오고, 학습이 끝나면 완료 팝업이 뜬다 (`results/run_status/`의 진행 기록을 GUI가 1초마다 읽음).
 - **[적용하기]** 를 눌러야 내 설정 `config.json`이 바뀐다 (개인 파일, git 제외).
 - 세부 설정의 **현재 화면을 프리셋으로 저장** → `presets/user/`(개인 프리셋, 지금은 git에 올림)에 저장되고 기본 탭 버튼(★)에 나타난다.
 - 팀 기본값을 바꾸려면 `presets/default/기본.json`을 고쳐 커밋한다.
@@ -107,8 +110,9 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 
 ## 폴더 구조 (주요)
 ```
-main.py / config_gui.py                 실행 진입점 (시뮬레이션 / 설정 GUI)
-config_loader.py                        설정 로더 (DEFAULT_CONFIG = 코드 기본값)
+main.py                                 실행 진입점 (play / train / compare / unity / analyze — 실행 순서는 여기)
+config_gui.py                           설정 GUI (값 편집·프리셋·저장, 실행은 main.py에 맡기고 진행 상황만 표시)
+config_loader.py                        설정 로더 (DEFAULT_CONFIG = presets/default/기본.json을 읽은 값)
 presets/default/                        팀 공유 프리셋 (기본.json = 팀 기본 설정, 시나리오 4개) — git 포함
 presets/user/                           개인 프리셋 — git 포함(당분간)
 config.json                             내 설정 — git 제외. 없으면 기본.json으로 시작

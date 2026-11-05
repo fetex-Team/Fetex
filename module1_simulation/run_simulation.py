@@ -69,4 +69,9 @@ def run_sumo_gui(sumo_binary: str = "sumo-gui", output_dir=None, gui_delay: floa
 
 
 if __name__ == "__main__":
-    run_sumo_gui()
+    import argparse
+    _p = argparse.ArgumentParser(description="SUMO GUI 시뮬레이션 (보통은 python main.py play로 실행)")
+    _p.add_argument("--sumo-binary", default="sumo-gui", help="sumo-gui(기본) 또는 화면 없는 sumo")
+    _p.add_argument("--gui-delay", type=float, default=0.01, help="스텝마다 멈추는 시간(초)")
+    _a = _p.parse_args()
+    run_sumo_gui(sumo_binary=_a.sumo_binary, gui_delay=_a.gui_delay)
