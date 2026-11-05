@@ -32,6 +32,7 @@ NUMERIC_GROUPS = {
         ("real_internal_trip_km", "영역 안 하차 기준 거리(km)", 0.1, 10, 2, 0),
         ("depart_jitter_sec", "출발시간 분산 표준편차(초)", 0, 1800, 1, 0),
         ("sumo_time_to_teleport", "SUMO teleport 기준(초)", 0, 7200, 0, 1),
+        ("taxi_stuck_reroute_sec", "멈춘 빈 택시 재경로 기준(초)", 30, 7200, 0, 1),
         ("taxi_remaining_edges_threshold", "택시 재타겟팅 잔여 edge 기준", 0, 20, 0, 1),
         ("taxi_target_pick_attempts", "목적지 탐색 시도 횟수", 1, 100, 0, 1),
         ("taxi_fail_threshold", "택시 고립 판정 연속 실패 횟수", 1, 100, 0, 1),
@@ -106,6 +107,9 @@ NUMERIC_GROUPS = {
     "공통/실험": [
         ("xgb_random_state", "XGB random state", 0, 2147483647, 0, 1),
         ("train_random_state", "학습 random state", 0, 2147483647, 0, 1),
+        ("ab_max_parallel_compares", "A/B 비교 동시 실행 개수", 1, 16, 0, 1),
+        ("ab_max_parallel_workers", "A/B 한 비교 안의 동시 워커 창 수", 1, 16, 0, 1),
+        ("ab_queue_stale_sec", "A/B 대기표 만료(초)", 60, 86400, 0, 1),
     ],
 }
 
@@ -117,6 +121,10 @@ BOOLS = [
     ("run_sim_before_training", "학습만 실행 시 시뮬레이션 먼저 돌려서 로그 생성 (끄면 기존 로그로 바로 학습)"),
     ("rl_randomize_passenger_seed", "RL 학습: 매 에피소드마다 다른 승객 호출 패턴 사용"),
     ("rl_vecnormalize", "RL 학습: 관측·보상 정규화(VecNormalize)"),
+    ("taxi_avoid_dead_ends", "택시: 막다른 길 진입 막기"),
+    ("taxi_extend_dispatch_route", "택시: 배차 경로가 끝나 가면 승객 위치까지 연장 (실험)"),
+    ("taxi_reroute_stuck_riders", "택시: 손님 태운 채 멈추면 하차 지점까지 재경로 (실험)"),
+    ("ab_keep_work_dirs", "A/B 비교: 끝난 뒤 조합별 작업 폴더 남기기(디버깅)"),
 ]
 CHOICES = [
     ("taxi_strategy", "택시 전략", STRATEGIES),
@@ -189,7 +197,8 @@ DETAIL_SECTIONS = [
     ("날씨 보정", ["weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
     ("택시 운행·배차", ["taxi_strategy", "taxi_dispatch_algorithm", "dispatch_cost", "taxi_idle_algorithm",
                    "reposition_fraction", "taxi_remaining_edges_threshold", "taxi_target_pick_attempts",
-                   "taxi_fail_threshold", "taxi_primary_prob", "dispatch_use_euclidean"]),
+                   "taxi_fail_threshold", "taxi_primary_prob", "dispatch_use_euclidean", "taxi_avoid_dead_ends",
+                   "taxi_stuck_reroute_sec", "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders"]),
     ("요금·인센티브", ["base_fare", "min_multiplier", "max_multiplier", "surge_coefficient", "incentive_weight",
                   "target_hotspot_ratio"]),
     ("전처리 (Module 2)", ["freq", "h3_resolution", "max_lag", "rolling_short", "rolling_long", "forecast_horizons"]),
@@ -201,6 +210,7 @@ DETAIL_SECTIONS = [
                    "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed", "rl_reward_mode",
                    "rl_train_day_type", "rl_vecnormalize"]),
     ("학습 실행 옵션", ["run_sim_before_training", "taxi_respawn_prefix"]),
+    ("A/B 비교 실행", ["ab_max_parallel_compares", "ab_max_parallel_workers", "ab_queue_stale_sec", "ab_keep_work_dirs"]),
 ]
 
 # 항목 설명 — GUI에서 마우스를 올리면 뜬다. GUI에 없는 항목도 설명은 여기에 둔다 (기본.json에는 주석 불가).
@@ -222,6 +232,14 @@ TIPS = {
     "passenger_seed": "승객 생성 난수 시드. 같은 시드·날짜면 같은 손님 목록(공정 비교). 비우면 매번 랜덤.",
     "depart_jitter_sec": "정적 승객 출발 시각을 흩뜨리는 표준편차(초).",
     "sumo_time_to_teleport": "차가 이 시간(초) 이상 막히면 SUMO가 순간이동시켜 정체를 푼다. 0이면 끔.",
+    "taxi_avoid_dead_ends": "(KJS) 주 도로망으로 돌아올 수 없는 막다른 길을 택시 이동 후보에서 빼고, 들어가려 하면 다른 곳으로 돌린다. 택시 소멸이 크게 줄어든다.",
+    "taxi_stuck_reroute_sec": "(KJS) 빈 택시가 같은 도로에 이 시간(초) 이상 머물면 SUMO 순간이동 전에 목적지를 다시 준다. 순간이동 기준의 약 70%.",
+    "taxi_extend_dispatch_route": "(KJS, 실험) 배차된 택시의 경로가 승객 위치 전에 끝나면 연장한다. SUMO 예약과 부딪힐 수 있어 기본 꺼짐.",
+    "taxi_reroute_stuck_riders": "(KJS, 실험) 손님을 태운 택시가 멈추면 하차 지점까지 다시 경로를 준다. 기본 꺼짐.",
+    "ab_max_parallel_compares": "(KJS) A/B 비교를 동시에 몇 개까지 돌릴지. 넘으면 앞 요청이 끝날 때까지 기다린다 (results/ab_queue/).",
+    "ab_max_parallel_workers": "(KJS) 한 A/B 비교 안에서 동시에 띄우는 조합(워커 창) 수.",
+    "ab_queue_stale_sec": "A/B 대기표가 이 시간(초) 동안 갱신되지 않으면 죽은 요청으로 보고 지운다.",
+    "ab_keep_work_dirs": "A/B 비교가 끝나도 조합별 작업 폴더(module1_simulation/sumo_config_ab_*)를 지우지 않는다 (디버깅용).",
     "suppress_sumo_warnings": "SUMO 경고 로그를 숨긴다. 출력이 줄어 조금 빨라진다.",
     "demand_source": "real=TIMS 2025 격자 승차 + 서울시 2025 통계로 보정한 수요, synthetic=학교·회사·음식점 가정 모델.",
     "real_demand_scale": "실측 호출량 중 이 시뮬레이션이 맡는 비율. 기본 0.77 = 앱 호출 80% × 카카오 점유율 96%. 영역 전체는 1.0.",
