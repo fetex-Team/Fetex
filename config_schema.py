@@ -4,7 +4,8 @@
 - BASIC_KEYS: 기본 탭에 보이는 항목, DETAIL_SECTIONS: 세부 설정 탭의 섹션 구성
 - TIPS: 항목에 마우스를 올리면 뜨는 설명
 새 설정을 GUI에 넣으려면 여기에 항목을 추가하고 DETAIL_SECTIONS의 한 섹션에 키를 넣는다
-(빠지면 GUI 시작 때 경고가 출력됨). 기본값 자체는 config_loader.DEFAULT_CONFIG와 presets/default/기본.json.
+(빠지면 GUI 시작 때 경고가 출력됨). 기본값은 presets/default/기본.json 한 곳에만 둔다
+(config_loader.DEFAULT_CONFIG가 이 파일을 읽음). JSON에는 주석을 못 쓰므로 항목 설명은 TIPS에 둔다.
 """
 
 FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
@@ -205,7 +206,7 @@ DETAIL_SECTIONS = [
                             "demo_data_minutes", "demo_data_start", "taxi_respawn_prefix"]),
 ]
 
-# 마우스를 올리면 뜨는 설명 (config_loader.DEFAULT_CONFIG 주석과 각 모듈의 동작 기준)
+# 항목 설명 — GUI에서 마우스를 올리면 뜬다. GUI에 없는 항목도 설명은 여기에 둔다 (기본.json에는 주석 불가).
 TIPS = {
     "region": "시뮬레이션할 지역. 실제 지도 모드면 이 지역 좌표로 OSM 도로망을 받아 SUMO 지도를 만든다.",
     "use_real_map": "켜면 OSM 실제 도로망, 끄면 grid_x×grid_y 합성 격자 도로망.",
@@ -340,4 +341,21 @@ TIPS = {
     "demo_data_minutes": "추론 데모 데이터 길이(분).",
     "demo_data_start": "데모 데이터 시작 시각.",
     "taxi_respawn_prefix": "다시 생성된 택시 ID 앞에 붙이는 접두어.",
+
+    # ---- GUI 화면에는 없고 기본.json으로만 바꾸는 항목 ----
+    "use_historical_weather": "그날의 실측 시간별 날씨(data/external/weather_<지역>_*.csv)가 있으면 수요에 반영. 없으면 실시간 날씨 가산 사용.",
+    "weather_precip_coef_per_mm": "강수 1mm당 호출 증가율. 0.0199 = +1.99% (docs/weather_coefficient.md).",
+    "weather_precip_cap_mm": "강수 반영 상한(mm). 이보다 많이 와도 이 값으로 계산.",
+    "taxi_external_away": "[시나리오] 영역 밖으로 나간 택시의 복귀 지연을 반영 (external_trip_model.py). 기본 꺼짐.",
+    "external_replacement_ratio": "밖으로 나간 택시 대신 들어오는 택시 비율. 강남구 2025 하차/승차 = 85,218/92,858 ≈ 0.918.",
+    "external_return_factor": "복귀 시간 = 운행시간(TIMS 격자 평균) × 이 값 (갔다 오는 시간이라 2).",
+    "rl_train_start": "RL 학습 에피소드 날짜 범위 시작. 평가 날짜와 겹치지 않게, 수요예측 학습 8주와 같게 둔다.",
+    "rl_train_end": "RL 학습 에피소드 날짜 범위 끝.",
+    "rl_training_seed_base": "RL 학습 에피소드별 승객 시드의 시작값.",
+    "forecast_tick_sec": "forecast 전략: 예측·재배치 주기(초).",
+    "forecast_horizon_buckets": "forecast 전략: 몇 칸(freq 단위) 앞까지의 예측을 합쳐 쓸지.",
+    "forecast_alloc_power": "forecast 전략: 칸별 목표 택시 = 예측^power 비율. 2/3이면 가장 가까운 빈 택시까지 평균 거리가 최소.",
+    "forecast_max_move_sec": "forecast 전략: 재배치 한 번에 이동할 최대 시간(초).",
+    "forecast_min_idle_ratio": "forecast 전략: 빈 택시가 전체의 이 비율보다 적으면(택시 부족) 재배치 중단. 9/8·9/17 검증에서 0/0.2/0.3/0.4 비교 후 0.3.",
+    "synthetic_rate": "data/generate.py 가짜 학습 데이터의 기본 호출률 (시간대 피크 곡선에 곱함). 양수여야 함.",
 }
