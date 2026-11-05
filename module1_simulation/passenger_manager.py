@@ -96,7 +96,10 @@ class PassengerTimeoutManager:
             except traci.exceptions.TraCIException:
                 continue
             
-            if vid: # 이미 탑승 완료자는 패스
+            if vid:  # [KJS 이식] 탑승 중 → 타임아웃 시계를 멈춤 (depart_time 갱신)
+                # 하차 후 남은 stage가 있는 승객이 탑승 시간까지 대기로 쳐져 타임아웃되지 않게 한다.
+                # (대기시간 통계는 measure_wait_time.PassengerTracker가 따로 기록하므로 영향 없음)
+                self.depart_time[pid] = now_seconds
                 continue
 
             # 2. [핵심 방어선] 현재 택시가 배차(예약)되어 오고 있는 승객인지 확인
