@@ -73,52 +73,14 @@ CATEGORY_MODEL_PATH = os.environ.get(
 
 
 
-# measure_wait_time.py 내부
-# max_steps 기본값을 24시간 전체 스텝(86400초 이상)을 충분히 커버할 수 있도록 확장
-def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
-                     sumo_cfg_path: str = None, meta_path: str = None,
-                     strategy: str = None, algorithm: str = None, recorder=None,
-                     recorder_factory=None, step_hook=None) -> dict:
-    """
-    시뮬레이션을 headless(sumo, GUI 없음)로 끝까지 돌리면서 승객별 대기시간을 측정.
-    택시는 taxi_manager.TaxiFleetManager가 항상 target_count(=num_taxis)만큼 유지함
-    (도착해서 사라진 택시는 즉시 길 끝에서 재스폰).
-    반환: {"avg_wait": float, "max_wait": float, "n_measured": int, "n_unpicked": int, "waits": [...]}
+# ---------------------------------------------------------------------------
+# 실행·측정 루프 (run_and_measure)와 그 단계별 도우미
+# GUI 플레이(run_simulation), A/B 비교, 반복 실험, Unity 내보내기가 모두 이 루프를 쓴다.
+# ---------------------------------------------------------------------------
 
-    strategy/algorithm: 지정하면 config.json에 반영하고 build_env.py를 다시 돌린 뒤 시작함
-        (export_unity_replay.py처럼 "이 조합으로 새로 지도까지 다시 만들어서 측정해줘"가 필요한
-        호출부용. 안 넘기면 예전처럼 "지금 config.json/meta 그대로" 바로 측정함 - 기존 호출부
-        전부 그대로 동작).
-    recorder: module4_dispatch나 외부(export_unity_replay.py의 ReplayRecorder 등)에서 만든
-        기록기. recorder.capture(now, requested, pickup, arrived, removed, failed, forecast,
-        teleports)를 매 스텝 호출하고, 끝나면 recorder.finish(result)를 호출함. 안 넘기면
-        (기본값) 기록 없이 예전과 완전히 동일하게 동작 - 성능/결과에 영향 없음.
-    step_hook: 매 스텝 끝에 step_hook(now, sim_start_hour)를 호출 (GUI 실행의 화면 지연·창 제목 표시용,
-        module1_simulation/run_simulation.py). 안 넘기면 아무 일도 하지 않음.
-    """
-    if strategy is not None:
-        set_strategy_in_config(strategy)
-    if algorithm is not None:
-        set_dispatch_algorithm_in_config(algorithm)
-    if strategy is not None or algorithm is not None:
-        rebuild_env()
-    if recorder is None and recorder_factory is not None:
-        # 지도(map.json)를 방금 다시 만든 환경 기준으로 만들도록 기록기를 재빌드 이후에 생성
-        recorder = recorder_factory()
-
-    depart_time = {}     # person_id -> depart 시각(초)
-    pickup_time = {}     # person_id -> 탑승 확인된 시각(초)
-    arrived_pids = set()  # 목적지까지 도착 완료(정상 하차)한 person_id
-    in_taxi = set()      # 이미 탑승 처리된 person_id (중복 계산 방지)
-    onboard = {}         # 지금 택시에 타고 있는 person_id -> taxi id (하차 감지용, 최대 택시 대수만큼만 유지)
-    seen_persons = set()
-    teleport_count = 0
-
-    _meta_path = meta_path or META_PATH
-    _sumo_cfg = sumo_cfg_path or SUMO_CFG
-    with open(_meta_path, "r", encoding="utf-8") as f:
-        meta = json.load(f)
-
+def _create_controllers(meta: dict, sumo_cfg: str):
+    """택시 매니저·배차기·타임아웃 매니저·RL 선배치를 만든다.
+    반환: (manager, dispatcher, pax_manager, rl_maintainer)"""
     manager = TaxiFleetManager(
         target_count=meta["num_taxis"],
         boundary_edges=meta["boundary_edges"],
@@ -131,22 +93,21 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
     # 배차 알고리즘은 GUI/런타임 설정을 그대로 따른다. RL은 선배치 정책일 뿐
     # 매칭 알고리즘을 바꾸지 않는다.
-    taxi_strategy = meta.get("taxi_strategy")
     dispatch_algo = meta.get("taxi_dispatch_algorithm")
-    hungarian_dispatcher = make_dispatcher(dispatch_algo, _sumo_cfg)  # hungarian/custom_* (SUMO 내장이면 None)
+    dispatcher = make_dispatcher(dispatch_algo, sumo_cfg)  # hungarian/custom_* (SUMO 내장이면 None)
 
     # 배차 못 받고 너무 오래 대기한 승객을 소멸시키는 매니저 (없으면 끝까지 길가에 쌓임)
     # dispatcher를 넘겨주면, 이미 Hungarian이 예약을 배정한 승객의 강제제거를 한 스텝
     # 미뤄서 SUMO 내부 상태 충돌("Connection closed by SUMO")을 방지함 (passenger_manager.py 참고)
     pax_manager = PassengerTimeoutManager(
         wait_timeout_sec=meta.get("passenger_wait_timeout", 900),
-        dispatcher=hungarian_dispatcher,
+        dispatcher=dispatcher,
     )
 
     # taxi_strategy가 rl_prepositioned일 때만 RL 재배치 매니저를 추가로 켠다.
     # 모델이 없으면 재배치 없이, 사용자가 고른 매칭 알고리즘만 그대로 실행한다.
     rl_maintainer = None
-    if taxi_strategy == "rl_prepositioned":
+    if meta.get("taxi_strategy") == "rl_prepositioned":
         if os.path.exists(RL_MODEL_PATH):
             rl_maintainer = RLRepositionMaintainer(RL_MODEL_PATH, meta, category_model_path=CATEGORY_MODEL_PATH)
             print(f"[안내] RL 재배치 정책을 불러왔습니다: {RL_MODEL_PATH}")
@@ -154,18 +115,16 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         else:
             print(f"[경고] {RL_MODEL_PATH}가 없어 RL 재배치 없이 '{dispatch_algo}' 매칭만 수행합니다. "
                   f"먼저 module4_dispatch/rl_train.py를 실행하세요.")
+    return manager, dispatcher, pax_manager, rl_maintainer
 
 
-    sim_end_hour = meta.get("sim_end_hour")
-    sim_start_hour = meta.get("sim_start_hour", 0)
-    if sim_end_hour is None:
-        sim_end_hour = CFG.get("sim_end_hour")  # 실행 중인 설정(MOBILITY_CONFIG 반영)에서 폴백
-        if sim_end_hour is not None:
-            print(f"[안내] runtime_meta.json에 sim_end_hour가 없어 설정에서 읽어왔습니다 ({sim_end_hour}시).")
+def _resolve_run_date(meta: dict):
+    """이번 실행의 날짜와 공휴일 모드를 정한다. 반환: (run_date, holiday_mode)
 
-    # [공휴일] 실행 날짜를 스폰 매니저 생성 *전에* 정함. 시드와 무관한 난수(rng)를 써서
-    # passenger_seed가 고정이어도 날짜가 매번 바뀜 (예전엔 random.seed 직후 randint라 항상 같은 날짜였음).
-    # run_date_mode: "sim_date"(평가·A/B, 날짜 고정) / "alternate"(평일·공휴일 번갈아) / "random"
+    스폰 매니저 생성 *전에* 정한다. 시드와 무관한 난수(rng)를 써서 passenger_seed가 고정이어도
+    날짜가 매번 바뀐다 (예전엔 random.seed 직후 randint라 항상 같은 날짜였음).
+    run_date_mode: "sim_date"(평가·A/B, 날짜 고정) / "alternate"(평일·공휴일 번갈아) / "random"
+    """
     run_date = pick_run_date(CFG, index=count_existing_logs())
     # A/B 비교의 '평일/공휴일' 체크(runtime_meta.holiday_mode)가 있으면 config.json 값보다 우선.
     # 강제 모드인데 뽑힌 날짜가 그 유형과 다르면, 로그 파일명 날짜와 실제 판정이 어긋나지 않게 맞는 날짜로 다시 뽑음.
@@ -186,187 +145,129 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             print(f"[안내] 공휴일 미체크 -> 오늘({run_date})은 {'공휴일/주말' if is_holiday_date(run_date) else '평일'}로 판정해 실행합니다.")
         if holiday_mode in ("weekday", "holiday") and is_holiday_date(run_date) != (holiday_mode == "holiday"):
             run_date = pick_run_date(CFG, index=1 if holiday_mode == "holiday" else 0, mode="alternate")
-    # RL 재배치가 쓰는 수요예측 모델에도 이번 실행 날짜를 알려줌 (요일·공휴일 피처)
-    if rl_maintainer is not None and hasattr(rl_maintainer, "set_run_date"):
-        rl_maintainer.set_run_date(run_date)
-    print(f"[안내] 이번 실행 날짜: {run_date} ({'공휴일/주말' if is_holiday_date(run_date) else '평일'}, "
-          f"run_date_mode={CFG.get('run_date_mode', 'alternate')})")
+    return run_date, holiday_mode
 
-    # 학교/회사/음식점 승객을 실시간으로 생성·소멸(흡수→재스폰)시키는 매니저
-    spawn_manager = PassengerSpawnManager(
-        zones=meta.get("zones", {}),
-        department_edges=meta.get("department_store_edges", []),
-        sim_start_hour=sim_start_hour,
-        sim_end_hour=sim_end_hour,
-        school_pop_base=meta.get("school_pop_base", 400),
-        company_pop_base=meta.get("company_pop_base", 100),
-        seed=meta.get("passenger_seed"),
-        sim_date=run_date.isoformat(),
-        holiday_mode=holiday_mode,
-        meta=meta,
-    )
 
-    # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
-    away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))
+def _create_forecast_repositioner(meta, run_date, spawn_manager, dispatcher, sim_start_hour, sumo_cfg):
+    """taxi_strategy="forecast"일 때 수요 예측(demand_v2) 기반 재배치기를 만든다 (아니면 None).
+    module4_dispatch/forecast_repositioner.py"""
+    if meta.get("taxi_strategy") != "forecast":
+        return None
+    if spawn_manager._real_model is None:
+        raise SystemExit("forecast 전략은 실데이터 수요 모드(demand_source=real)에서만 쓸 수 있습니다.")
+    from module4_dispatch.forecast_repositioner import ForecastRepositioner
+    from module4_dispatch.network_cost import NetworkTravelTime, net_file_from_sumocfg
+    _tt = getattr(dispatcher, "travel_time", None) or NetworkTravelTime.cached(net_file_from_sumocfg(sumo_cfg))
+    repositioner = ForecastRepositioner(
+        meta, run_date, bool(spawn_manager.is_holiday), sim_start_hour, spawn_manager._real_model,
+        spawn_manager.schedule, meta.get("passenger_seed") if meta.get("passenger_seed") is not None else 42,
+        travel_time=_tt)
+    print(f"[안내] 예측 기반 재배치: {repositioner.tick_sec:.0f}초마다 칸별 "
+          f"{repositioner.horizon * 10}분 수요 예측 -> 빈 택시 λ^{repositioner.power:.2f} 비율 배치")
+    return repositioner
 
-    # [전략] taxi_strategy="forecast": 수요 예측(demand_v2)으로 빈 택시를 미리 보냄 (module4_dispatch/forecast_repositioner.py)
-    forecast_repositioner = None
-    if taxi_strategy == "forecast":
-        if spawn_manager._real_model is None:
-            raise SystemExit("forecast 전략은 실데이터 수요 모드(demand_source=real)에서만 쓸 수 있습니다.")
-        from module4_dispatch.forecast_repositioner import ForecastRepositioner
-        from module4_dispatch.network_cost import NetworkTravelTime, net_file_from_sumocfg
-        _tt = getattr(hungarian_dispatcher, "travel_time", None) or NetworkTravelTime.cached(net_file_from_sumocfg(_sumo_cfg))
-        forecast_repositioner = ForecastRepositioner(
-            meta, run_date, bool(spawn_manager.is_holiday), sim_start_hour, spawn_manager._real_model,
-            spawn_manager.schedule, meta.get("passenger_seed") if meta.get("passenger_seed") is not None else 42,
-            travel_time=_tt)
-        print(f"[안내] 예측 기반 재배치: {forecast_repositioner.tick_sec:.0f}초마다 칸별 "
-              f"{forecast_repositioner.horizon * 10}분 수요 예측 -> 빈 택시 λ^{forecast_repositioner.power:.2f} 비율 배치")
 
-    sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
-    if sim_end_seconds is None:
-        print("[경고] sim_end_hour를 어디서도 찾지 못해 안전상 24시간 분량으로 자동 종료합니다.")
-        sim_end_seconds = 24 * 3600
-    max_steps = max(max_steps, int(sim_end_seconds) + 100)
+class PassengerTracker:
+    """승객별 등장·탑승·하차 시각을 기록한다 (대기시간 계산과 Unity 기록기의 입력)."""
 
-    # ---- 학습용 수요 로그 준비 ----
-    demand_log_rows = []  # (pickup_datetime_iso, latitude, longitude) 누적 버퍼
-    # run_date는 위(스폰 매니저 생성 전)에서 이미 정했음 -> 여러 번 돌릴수록 평일/공휴일 다양성 확보
+    def __init__(self, run_date, sim_start_hour):
+        self.run_date, self.sim_start_hour = run_date, sim_start_hour
+        self.depart_time = {}      # person_id -> depart 시각(초)
+        self.pickup_time = {}      # person_id -> 탑승 확인된 시각(초)
+        self.arrived_pids = set()  # 목적지까지 도착 완료(정상 하차)한 person_id
+        self.in_taxi = set()       # 이미 탑승 처리된 person_id (중복 계산 방지)
+        self.onboard = {}          # 지금 택시에 타고 있는 person_id -> taxi id (하차 감지용, 최대 택시 대수만큼만 유지)
+        self.seen_persons = set()
+        self.demand_log_rows = []  # (pickup_datetime_iso, latitude, longitude) — 구 data/raw/simulation_demand_log.csv
 
-    # [Module 2] train.py(pipeline.py 경유)가 읽는 data/sim_logs/demand_log_*.csv 기록기.
-    # 위 demand_log_rows(구 data/raw/simulation_demand_log.csv)와는 별개 경로 — train.py는
-    # 이제 이쪽만 읽으므로 병합 후에는 이 recorder가 실질적인 학습 로그임.
-    # [2026-09-22 날짜 충돌 수정] sim_date를 고정값(기본 2026-09-07)으로 두면 실행마다
-    # 전부 같은 달력 날짜로 기록돼서, aggregate_demands()의 groupby(['time_bucket','h3_index'])가
-    # 서로 다른 실행(run)의 수요를 같은 시간칸으로 합쳐버림 -> 실행 횟수만큼 수요가 부풀려짐.
-    # 위에서 이미 계산해둔 run_date(레거시 로그용 랜덤 과거 날짜, 실행마다 다름)를 그대로 넘겨서
-    # 실행마다 서로 다른 달력 날짜를 쓰게 함 -> 시간칸 충돌 방지 + dayofweek/is_weekend 분산 확보.
-    log_recorder = DemandLogRecorder(
-        sim_start_hour=sim_start_hour, zones=meta.get("zones", {}), sim_date=run_date.isoformat(),
-        spawn_manager=spawn_manager,
-    )
+    def observe(self, now, current_pids, riding):
+        """이번 스텝에 새로 등장한 승객과 새로 탄 승객을 기록. riding = {탑승 중 승객: 택시}."""
+        for pid in current_pids:
+            if pid not in self.seen_persons:
+                self.seen_persons.add(pid)
+                self.depart_time[pid] = now
 
-    vehicle_subscriptions.reset()   # 새 SUMO 실행: 구독 기록 초기화
-    traci.start([sumo_binary, "-c", _sumo_cfg])
+                # 학습 데이터용: 등장 시점의 위치를 위경도로 변환해 기록
+                try:
+                    x, y = traci.person.getPosition(pid)
+                    lon, lat = traci.simulation.convertGeo(x, y)
+                    current_hour = self.sim_start_hour + (now / 3600.0)
+                    pickup_dt = datetime.datetime.combine(
+                        self.run_date, datetime.time(0, 0)
+                    ) + datetime.timedelta(hours=current_hour)
+                    self.demand_log_rows.append((pickup_dt.isoformat(), lat, lon))
+                except Exception:
+                    pass
 
-    step = 0
-    _wall0 = time.time()      # [진단] 실제 경과 시간 측정용
-    _wall_prev = _wall0
-    try:
-        while step < max_steps:
-            traci.simulationStep()
-            now = traci.simulation.getTime()
-            # [성능] 맵 전체 상태 조회는 스텝당 딱 한 번. 하위 매니저/기록기는 이 값을 재사용한다.
-            current_pids = set(traci.person.getIDList())
-            current_vids = set(traci.vehicle.getIDList())
-            idle_taxis = fetch_idle_taxis() if (hungarian_dispatcher or recorder is not None) else None  # RL 단독이면 RL이 1분마다 직접 조회
-            manager.maintain(now, current_vids=current_vids)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
-            pax_manager.maintain(now, current_pids=current_pids)  # 대기시간 초과 승객 소멸 처리
-            if hungarian_dispatcher:
-                dispatched_now = hungarian_dispatcher.maintain(now, idle_taxis=idle_taxis)  # 헝가리안 실시간 배차 (taxi_dispatch_algorithm="hungarian"일 때만)
-                if dispatched_now:  # 방금 배정된 택시는 RL 재배치 후보/기록기의 idle 목록에서 제외
-                    _busy = set(dispatched_now)
-                    idle_taxis = [v for v in idle_taxis if v not in _busy]
-            if forecast_repositioner is not None:
-                forecast_repositioner.maintain(now, idle_taxis=idle_taxis)
-            if rl_maintainer:
-                rl_maintainer.maintain(now, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour,
-                                       current_pids=current_pids, idle_taxis=idle_taxis)  # 추가
+            if pid not in self.in_taxi:
+                vid = riding.get(pid, "")
+                if vid:  # 빈 문자열이 아니면 = 어떤 택시에 탑승함
+                    self.pickup_time[pid] = now
+                    self.in_taxi.add(pid)
+                    self.onboard[pid] = vid
 
-            spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids, current_pids=current_pids)  # 학교/회사/음식점 실시간 생성·소멸
-            log_recorder.step(now, timeout_removed_pids=pax_manager.removed_pids, current_pids=current_pids)  # [Module 2] 호출 로그 기록
+    def detect_arrivals(self, now, current_pids, removed_pids, away_model=None):
+        """탑승했던 사람이 이번 스텝에 더 이상 안 보이면(=목적지 도착해서 SUMO가 자동 제거함) "정상 도착"으로
+        기록. 타임아웃으로 소멸한 사람과 구분하기 위함 (recorder.capture()의 arrived 인자 및 최종 검증용).
+        택시 대수만큼만 확인한다."""
+        for pid in [p for p in self.onboard if p not in current_pids]:
+            vid = self.onboard.pop(pid)
+            if pid in removed_pids:
+                continue
+            self.arrived_pids.add(pid)
+            if away_model is not None:
+                away_model.on_dropoff(now, pid, vid, self.pickup_time.get(pid))
 
-            # 진행 표시: 시뮬레이션 10분마다 한 줄 (suppress_sumo_warnings=true면 이것만 보임)
-            if int(now) % 600 == 0 and now > 0:
-                _hh = int(sim_start_hour + now / 3600); _mm = int((now % 3600) // 60)
-                _w = time.time()
-                print(f"[진행] 시뮬 {_hh:02d}:{_mm:02d} ({now/sim_end_seconds*100:.0f}%) | "
-                      f"호출 누적 {len(log_recorder.records)}건 | 탑승 {len(pickup_time)}명 | "
-                      f"타임아웃 {len(pax_manager.removed_pids)}명 | 택시 {len(current_vids)}대 | "
-                      f"[진단] 살아있는 승객 {len(current_pids)}명 · 제거 보류 {len(pax_manager._reserved_now)}명 | "
-                      f"실시간 +{_w - _wall_prev:.0f}초 (누적 {(_w - _wall0)/60:.1f}분)", flush=True)
-                _wall_prev = _w
 
-            # 이번 스텝에 새로 등장한 person 기록
-            _riding = riding_map(now, current_vids)  # {탑승 중 승객: 택시} - 택시 대수만큼만 TraCI 호출 (승객별 getVehicle 대체)
-            for pid in current_pids:
-                if pid not in seen_persons:
-                    seen_persons.add(pid)
-                    depart_time[pid] = now
+def _print_progress(now, sim_start_hour, sim_end_seconds, log_recorder, tracker, pax_manager,
+                    current_vids, current_pids, wall0, wall_prev):
+    """진행 표시: 시뮬레이션 10분마다 한 줄 (suppress_sumo_warnings=true면 이것만 보임). 반환: 이번 실제 시각"""
+    _hh = int(sim_start_hour + now / 3600); _mm = int((now % 3600) // 60)
+    _w = time.time()
+    print(f"[진행] 시뮬 {_hh:02d}:{_mm:02d} ({now/sim_end_seconds*100:.0f}%) | "
+          f"호출 누적 {len(log_recorder.records)}건 | 탑승 {len(tracker.pickup_time)}명 | "
+          f"타임아웃 {len(pax_manager.removed_pids)}명 | 택시 {len(current_vids)}대 | "
+          f"[진단] 살아있는 승객 {len(current_pids)}명 · 제거 보류 {len(pax_manager._reserved_now)}명 | "
+          f"실시간 +{_w - wall_prev:.0f}초 (누적 {(_w - wall0)/60:.1f}분)", flush=True)
+    return _w
 
-                    # 학습 데이터용: 등장 시점의 위치를 위경도로 변환해 기록
-                    try:
-                        x, y = traci.person.getPosition(pid)
-                        lon, lat = traci.simulation.convertGeo(x, y)
-                        current_hour = sim_start_hour + (now / 3600.0)
-                        pickup_dt = datetime.datetime.combine(
-                            run_date, datetime.time(0, 0)
-                        ) + datetime.timedelta(hours=current_hour)
-                        demand_log_rows.append((pickup_dt.isoformat(), lat, lon))
-                    except Exception:
-                        pass
 
-                if pid not in in_taxi:
-                    vid = _riding.get(pid, "")
-                    if vid:  # 빈 문자열이 아니면 = 어떤 택시에 탑승함
-                        pickup_time[pid] = now
-                        in_taxi.add(pid)
-                        onboard[pid] = vid
+def _save_demand_logs(tracker, log_recorder, meta, spawn_manager, run_date):
+    """학습용 수요 로그 저장 (시뮬레이션 1회당 한 번).
+    write_demand_logs=false: 도구(택시 대수 산정 등)가 학습 로그 폴더를 오염시키지 않게 저장 생략"""
+    _write_logs = bool(CFG.get("write_demand_logs", True))
+    if tracker.demand_log_rows and _write_logs:
+        os.makedirs(os.path.dirname(DEMAND_LOG_PATH), exist_ok=True)
+        file_exists = os.path.exists(DEMAND_LOG_PATH)
+        with open(DEMAND_LOG_PATH, "a", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            if not file_exists:
+                writer.writerow(["pickup_datetime", "latitude", "longitude"])
+            writer.writerows(tracker.demand_log_rows)
+        print(f"[안내] 학습용 수요 로그 {len(tracker.demand_log_rows)}건을 {DEMAND_LOG_PATH}에 남겼습니다.")
 
-            # 탑승했던 사람이 이번 스텝에 더 이상 안 보이면(=목적지 도착해서 SUMO가 자동
-            # 제거함) "정상 도착"으로 기록. 타임아웃으로 소멸한 사람과 구분하기 위함
-            # (recorder.capture()의 arrived 인자 및 최종 검증용, 없어도 측정 결과엔 영향 없음)
-            # 하차 감지: 타고 있던 손님이 이번 스텝에 사라졌으면 정상 도착 (택시 대수만큼만 확인)
-            for pid in [p for p in onboard if p not in current_pids]:
-                vid = onboard.pop(pid)
-                if pid in pax_manager.removed_pids:
-                    continue
-                arrived_pids.add(pid)
-                if away_model is not None:
-                    away_model.on_dropoff(now, pid, vid, pickup_time.get(pid))
+    if log_recorder.records and _write_logs:
+        # 파일명: demand_log_{구역}{전략}_{알고리즘}[공휴일]{yymmdd}.csv  (예: demand_log_강남역patrol_hungarian공휴일261003.csv)
+        # demand_log_ 접두어는 train.py·pipeline.py의 demand_log_*.csv 글롭이 읽도록 유지.
+        _region = re.sub(r'[\\/:*?"<>|\s]+', "", str(CFG.get("region", "")))
+        _strategy = meta.get("taxi_strategy") or "unknown"
+        _algo = meta.get("taxi_dispatch_algorithm") or "greedy"
+        _dtag = "공휴일" if getattr(spawn_manager, "is_holiday", False) else ""  # 공휴일로 돌린 로그는 이름에 표시
+        log_name = f"demand_log_{_region}{_strategy}_{_algo}{_dtag}{run_date.strftime('%y%m%d')}.csv"
+        saved_path = log_recorder.save(filename=log_name)
+        print(f"[안내] Module 2 호출 로그 {len(log_recorder.records)}건을 {saved_path}에 저장했습니다 "
+              f"(train.py가 읽는 실제 로그입니다).")
 
-            if recorder is not None:
 
-                teleport_count += traci.simulation.getStartingTeleportNumber()
-                recorder.capture(
-                    now, depart_time, pickup_time, arrived_pids,
-                    pax_manager.removed_pids, set(), rl_maintainer or forecast_repositioner, teleport_count,
-                    vehicle_ids=current_vids, idle_taxis=idle_taxis, person_ids=current_pids,
-                    is_last=sim_end_seconds is not None and now >= sim_end_seconds,
-                )
+def _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end_seconds,
+               strategy, algorithm, dispatcher, away_model, forecast_repositioner):
+    """대기시간 지표와 실행 정보를 결과 dict로 정리한다.
 
-            if step_hook is not None:
-                step_hook(now, sim_start_hour)
-
-            # 설정한 시간대(sim_end_hour)에 도달하면 승객이 남아있어도 강제 종료.
-            # (승객이 0명 될 때까지 무한정 기다리던 예전 문제 수정 — sim_end_hour가 실제로 적용됨)
-            if sim_end_seconds is not None and now >= sim_end_seconds:
-                break
-
-            # [조기 종료 제거] 승객이 잠깐 0명이어도 중간에 끝내지 않는다.
-            # 시뮬은 sim_end_hour(sim_end_seconds)에 도달할 때까지 끝까지 돈다.
-            step += 1
-    except traci.exceptions.FatalTraCIError as e:
-        # SUMO 프로세스 자체가 죽어서 연결이 끊긴 경우(예: 이미 예약된 승객을
-        # 타임아웃으로 강제 제거하려다 SUMO 내부 상태가 깨지는 등). 이 시점부터는
-        # 이 시뮬레이션을 더 진행할 수 없으므로, 지저분한 스택트레이스로 죽는 대신
-        # 여기서 멈추고 지금까지 쌓인 결과(호출 로그, 대기시간 등)를 그대로 살려서
-        # 아래 결과 계산/저장으로 넘어간다 - 7시간 중 83%까지 온 게 통째로 날아가는
-        # 것보다, 그 지점까지의 부분 결과라도 남기는 게 훨씬 낫다.
-        print(f"[경고] 시뮬레이션이 중간에 끊겼습니다 (SUMO 연결 끊김, step={step}, "
-              f"마지막 정상 시각={now:.0f}초): {e}")
-        print("[경고] 지금까지 쌓인 부분 결과로 계속 진행합니다 (완전한 결과가 아님에 주의).")
-    finally:
-        try:
-            traci.close()
-        except Exception:
-            pass
-
+    규칙: 차에 못 탄 채 wait_timeout이 지나면 소멸(확정). 탑승한 사람은 소멸 기한이 사라진다.
+    소멸이 확정된 승객은 예약 때문에 물리 제거가 늦어져 나중에 태워지더라도 소멸로만 세고,
+    대기시간 표본(waits)에서는 뺀다 (이중 집계 방지)."""
+    depart_time, pickup_time = tracker.depart_time, tracker.pickup_time
     max_penalty_sec = meta.get("passenger_wait_timeout", 500)
-    # 규칙: 차에 못 탄 채 wait_timeout이 지나면 소멸(확정). 탑승한 사람은 소멸 기한이 사라진다.
-    # 소멸이 확정된 승객은 예약 때문에 물리 제거가 늦어져 나중에 태워지더라도 소멸로만 세고,
-    # 대기시간 표본(waits)에서는 뺀다 (이중 집계 방지).
     timeout_pids = pax_manager.removed_pids & set(depart_time)
     waits = []
     for pid, dtime in depart_time.items():
@@ -386,32 +287,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     if overlap:
         print(f"[진단] 소멸 확정 후 뒤늦게 태워진 승객 {len(overlap)}명 (소멸로만 집계, 대기시간 표본에서 제외)")
 
-    # ---- 학습용 수요 로그 저장 (for 루프 밖, 시뮬레이션 1회당 한 번만) ----
-    # write_demand_logs=false: 도구(택시 대수 산정 등)가 학습 로그 폴더를 오염시키지 않게 저장 생략
-    _write_logs = bool(CFG.get("write_demand_logs", True))
-    if demand_log_rows and _write_logs:
-        os.makedirs(os.path.dirname(DEMAND_LOG_PATH), exist_ok=True)
-        file_exists = os.path.exists(DEMAND_LOG_PATH)
-        with open(DEMAND_LOG_PATH, "a", newline="", encoding="utf-8") as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(["pickup_datetime", "latitude", "longitude"])
-            writer.writerows(demand_log_rows)
-        print(f"[안내] 학습용 수요 로그 {len(demand_log_rows)}건을 {DEMAND_LOG_PATH}에 남겼습니다.")
-
-    if log_recorder.records and _write_logs:
-        # 파일명: demand_log_{구역}{전략}_{알고리즘}[공휴일]{yymmdd}.csv  (예: demand_log_강남역patrol_hungarian공휴일261003.csv)
-        # demand_log_ 접두어는 train.py·pipeline.py의 demand_log_*.csv 글롭이 읽도록 유지.
-        _region = re.sub(r'[\\/:*?"<>|\s]+', "", str(CFG.get("region", "")))
-        _strategy = meta.get("taxi_strategy") or "unknown"
-        _algo = meta.get("taxi_dispatch_algorithm") or "greedy"
-        _dtag = "공휴일" if getattr(spawn_manager, "is_holiday", False) else ""  # 공휴일로 돌린 로그는 이름에 표시
-        log_name = f"demand_log_{_region}{_strategy}_{_algo}{_dtag}{run_date.strftime('%y%m%d')}.csv"
-        saved_path = log_recorder.save(filename=log_name)
-        print(f"[안내] Module 2 호출 로그 {len(log_recorder.records)}건을 {saved_path}에 저장했습니다 "
-              f"(train.py가 읽는 실제 로그입니다).")
-
-    result = {
+    return {
         "strategy": strategy,
         "algorithm": algorithm,
         "duration_sec": now,  # 마지막으로 관측된 시뮬레이션 시각(초) = 실제 돈 구간 길이
@@ -445,14 +321,177 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                             if getattr(spawn_manager, "mean_fare_won", None) else None),
         "external_away": away_model.summary() if away_model is not None else None,
         "forecast_reposition": forecast_repositioner.summary() if forecast_repositioner is not None else None,
-        "dispatch_cost": getattr(hungarian_dispatcher, "cost_mode", None),  # 헝가리안만 비용 방식이 있음
-        "dispatch_cost_stats": (dict(hungarian_dispatcher.cost_stats) if hasattr(hungarian_dispatcher, "cost_stats") else None),
+        "dispatch_cost": getattr(dispatcher, "cost_mode", None),  # 헝가리안만 비용 방식이 있음
+        "dispatch_cost_stats": (dict(dispatcher.cost_stats) if hasattr(dispatcher, "cost_stats") else None),
         "waits": waits,
     }
 
+
+# max_steps 기본값을 24시간 전체 스텝(86400초 이상)을 충분히 커버할 수 있도록 확장
+def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
+                     sumo_cfg_path: str = None, meta_path: str = None,
+                     strategy: str = None, algorithm: str = None, recorder=None,
+                     recorder_factory=None, step_hook=None) -> dict:
+    """
+    시뮬레이션을 headless(sumo, GUI 없음)로 끝까지 돌리면서 승객별 대기시간을 측정.
+    택시는 taxi_manager.TaxiFleetManager가 항상 target_count(=num_taxis)만큼 유지함
+    (도착해서 사라진 택시는 즉시 길 끝에서 재스폰).
+    반환: {"avg_wait_sec", "n_measured", "n_unpicked", "demand_fingerprint", ..., "waits": [...]} (_summarize 참고)
+
+    strategy/algorithm: 지정하면 실행용 설정에 반영하고 build_env.py를 다시 돌린 뒤 시작함
+        (export_unity_replay.py처럼 "이 조합으로 새로 지도까지 다시 만들어서 측정해줘"가 필요한
+        호출부용. 안 넘기면 "지금 설정/meta 그대로" 바로 측정함).
+    recorder: module4_dispatch나 외부(export_unity_replay.py의 ReplayRecorder 등)에서 만든
+        기록기. recorder.capture(now, requested, pickup, arrived, removed, failed, forecast,
+        teleports)를 매 스텝 호출하고, 끝나면 recorder.finish(result)를 호출함. 안 넘기면
+        (기본값) 기록 없이 예전과 완전히 동일하게 동작 - 성능/결과에 영향 없음.
+    step_hook: 매 스텝 끝에 step_hook(now, sim_start_hour)를 호출 (GUI 실행의 화면 지연·창 제목 표시용,
+        module1_simulation/run_simulation.py). 안 넘기면 아무 일도 하지 않음.
+
+    흐름: 설정·환경 준비 → 컨트롤러 생성(_create_controllers) → 실행 날짜(_resolve_run_date) → 승객 생성기·
+    예측 재배치 준비 → 스텝 루프(배차·재배치·승객 생성·기록) → 로그 저장(_save_demand_logs) → 결과(_summarize)
+    """
+    if strategy is not None:
+        set_strategy_in_config(strategy)
+    if algorithm is not None:
+        set_dispatch_algorithm_in_config(algorithm)
+    if strategy is not None or algorithm is not None:
+        rebuild_env()
+    if recorder is None and recorder_factory is not None:
+        # 지도(map.json)를 방금 다시 만든 환경 기준으로 만들도록 기록기를 재빌드 이후에 생성
+        recorder = recorder_factory()
+
+    _meta_path = meta_path or META_PATH
+    _sumo_cfg = sumo_cfg_path or SUMO_CFG
+    with open(_meta_path, "r", encoding="utf-8") as f:
+        meta = json.load(f)
+
+    manager, dispatcher, pax_manager, rl_maintainer = _create_controllers(meta, _sumo_cfg)
+
+    sim_end_hour = meta.get("sim_end_hour")
+    sim_start_hour = meta.get("sim_start_hour", 0)
+    if sim_end_hour is None:
+        sim_end_hour = CFG.get("sim_end_hour")  # 실행 중인 설정(MOBILITY_CONFIG 반영)에서 폴백
+        if sim_end_hour is not None:
+            print(f"[안내] runtime_meta.json에 sim_end_hour가 없어 설정에서 읽어왔습니다 ({sim_end_hour}시).")
+
+    run_date, holiday_mode = _resolve_run_date(meta)
+    # RL 재배치가 쓰는 수요예측 모델에도 이번 실행 날짜를 알려줌 (요일·공휴일 피처)
+    if rl_maintainer is not None and hasattr(rl_maintainer, "set_run_date"):
+        rl_maintainer.set_run_date(run_date)
+    print(f"[안내] 이번 실행 날짜: {run_date} ({'공휴일/주말' if is_holiday_date(run_date) else '평일'}, "
+          f"run_date_mode={CFG.get('run_date_mode', 'alternate')})")
+
+    # 학교/회사/음식점(가정 모델) 또는 실측 보정 스케줄로 승객을 생성하는 매니저
+    spawn_manager = PassengerSpawnManager(
+        zones=meta.get("zones", {}),
+        department_edges=meta.get("department_store_edges", []),
+        sim_start_hour=sim_start_hour,
+        sim_end_hour=sim_end_hour,
+        school_pop_base=meta.get("school_pop_base", 400),
+        company_pop_base=meta.get("company_pop_base", 100),
+        seed=meta.get("passenger_seed"),
+        sim_date=run_date.isoformat(),
+        holiday_mode=holiday_mode,
+        meta=meta,
+    )
+
+    # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
+    away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))
+    forecast_repositioner = _create_forecast_repositioner(meta, run_date, spawn_manager, dispatcher,
+                                                          sim_start_hour, _sumo_cfg)
+
+    sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
+    if sim_end_seconds is None:
+        print("[경고] sim_end_hour를 어디서도 찾지 못해 안전상 24시간 분량으로 자동 종료합니다.")
+        sim_end_seconds = 24 * 3600
+    max_steps = max(max_steps, int(sim_end_seconds) + 100)
+
+    # [Module 2] train.py(pipeline.py 경유)가 읽는 data/sim_logs/demand_log_*.csv 기록기 — 실질적인 학습 로그.
+    # [2026-09-22 날짜 충돌 수정] sim_date를 고정값으로 두면 실행마다 같은 달력 날짜로 기록돼서
+    # aggregate_demands()의 groupby가 서로 다른 실행의 수요를 같은 시간칸으로 합쳐버림 -> run_date를 넘겨
+    # 실행마다 서로 다른 달력 날짜를 쓰게 함 (시간칸 충돌 방지 + dayofweek/is_weekend 분산 확보).
+    log_recorder = DemandLogRecorder(
+        sim_start_hour=sim_start_hour, zones=meta.get("zones", {}), sim_date=run_date.isoformat(),
+        spawn_manager=spawn_manager,
+    )
+    tracker = PassengerTracker(run_date, sim_start_hour)
+    teleport_count = 0
+
+    vehicle_subscriptions.reset()   # 새 SUMO 실행: 구독 기록 초기화
+    traci.start([sumo_binary, "-c", _sumo_cfg])
+
+    step = 0
+    now = 0.0                 # 첫 스텝 전에 연결이 끊겨도 결과 정리가 가능하도록
+    _wall0 = time.time()      # [진단] 실제 경과 시간 측정용
+    _wall_prev = _wall0
+    try:
+        while step < max_steps:
+            traci.simulationStep()
+            now = traci.simulation.getTime()
+            # [성능] 맵 전체 상태 조회는 스텝당 딱 한 번. 하위 매니저/기록기는 이 값을 재사용한다.
+            current_pids = set(traci.person.getIDList())
+            current_vids = set(traci.vehicle.getIDList())
+            idle_taxis = fetch_idle_taxis() if (dispatcher or recorder is not None) else None  # RL 단독이면 RL이 1분마다 직접 조회
+            manager.maintain(now, current_vids=current_vids)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
+            pax_manager.maintain(now, current_pids=current_pids)  # 대기시간 초과 승객 소멸 처리
+            if dispatcher:
+                dispatched_now = dispatcher.maintain(now, idle_taxis=idle_taxis)  # 파이썬 배차 (hungarian/custom_*)
+                if dispatched_now:  # 방금 배정된 택시는 RL 재배치 후보/기록기의 idle 목록에서 제외
+                    _busy = set(dispatched_now)
+                    idle_taxis = [v for v in idle_taxis if v not in _busy]
+            if forecast_repositioner is not None:
+                forecast_repositioner.maintain(now, idle_taxis=idle_taxis)
+            if rl_maintainer:
+                rl_maintainer.maintain(now, sim_start_hour=sim_start_hour, sim_end_hour=sim_end_hour,
+                                       current_pids=current_pids, idle_taxis=idle_taxis)
+
+            spawn_manager.maintain(now, timeout_removed_pids=pax_manager.removed_pids, current_pids=current_pids)  # 승객 생성·소멸
+            log_recorder.step(now, timeout_removed_pids=pax_manager.removed_pids, current_pids=current_pids)  # [Module 2] 호출 로그 기록
+
+            if int(now) % 600 == 0 and now > 0:
+                _wall_prev = _print_progress(now, sim_start_hour, sim_end_seconds, log_recorder, tracker, pax_manager,
+                                             current_vids, current_pids, _wall0, _wall_prev)
+
+            # 승객 등장·탑승(riding_map: 택시 대수만큼만 TraCI 호출) → 하차 감지
+            tracker.observe(now, current_pids, riding_map(now, current_vids))
+            tracker.detect_arrivals(now, current_pids, pax_manager.removed_pids, away_model)
+
+            if recorder is not None:
+                teleport_count += traci.simulation.getStartingTeleportNumber()
+                recorder.capture(
+                    now, tracker.depart_time, tracker.pickup_time, tracker.arrived_pids,
+                    pax_manager.removed_pids, set(), rl_maintainer or forecast_repositioner, teleport_count,
+                    vehicle_ids=current_vids, idle_taxis=idle_taxis, person_ids=current_pids,
+                    is_last=sim_end_seconds is not None and now >= sim_end_seconds,
+                )
+
+            if step_hook is not None:
+                step_hook(now, sim_start_hour)
+
+            # 설정한 시간대(sim_end_hour)에 도달하면 승객이 남아있어도 강제 종료.
+            # 승객이 잠깐 0명이어도 중간에 끝내지 않는다 (조기 종료 제거).
+            if sim_end_seconds is not None and now >= sim_end_seconds:
+                break
+            step += 1
+    except traci.exceptions.FatalTraCIError as e:
+        # SUMO 프로세스 자체가 죽어서 연결이 끊긴 경우(GUI 창을 닫았거나, 이미 예약된 승객을 강제 제거하다
+        # SUMO 내부 상태가 깨지는 등). 지저분한 스택트레이스로 죽는 대신 지금까지 쌓인 결과(호출 로그,
+        # 대기시간 등)를 그대로 살려서 아래 결과 계산/저장으로 넘어간다.
+        print(f"[경고] 시뮬레이션이 중간에 끊겼습니다 (SUMO 연결 끊김, step={step}, "
+              f"마지막 정상 시각={now:.0f}초): {e}")
+        print("[경고] 지금까지 쌓인 부분 결과로 계속 진행합니다 (완전한 결과가 아님에 주의).")
+    finally:
+        try:
+            traci.close()
+        except Exception:
+            pass
+
+    result = _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end_seconds,
+                        strategy, algorithm, dispatcher, away_model, forecast_repositioner)
+    _save_demand_logs(tracker, log_recorder, meta, spawn_manager, run_date)
     if recorder is not None:
         recorder.finish(result)
-
     return result
 
 
