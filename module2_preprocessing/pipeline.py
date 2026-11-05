@@ -1,7 +1,7 @@
 """
 [Module 2 / T6] 전처리 파이프라인 단일 진입점.
 
-    호출 로그 CSV(1개 이상) ──▶ 공간 인덱싱(H3/Geohash) ──▶ (셀×5분) 집계·0채움
+    호출 로그 CSV(1개 이상) ──▶ 공간 인덱싱(H3/Geohash) ──▶ (셀×5분) 집계·0채움(로그가 덮는 구간만)
         ──▶ 외부 데이터(날씨) 병합 + 결측 처리 ──▶ 시계열/시간 피처 + t+1~t+6 타겟 ──▶ 피처 테이블
 
 사용 (CLI):
@@ -78,6 +78,64 @@ def _time_range(df: pd.DataFrame):
     return start, df["pickup_datetime"].max()
 
 
+def _file_windows(df: pd.DataFrame) -> pd.DataFrame:
+    """로그 파일별 실제 관측(시뮬) 구간 [start, end]. start 규칙은 _time_range와 같다
+    (request_sec가 있으면 시뮬 시작 시각 = pickup - request_sec의 최솟값), end는 그 파일의 마지막 호출."""
+    d = df[["_source", "pickup_datetime"]].copy()
+    if "request_sec" in df.columns and df["request_sec"].notna().any():
+        d["_start"] = df["pickup_datetime"] - pd.to_timedelta(df["request_sec"].fillna(0), unit="s")
+    else:
+        d["_start"] = df["pickup_datetime"]
+    w = d.groupby("_source").agg(start=("_start", "min"), end=("pickup_datetime", "max"))
+    return w.sort_values(["start", "end"])
+
+
+def log_coverage(df: pd.DataFrame, freq: str, verbose: bool = True) -> list:
+    """[2026-11 공백 인식] 로그들이 실제로 덮는 시간 구간 목록 [(시작 칸, 끝 칸), ...] (freq 칸 경계, 양끝 포함).
+
+    - 파일마다 관측 구간 = 시뮬 시작 ~ 마지막 호출. 실데이터(하루 24시간 파일)는 그날 전체가 된다.
+    - 칸 단위로 겹치거나 바로 이어지는 구간은 하나로 합친다 → 연속된 실데이터는 '전체 기간 1구간'
+      (예전 동작: 전역 시작~끝을 0으로 채움)과 완전히 같다.
+    - 어느 로그도 덮지 않는 시각(실행하지 않은 날, 밤 시간대 등)은 구간에 들어가지 않는다 →
+      aggregate_demands가 그 칸을 '수요 0'으로 만들지 않고, create_features가 그 공백을 넘어 lag/타깃을 잇지 않는다.
+    - 같은 시간대를 여러 파일이 덮으면(같은 날짜 반복 실행) 수요는 지금처럼 합산되고 경고만 출력한다.
+    """
+    step = pd.Timedelta(freq)
+    w = _file_windows(df)
+    # 같은 시간대를 2개 이상 파일이 덮는지 (한 칸 이상 겹칠 때만 — 자정 경계의 초 단위 걸침은 무시)
+    groups, cur, cur_end = [], [], None
+    for name, r in w.iterrows():
+        if cur and min(r["end"], cur_end) - r["start"] > step:
+            cur.append(name); cur_end = max(cur_end, r["end"])
+        else:
+            if len(cur) > 1:
+                groups.append(cur)
+            cur, cur_end = [name], r["end"]
+    if len(cur) > 1:
+        groups.append(cur)
+    if groups:
+        print(f"[경고] 같은 시간대를 여러 로그가 덮는 묶음 {len(groups)}개 — 그 칸의 수요는 합산됩니다 "
+              f"(같은 날짜를 여러 번 실행한 로그. log_selection.same_date_groups 참고):")
+        for names in groups[:10]:
+            print(f"    {w.loc[names[0], 'start']:%Y-%m-%d}: {', '.join(names)}")
+        if len(groups) > 10:
+            print(f"    ... 외 {len(groups) - 10}개 묶음")
+
+    spans = []
+    for s, e in zip(w["start"].dt.floor(freq), w["end"].dt.floor(freq)):
+        if spans and s <= spans[-1][1] + step:        # 겹치거나 바로 다음 칸 → 이어 붙임
+            spans[-1][1] = max(spans[-1][1], e)
+        else:
+            spans.append([s, e])
+    spans = [(s, e) for s, e in spans]
+    if verbose and len(spans) > 1:
+        covered = sum(int((e - s) / step) + 1 for s, e in spans)
+        total = int((spans[-1][1] - spans[0][0]) / step) + 1
+        print(f"[관측 구간] 로그가 덮는 연속 구간 {len(spans)}개, {covered:,}칸 / 전체 기간 {total:,}칸 "
+              f"— 나머지 {total - covered:,}칸은 관측 없음(0 수요로 채우지 않음, lag·타깃이 공백을 넘지 않음)")
+    return spans
+
+
 def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizons: int = None,
                         weather_path: str = None, h3_resolution: int = None, dropna: bool = True,
                         verbose: bool = True, max_missing_ratio: float = None, all_cells=None,
@@ -86,7 +144,9 @@ def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizo
     spatial_col: "h3_index"(기본, H3 셀) 또는 "category"(POI 구역 — RL 선배치용 카테고리 수요 모델,
     module2_preprocessing.category_indexing으로 도로→구역 매핑). 이후 집계·날씨·피처 단계는 같다."""
     df = load_logs(log_paths)
-    start, end = _time_range(df)
+    prep = TimeSeriesPreprocessor(freq=freq, max_lag=max_lag, horizons=horizons)
+    # 로그가 실제로 덮는 구간만 관측으로 본다 (실행 안 한 날·시간은 0 수요가 아님)
+    coverage = log_coverage(df, prep.freq, verbose=verbose)
 
     # 1) 공간 인덱싱
     if spatial_col == "category":
@@ -95,9 +155,8 @@ def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizo
     else:
         df = SpatialIndexer(h3_resolution=h3_resolution).process_dataframe(df, verbose=verbose)
 
-    # 2) (공간 단위 × 칸) 집계 + 0 채움
-    prep = TimeSeriesPreprocessor(freq=freq, max_lag=max_lag, horizons=horizons)
-    agg = prep.aggregate_demands(df, spatial_col=spatial_col, start=start, end=end, all_cells=all_cells)
+    # 2) (공간 단위 × 칸) 집계 + 0 채움 (관측 구간 안에서만)
+    agg = prep.aggregate_demands(df, spatial_col=spatial_col, all_cells=all_cells, coverage=coverage)
 
     # 3) 외부 데이터 (5분 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
     # 학습 경로: 날씨 결측률 상한 검사 (Data Spec 5장 5% 미만). config weather_missing_max_ratio 로 조절, None이면 끔

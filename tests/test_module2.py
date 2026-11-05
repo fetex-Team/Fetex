@@ -327,10 +327,41 @@ def test_pipeline(tmp="/tmp/m2_test"):
           if len(wk) else False, "동일 패턴을 7일 뒤로 복사했으므로 same_time_last_week == demand 여야 함")
 
 
+# ============ T6b 공백 인식 (떨어진 날짜의 로그 여러 개) ============
+def test_gap_aware(tmp="/tmp/m2_test_gap"):
+    os.makedirs(tmp, exist_ok=True)
+    for f in os.listdir(tmp):
+        os.remove(os.path.join(tmp, f))
+    df, A, B, base = _toy_log()
+    df["request_sec"] = (df["pickup_datetime"] - base).dt.total_seconds()
+    df.to_csv(os.path.join(tmp, "demand_log_day1.csv"), index=False)
+    d2 = df.copy(); d2["pickup_datetime"] += pd.Timedelta(days=7)
+    d2.to_csv(os.path.join(tmp, "demand_log_day8.csv"), index=False)
+    kw = dict(freq="5min", max_lag=3, horizons=6, weather_path="/nonexistent.csv", verbose=False)
+    raw = build_feature_table([os.path.join(tmp, "demand_log_*.csv")], dropna=False, **kw)
+    t = raw["time_bucket"]
+    day1_end, day8_start = base + pd.Timedelta(minutes=5 * 39), base + pd.Timedelta(days=7)
+    check("T6b 관측 밖(두 로그 사이) 칸은 행이 없음", not ((t > day1_end) & (t < day8_start)).any())
+    check("T6b 관측 칸 수 = 로그 2개 구간 합", t.nunique() == 80, f"{t.nunique()}")
+    first8 = raw[t == day8_start]
+    check("T6b 둘째 구간 첫 칸의 lag_1은 공백을 넘지 않음(NaN)", first8["lag_1"].isna().all())
+    last1 = raw[t == day1_end]
+    check("T6b 첫 구간 마지막 칸의 타깃은 공백을 넘지 않음(NaN)", last1["y_h1"].isna().all())
+    wk = raw[t >= day8_start]
+    check("T6b 지난주 동일칸은 시각 기준으로 찾음(관측된 1주 전 값)",
+          (wk["has_last_week"] == 1).all() and (wk["same_time_last_week"].values == wk["demand"].values).all())
+    check("T6b 어제 동일칸은 관측 밖 → 플래그 0", (raw["has_yesterday"] == 0).all())
+    feat = build_feature_table([os.path.join(tmp, "demand_log_*.csv")], **kw)
+    check("T6b dropna 후 남은 행은 모두 관측 구간 안", not ((feat.time_bucket > day1_end) & (feat.time_bucket < day8_start)).any()
+          and feat["lag_3"].notna().all() and feat["y_h6"].notna().all())
+    failed = [n for n, ok, _ in RESULTS if n.startswith("T6b") and not ok]
+    assert not failed, failed
+
+
 if __name__ == "__main__":
     if MOCKED:
         print(f"[안내] 대체 구현 사용: {', '.join(MOCKED)} — 맥 venv에서는 실제 라이브러리로 실행됨\n")
-    for t in (test_spatial, test_time_features, test_time_series, test_external, test_quality, test_strict_external, test_pipeline):
+    for t in (test_spatial, test_time_features, test_time_series, test_external, test_quality, test_strict_external, test_pipeline, test_gap_aware):
         try:
             t()
         except Exception as e:

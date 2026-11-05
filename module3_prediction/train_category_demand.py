@@ -11,13 +11,17 @@ create_features가 원래 spatial_col을 인자로 받게 설계돼 있어서 h3
 
 실행: python module3_prediction/train_category_demand.py
 출력: saved_models/category_demand_models.pkl
-      {"models": {category: XGBRegressor}, "feature_cols": [...], "category_list": [...]}
+      {"models": {category: XGBRegressor}, "feature_cols": [...], "category_list": [...],
+       "metrics": {category: {"xgb"/"lag_1"/"slot_mean": {RMSE, MAE, MAPE, WAPE}}}, "test_cut": "..."}
+      (lag_1 = 나이브 직전 칸, slot_mean = 학습 구간 같은 시각 평균 — 모델과 비교할 기준 모델)
+      학습 데이터의 날짜 공백(실행 안 한 날·시간)은 공용 파이프라인(log_coverage)이 관측 밖으로 처리한다.
 """
 import glob
 import os
 import sys
 
 import joblib
+import numpy as np
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -28,6 +32,7 @@ from module2_preprocessing.log_selection import selected_log_paths  # config_gui
 from module2_preprocessing.time_series_prep import time_based_split
 from module2_preprocessing.feature_cache import load_or_build_feature_table
 from module3_prediction.xgb_factory import build_xgboost_model
+from module3_prediction.evaluate import calculate_metrics
 
 # [2026-09-21 중복 집계 수정] train.py와 같은 이유로 레거시 소스는 더 이상 합치지 않음.
 #   data/sim_logs/demand_log_*.csv        : measure_wait_time.py / 병렬 워커가 남기는 새 로그 (사용)
@@ -76,7 +81,7 @@ def main(log_glob: str = None, out_path: str = OUT_PATH, cache: bool = True):
     train_all, _val, test_all, cuts = time_based_split(feature_df, CFG["test_size"])
     print(f"[분할] 시험 구간 {cuts['test_cut']} 이후")
 
-    models = {}
+    models, metrics_by_category = {}, {}
     for category in CATEGORY_LIST:
         train_df = train_all[train_all["category"] == category]
         test_df = test_all[test_all["category"] == category]
@@ -89,13 +94,34 @@ def main(log_glob: str = None, out_path: str = OUT_PATH, cache: bool = True):
         X_test, y_test = test_df[feature_cols].fillna(0), test_df[TARGET].fillna(0)
         model = build_xgboost_model()
         model.fit(X_train, y_train)
-        rmse = ((model.predict(X_test) - y_test) ** 2).mean() ** 0.5
-        print(f"[{category}] Train {len(X_train)} / Test {len(X_test)} | RMSE {rmse:.3f}")
         models[category] = model
+        if X_test.empty:
+            print(f"[{category}] Train {len(X_train)} / Test 0 — 시험 구간 행이 없어 평가 생략")
+            continue
+
+        # [KJS 이식] 기준 모델과 같은 시험 구간에서 비교 — 모델이 단순 규칙보다 나은지 확인
+        #   lag_1    : 나이브(직전 칸 값을 그대로) — module3_prediction/evaluate.py 기준 모델과 같은 정의
+        #   slot_mean: 학습 구간의 같은 시각(minute_of_day) 평균 타깃 (그 시각이 학습에 없으면 학습 전체 평균)
+        slot_mean = train_df.groupby("minute_of_day")[TARGET].mean()
+        preds = {
+            "xgb": np.maximum(0.0, model.predict(X_test)),
+            "lag_1": X_test["lag_1"].to_numpy(dtype=float),
+            "slot_mean": X_test["minute_of_day"].map(slot_mean).fillna(float(y_train.mean())).to_numpy(dtype=float),
+        }
+        cat_metrics = {name: calculate_metrics(y_test.to_numpy(dtype=float), p) for name, p in preds.items()}
+        metrics_by_category[category] = cat_metrics
+        print(f"[{category}] Train {len(X_train)} / Test {len(X_test)}")
+        for name, m in cat_metrics.items():
+            wape = "-" if m["WAPE (%)"] is None else f"{m['WAPE (%)']:.2f}%"
+            print(f"    {name:<9} RMSE {m['RMSE']:.4f} | MAE {m['MAE']:.4f} | WAPE {wape}")
+        if cat_metrics["xgb"]["MAE"] >= min(cat_metrics["lag_1"]["MAE"], cat_metrics["slot_mean"]["MAE"]):
+            print(f"[경고] '{category}' XGBoost가 MAE 기준으로 기준 모델(lag_1/slot_mean)을 이기지 못했습니다. RL 재학습 전 검토하세요.")
 
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    # metrics: {category: {"xgb"|"lag_1"|"slot_mean": {RMSE, MAE, MAPE (%), WAPE (%)}}} — 시험 구간 기준
     joblib.dump({"models": models, "feature_cols": feature_cols, "target": TARGET,
-                 "category_list": list(models.keys())}, out_path)
+                 "category_list": list(models.keys()), "metrics": metrics_by_category,
+                 "test_cut": str(cuts["test_cut"])}, out_path)
     print(f"[완료] {out_path} 에 카테고리별 모델 {len(models)}개 저장")
 
 
