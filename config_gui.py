@@ -15,6 +15,20 @@ from config_loader import (DEFAULT_CONFIG, write_run_config, read_user_config,
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
+
+
+def _project_python():
+    """하위 스크립트를 실행할 파이썬. 프로젝트 가상환경(.venv / venv)이 있으면 그것을 쓴다.
+    GUI를 시스템 파이썬으로 켜도 sumolib·traci·xgboost 등이 설치된 환경에서 실행되게 하기 위함."""
+    for name in (".venv", "venv"):
+        exe = os.path.join(ROOT, name, "Scripts" if os.name == "nt" else "bin",
+                           "python.exe" if os.name == "nt" else "python")
+        if os.path.exists(exe):
+            return exe
+    return sys.executable
+
+
+PYTHON = _project_python()
 FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
 STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
 
@@ -757,13 +771,13 @@ class ConfigGUI:
             if env_extra:
                 env.update({str(k): str(v) for k, v in env_extra.items()})
             if blocking:
-                return subprocess.run([sys.executable, path, *args], cwd=ROOT, env=env, check=True)
+                return subprocess.run([PYTHON, path, *args], cwd=ROOT, env=env, check=True)
             if os.name == "nt":
-                inner_cmd = subprocess.list2cmdline([sys.executable, path, *args])
+                inner_cmd = subprocess.list2cmdline([PYTHON, path, *args])
                 full_cmd = f'cmd /k call {inner_cmd}'
                 subprocess.Popen(full_cmd, cwd=ROOT, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE)
                 return True
-            subprocess.Popen([sys.executable, path, *args], cwd=ROOT, env=env)
+            subprocess.Popen([PYTHON, path, *args], cwd=ROOT, env=env)
             return True
         except Exception as e:
             messagebox.showerror("실행 오류", str(e))
@@ -813,7 +827,7 @@ class ConfigGUI:
             os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
             with open(os.path.join(ROOT, "logs", "train_v2.log"), "w", encoding="utf-8") as logf:
                 proc = subprocess.Popen(
-                    [sys.executable, os.path.join(ROOT, "scripts", "train_dispatch_model.py"), calls, "--external", ext],
+                    [PYTHON, os.path.join(ROOT, "scripts", "train_dispatch_model.py"), calls, "--external", ext],
                     cwd=ROOT, env=self._env(), stdout=logf, stderr=subprocess.STDOUT,
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
@@ -826,7 +840,7 @@ class ConfigGUI:
         다르면 경고 문구를, 같거나 비교 불가면 None을 반환."""
         try:
             r = subprocess.run(
-                [sys.executable, os.path.join(ROOT, "scripts", "convert_v2_to_category.py"), "--check-cells"],
+                [PYTHON, os.path.join(ROOT, "scripts", "convert_v2_to_category.py"), "--check-cells"],
                 cwd=ROOT, env=self._env(), capture_output=True, text=True, encoding="utf-8",
             )
         except Exception:
