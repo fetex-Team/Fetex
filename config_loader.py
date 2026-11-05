@@ -10,7 +10,7 @@ CONFIG_PATH = os.environ.get("MOBILITY_CONFIG", os.path.join(ROOT, "config.json"
 USER_CONFIG_PATH = os.path.join(ROOT, "config.json")
 PRESET_DIR = os.path.join(ROOT, "presets")
 DEFAULT_PRESET_DIR = os.path.join(PRESET_DIR, "default")   # 팀 공유 프리셋 (git 포함)
-USER_PRESET_DIR = os.path.join(PRESET_DIR, "user")         # 개인 프리셋 (git 제외)
+USER_PRESET_DIR = os.path.join(PRESET_DIR, "user")         # 개인 프리셋 (현재 git 포함)
 DEFAULT_PRESET_PATH = os.path.join(DEFAULT_PRESET_DIR, "기본.json")
 
 

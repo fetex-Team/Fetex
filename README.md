@@ -61,7 +61,7 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 - `python config_gui.py` — **기본** 탭(프리셋 버튼 + 자주 쓰는 값)과 **세부 설정** 탭(섹션별 전체 설정, 항목에 마우스를 올리면 설명).
 - 실행 버튼(플레이·학습·A/B·Unity)은 지금 화면 값으로 실행하고 `results/run_configs/<종류>_<시각>.json`에 남긴다. `config.json`은 그대로.
 - **[적용하기]** 를 눌러야 내 설정 `config.json`이 바뀐다 (개인 파일, git 제외).
-- 세부 설정의 **현재 화면을 프리셋으로 저장** → `presets/user/`(개인, git 제외)에 저장되고 기본 탭 버튼(★)에 나타난다.
+- 세부 설정의 **현재 화면을 프리셋으로 저장** → `presets/user/`(개인 프리셋, 지금은 git에 올림)에 저장되고 기본 탭 버튼(★)에 나타난다.
 - 팀 기본값을 바꾸려면 `presets/default/기본.json`을 고쳐 커밋한다.
 
 ## 주요 설정
@@ -110,7 +110,8 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 main.py / config_gui.py                 실행 진입점 (시뮬레이션 / 설정 GUI)
 config_loader.py                        설정 로더 (DEFAULT_CONFIG = 코드 기본값)
 presets/default/                        팀 공유 프리셋 (기본.json = 팀 기본 설정, 시나리오 4개) — git 포함
-presets/user/ · config.json             개인 프리셋 · 내 설정 — git 제외. config.json이 없으면 기본.json으로 시작
+presets/user/                           개인 프리셋 — git 포함(당분간)
+config.json                             내 설정 — git 제외. 없으면 기본.json으로 시작
 measure_wait_time.py                    공용 실행·측정 루프 (여러 도구가 import)
 module1_simulation/    디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model),
                        지도·날씨·공휴일(geo_lookup, real_map_fetch, weather_*, holiday_utils), 재현성·TraCI 구독 도우미

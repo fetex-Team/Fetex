@@ -488,7 +488,7 @@ class ConfigGUI:
 
     def _build_detail_tab(self, parent):
         inner = _scroll_area(parent)
-        top = ttk.LabelFrame(inner, text="개인 프리셋 (presets/user/ — 나만 쓰고 git에 올라가지 않음)", padding=8)
+        top = ttk.LabelFrame(inner, text="개인 프리셋 (presets/user/)", padding=8)
         top.pack(fill="x", pady=(0, 6))
         b = ttk.Button(top, text="현재 화면을 프리셋으로 저장", command=self.save_preset)
         b.pack(side="left", padx=3)
@@ -732,7 +732,7 @@ class ConfigGUI:
         self.status.config(text=f"프리셋 '{name}' 적용 (저장하려면 [적용하기], 그대로 실행해도 됨)")
 
     def save_preset(self):
-        """지금 화면 값을 개인 프리셋(presets/user/)으로 저장 — git에 올라가지 않음."""
+        """지금 화면 값을 개인 프리셋(presets/user/)으로 저장."""
         name = simpledialog.askstring("개인 프리셋 저장", "프리셋 이름:")
         if not name:
             return
