@@ -10,7 +10,10 @@ CONFIG_PATH = os.environ.get("MOBILITY_CONFIG", os.path.join(ROOT, "config.json"
 DEFAULT_CONFIG = {
     # Module 1 - simulation / map
     "grid_x": 3, "grid_y": 3, "grid_length": 200,
-    "num_normal_cars": 20, "num_taxis": 20, "num_auto_cars": 1,
+    "num_normal_cars": 20, "num_auto_cars": 1,
+    # 택시 대수: 강남역 구역 평균 빈 택시 약 61대 (tools/estimate_taxi_supply.py, 리틀의 법칙:
+    # 국토교통부 노드링크별 평균택시통행량 2025 x TOPIS 9~23시 속도, 서울 2025년 9~10월 공차 비율 48.3%)
+    "num_taxis": 61,
     "num_obstacles": 2, "num_passengers": 1000,
     "region": "강남역", "use_real_map": True,
     # 지도 현실화 (real_map_fetch.py). 비교 실험용으로만 예전 값("open", "osm_default")을 쓴다.
@@ -19,7 +22,10 @@ DEFAULT_CONFIG = {
     "signal_plans": "real",             # 경찰청 신호 운영계획 적용 (data/external/signal_plans_gangnam.json). "guess" = 지도 기본 신호
     "speed_profile": "topis",           # 시간대별 실측 속도 보정 (data/external/speed_profile_gangnam.json). "free_flow" = 제한속도 그대로
     "sim_start_hour": 9, "sim_end_hour": 23,
-    "passenger_wait_timeout": 500,
+    # 손님이 배차를 기다리다 포기하는 시간(초). 앱 호출 이용자의 98.2%가 10분 안에 탑승
+    # (서울연구원 「2024년 택시 이용 시민만족도 조사」, 뉴데일리 2026-08-05 보도) -> 10분은 기다린다고 본다.
+    # 포기 시간 자체를 직접 잰 공개 자료는 없다 (docs/design/08_evidence_register.md). 예전 값 500.
+    "passenger_wait_timeout": 600,
     "passenger_seed": None,
     # build_env.py가 CFG['passenger_mode']로 직접 인덱싱하므로(.get() 아님) 기본값 필수 —
     # config.json에 이 키가 없으면 KeyError로 죽는 문제 방지.
@@ -30,7 +36,11 @@ DEFAULT_CONFIG = {
     # 실측 호출량 중 카카오 T 플랫폼이 배차하는 비율 = 앱 호출 비율 약 80%(서울시, 2024 시민만족도 조사)
     #   x 카카오 일반호출 점유율 96%(공정위, 2022) ≈ 0.77. 영역 전체 택시 수요를 보려면 1.0.
     "real_demand_scale": 0.77,
-    "real_internal_trip_km": 1.0,    # 이 거리보다 짧은 운행은 영역 안에서 하차 (나머지는 경계 도로로 나감)
+    "real_internal_trip_km": 1.0,
+    # 요일 배율: "seoul_2022_01" = 서울 교통이용 통계보고서 2022년 1월 p.2 (2025년판엔 요일 표 없음) / "flat" = 민감도 분석용
+    "real_dow_factors": "seoul_2022_01",
+    # 칸(500m) 안 승차 위치: "living_pop_250m" = 시각별 250m 격자 실측 생활인구 비례(서울 열린데이터광장 OA-22784) / "poi" = 예전 가정 배율
+    "real_spatial_weights": "living_pop_250m",    # 이 거리보다 짧은 운행은 영역 안에서 하차 (나머지는 경계 도로로 나감)
     # 그날의 실측 시간별 날씨(data/external/weather_<지역>_*.csv)가 있으면 수요에 반영 (없으면 실시간 '날씨적용')
     "use_historical_weather": True,
     "weather_precip_coef_per_mm": 0.0199,   # 강수 1mm당 호출 +1.99% (docs/weather_coefficient.md)

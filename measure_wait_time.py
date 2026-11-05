@@ -297,6 +297,19 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             # [성능] 맵 전체 상태 조회는 스텝당 딱 한 번. 하위 매니저/기록기는 이 값을 재사용한다.
             current_pids = set(traci.person.getIDList())
             current_vids = set(traci.vehicle.getIDList())
+            # [하차 감지] 배차보다 먼저: 이번 스텝에 내린 택시가 같은 스텝에 다음 배차를 받기 전에
+            # 복귀 지연 시나리오(taxi_external_away)가 영역 밖으로 나간 택시를 뺄 수 있게 한다.
+            # (예전에는 배차 뒤에 감지해서, 택시가 부족한 날엔 거의 모든 택시가 '이미 배차됨'으로 빠지지 않았다)
+            for pid in [p for p in onboard if p not in current_pids]:
+                vid = onboard.pop(pid)
+                if pid in pax_manager.removed_pids:
+                    continue
+                arrived_pids.add(pid)
+                if away_model is not None:
+                    away_model.on_dropoff(now, pid, vid, pickup_time.get(pid))
+            if away_model is not None and away_model.removed_this_step:
+                current_vids -= away_model.removed_this_step
+                away_model.removed_this_step = set()
             idle_taxis = fetch_idle_taxis() if (hungarian_dispatcher or recorder is not None) else None  # RL 단독이면 RL이 1분마다 직접 조회
             manager.maintain(now, current_vids=current_vids)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
             pax_manager.maintain(now, current_pids=current_pids)  # 대기시간 초과 승객 소멸 처리
@@ -355,13 +368,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             # 제거함) "정상 도착"으로 기록. 타임아웃으로 소멸한 사람과 구분하기 위함
             # (recorder.capture()의 arrived 인자 및 최종 검증용, 없어도 측정 결과엔 영향 없음)
             # 하차 감지: 타고 있던 손님이 이번 스텝에 사라졌으면 정상 도착 (택시 대수만큼만 확인)
-            for pid in [p for p in onboard if p not in current_pids]:
-                vid = onboard.pop(pid)
-                if pid in pax_manager.removed_pids:
-                    continue
-                arrived_pids.add(pid)
-                if away_model is not None:
-                    away_model.on_dropoff(now, pid, vid, pickup_time.get(pid))
+            # (하차 감지는 배차보다 먼저 한다 — 루프 위쪽, [하차 감지] 참고)
 
             if recorder is not None:
 

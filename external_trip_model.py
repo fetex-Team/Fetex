@@ -28,6 +28,7 @@ class ExternalTripAwayModel:
         self.rng = random.Random(f"fetex-away|{seed}")
         self.n_external = self.n_replaced = self.n_away = self.n_busy = 0
         self.total_away_sec = 0.0
+        self.removed_this_step = set()     # 메인 루프가 이번 스텝 차량 목록에서 뺀다
 
     @classmethod
     def from_config(cls, cfg, manager, spawn_manager, seed=None):
@@ -53,12 +54,13 @@ class ExternalTripAwayModel:
         except traci.exceptions.TraCIException:
             return
         if state not in ("0", ""):
-            self.n_busy += 1          # 내려 주자마자 다음 배차를 받은 택시는 빼지 않는다
+            self.n_busy += 1          # 이미 다음 배차를 받은 택시는 빼지 않는다 (하차 감지가 배차보다 먼저라 드묾)
             return
         ride_sec = max(0.0, now - picked_at) if picked_at is not None else 0.0
         mean_min = self.spawn.cell_mean_time_min(call.cell)
         away = max(60.0, self.return_factor * mean_min * 60.0 - ride_sec)
         self.manager.send_away(vid, now + away)
+        self.removed_this_step.add(vid)
         self.n_away += 1
         self.total_away_sec += away
 
