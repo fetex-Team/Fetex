@@ -56,6 +56,9 @@ desktop.ini
 results/run_configs/
 results/run_status/
 
+# 전처리 저장본 (로그·설정이 같으면 학습이 다시 씀, 언제든 지워도 됨)
+data/features/
+
 # Module 3 결과: 지표·그래프는 올리고, 큰 예측값 파일과 비교 실험 모델은 제외
 results/module3/**/predictions.csv.gz
 results/module3/**/models/

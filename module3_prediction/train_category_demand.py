@@ -26,7 +26,7 @@ if PROJECT_ROOT not in sys.path:
 from config_loader import CFG
 from module2_preprocessing.log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
 from module2_preprocessing.time_series_prep import time_based_split
-from module2_preprocessing.pipeline import build_feature_table
+from module2_preprocessing.feature_cache import load_or_build_feature_table
 from module3_prediction.xgb_factory import build_xgboost_model
 
 # [2026-09-21 중복 집계 수정] train.py와 같은 이유로 레거시 소스는 더 이상 합치지 않음.
@@ -45,7 +45,7 @@ OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pk
 CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]
 
 
-def main(log_glob: str = None, out_path: str = OUT_PATH):
+def main(log_glob: str = None, out_path: str = OUT_PATH, cache: bool = True):
     # 학습 로그: --logs 글롭, 없으면 config_gui '학습 로그 선택'(data/sim_logs)
     paths = sorted(glob.glob(log_glob)) if log_glob else selected_log_paths(DEMAND_LOG_DIR)
     if not paths:
@@ -55,8 +55,9 @@ def main(log_glob: str = None, out_path: str = OUT_PATH):
 
     # H3 모델(train.py·demand_v2)과 같은 공용 파이프라인을 카테고리 단위로 실행
     # (로그 검증, 시뮬 시작 시각, 칸 집계 후 날씨 병합 → 날씨 피처가 학습에 들어감)
-    feature_df = build_feature_table(paths, max_lag=CFG["max_lag"], spatial_col="category",
-                                     all_cells=CATEGORY_LIST)
+    # 같은 로그·설정·지도 구역이면 data/features/의 전처리 저장본을 불러온다
+    feature_df = load_or_build_feature_table(paths, cache=cache, max_lag=CFG["max_lag"], spatial_col="category",
+                                             all_cells=CATEGORY_LIST)
 
     if feature_df.empty:
         print("[에러] lag/rolling 생성 후 데이터가 하나도 안 남았습니다. 로그를 더 쌓아주세요.")
@@ -103,5 +104,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 config_gui에서 고른 data/sim_logs 로그)")
     ap.add_argument("--out", default=OUT_PATH, help="저장 경로 (기본 saved_models/category_demand_models.pkl)")
+    ap.add_argument("--no-cache", action="store_true", help="전처리 저장본(data/features/)을 쓰지 않고 새로 전처리")
     a = ap.parse_args()
-    main(a.logs, a.out)
+    main(a.logs, a.out, cache=not a.no_cache)

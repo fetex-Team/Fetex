@@ -37,7 +37,7 @@ import pandas as pd
 
 from config_loader import CFG
 from module2_preprocessing.log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
-from module2_preprocessing.pipeline import build_feature_table
+from module2_preprocessing.feature_cache import load_or_build_feature_table
 from module2_preprocessing.time_series_prep import time_based_split
 from module3_prediction.xgb_factory import build_xgboost_model
 # torch는 CNN-LSTM 단계에서만 불러온다. 먼저 올라와 있으면 xgb_factory가 XGBoost를 단일 스레드로 돌려 튜닝이 느려진다.
@@ -49,8 +49,9 @@ MIN_RECOMMENDED_ROWS = 200
 
 
 # ---------------------------------------------------------------- 데이터
-def load_feature_table(log_path=None, freq=None, max_lag=None):
+def load_feature_table(log_path=None, freq=None, max_lag=None, cache=True):
     """Module 2 피처 테이블. log_path 생략 시 data/sim_logs의 '학습 로그 선택' 로그.
+    같은 로그·설정이면 data/features/의 전처리 저장본을 불러온다 (cache=False면 새로 만듦).
     반환: feature_df(time_bucket·h3_index·피처·타깃, attrs['freq']), feature_cols, target_cols"""
     if log_path:
         logs = [log_path]
@@ -60,7 +61,7 @@ def load_feature_table(log_path=None, freq=None, max_lag=None):
             raise FileNotFoundError(f"{DEMAND_LOG_DIR}에 수요 로그가 없습니다. --logs로 로그를 지정하거나 "
                                     f"python measure_wait_time.py로 로그를 먼저 만드세요.")
         print(f"[안내] 로그 {len(logs)}개를 학습 데이터로 사용합니다.")
-    feature_df = build_feature_table(logs, freq=freq, max_lag=max_lag)
+    feature_df = load_or_build_feature_table(logs, cache=cache, freq=freq, max_lag=max_lag)
     if len(feature_df) == 0:
         raise ValueError("lag/rolling 생성 후 남은 행이 없습니다. 로그 기간이 너무 짧습니다.")
     if len(feature_df) < MIN_RECOMMENDED_ROWS:
@@ -197,12 +198,12 @@ def predict_cnn(model, X_seq):
 
 
 # ---------------------------------------------------------------- 전체 실행
-def run(log_path=None, freq=None, out_dir=None, report_dir=None, quick=False):
+def run(log_path=None, freq=None, out_dir=None, report_dir=None, quick=False, cache=True):
     from sklearn.preprocessing import StandardScaler
     from module3_prediction.evaluate import evaluate_predictions
 
     freq = freq or CFG["freq"]
-    feature_df, feature_cols, target_cols = load_feature_table(log_path, freq=freq)
+    feature_df, feature_cols, target_cols = load_feature_table(log_path, freq=freq, cache=cache)
     train_df, val_df, test_df, cuts = split_by_time(feature_df)
     print(f"[분할] 학습 {len(train_df):,}행 / 검증 {len(val_df):,}행 (검증 시작 {cuts['val_cut']}) / "
           f"시험 {len(test_df):,}행 (시험 시작 {cuts['test_cut']}) | 셀 {feature_df.h3_index.nunique()}개 · "
@@ -259,5 +260,6 @@ if __name__ == "__main__":
     ap.add_argument("--out-dir", default=None, help="모델 저장 폴더 (기본: 설정 freq면 saved_models/, 아니면 결과 폴더)")
     ap.add_argument("--report-dir", default=None, help="지표·그래프 폴더 (기본: results/module3/<freq>/)")
     ap.add_argument("--quick", action="store_true", help="작은 탐색·짧은 학습으로 동작만 확인 (모델은 saved_models에 저장 안 함)")
+    ap.add_argument("--no-cache", action="store_true", help="전처리 저장본(data/features/)을 쓰지 않고 새로 전처리")
     a = ap.parse_args()
-    run(a.logs, a.freq, a.out_dir, a.report_dir, a.quick)
+    run(a.logs, a.freq, a.out_dir, a.report_dir, a.quick, cache=not a.no_cache)
