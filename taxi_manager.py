@@ -57,6 +57,15 @@ class TaxiFleetManager:
         self.lock_initial = bool(CFG.get("taxi_lock_initial_count", False))
         self._init_reported = False
         self._pending_cache = (None, None)
+        # 막다른 길(들어가면 주 도로망으로 못 돌아오는 도로) 회피
+        self.avoid_traps = bool(CFG.get("taxi_avoid_dead_ends", True))
+        self._trap_edges = set()
+        self._trap_built = False
+        # 위치 기반 stuck 감지: {vid: (edge, first_seen_sec)}
+        # sumo_time_to_teleport보다 짧게 잡아서 텔레포트 전에 선제 재경로
+        self._pos_track = {}
+        self.stuck_reroute_sec = float(CFG.get("taxi_stuck_reroute_sec",
+                                               max(60.0, float(CFG.get("sumo_time_to_teleport", 120)) * 0.7)))
 
     def _current_hour(self, now_seconds: float) -> float:
         return self.sim_start_hour + (now_seconds / 3600.0)
@@ -107,6 +116,87 @@ class TaxiFleetManager:
             except Exception:
                 continue
         return None
+
+    def _build_trap_edges(self):
+        """주 도로망(all_edges)으로 되돌아올 수 없는 edge 집합을 계산한다 (매니저당 1회).
+
+        SUMO의 idle-algorithm(randomCircling)과 _next_edge_fallback은 '아무 도로'로 보내기 때문에
+        한 번 들어가면 못 나오는 막다른 도로로 택시가 들어가 경로가 끝나 사라지는 문제가 있었다.
+
+        [추가] 계산 완료 후 all_edges에서도 trap edge를 제거한다.
+        Hungarian/greedy dispatch가 all_edges를 목적지 풀로 사용하므로,
+        trap edge가 all_edges에 남아있으면 dispatch 명령 → ChangeTarget 실패 연쇄 → 소멸.
+        """
+        self._trap_built = True
+        self._trap_edges = set()
+        if not self.avoid_traps:
+            return
+        try:
+            main = set(self.all_edges)
+            if not main:
+                return
+            net_edges = [e for e in traci.edge.getIDList() if not e.startswith(":")]
+            preds = {}
+            for edge_id in net_edges:
+                try:
+                    lane_count = traci.edge.getLaneNumber(edge_id)
+                except traci.exceptions.TraCIException:
+                    continue
+                for lane_idx in range(lane_count):
+                    try:
+                        links = traci.lane.getLinks(f"{edge_id}_{lane_idx}")
+                    except traci.exceptions.TraCIException:
+                        continue
+                    for link in links:
+                        lane_id = link[0]
+                        if not lane_id:
+                            continue
+                        nxt = lane_id.rsplit("_", 1)[0]
+                        if nxt and not nxt.startswith(":") and nxt != edge_id:
+                            preds.setdefault(nxt, set()).add(edge_id)
+            # 주 도로망 edge에 도달할 수 있는 edge = 안전. 나머지 = 막다른 길.
+            safe = set(main)
+            stack = list(main)
+            while stack:
+                cur = stack.pop()
+                for p in preds.get(cur, ()):
+                    if p not in safe:
+                        safe.add(p)
+                        stack.append(p)
+            self._trap_edges = {e for e in net_edges if e not in safe}
+            if self._trap_edges:
+                print(f"[막다른 길] 주 도로망으로 못 돌아오는 도로 {len(self._trap_edges)}개 감지 -> 택시 진입 차단", flush=True)
+            # ★ all_edges / boundary_edges / hotspot_edges 에서도 trap edge 제거
+            # → dispatch가 unreachable 목적지를 주는 ChangeTarget 실패 연쇄 차단
+            if self._trap_edges:
+                before = len(self.all_edges)
+                self.all_edges      = [e for e in self.all_edges      if e not in self._trap_edges]
+                self.boundary_edges = [e for e in self.boundary_edges  if e not in self._trap_edges]
+                self.hotspot_edges  = [e for e in self.hotspot_edges   if e not in self._trap_edges]
+                removed_n = before - len(self.all_edges)
+                if removed_n:
+                    print(f"[막다른 길] dispatch 풀(all_edges)에서 {removed_n}개 제거 완료 -> ChangeTarget 실패 방지", flush=True)
+        except Exception as exc:
+            self._trap_edges = set()
+            print(f"[막다른 길] 계산 실패, 회피 기능을 끕니다: {exc}", flush=True)
+
+    def _redirect_from_trap(self, vid: str, current_edge: str) -> bool:
+        """경로 끝이 막다른 길인 택시를 주 도로망 안의 목적지로 돌려놓는다."""
+        for _ in range(self.target_pick_attempts):
+            target = random.choice(self.all_edges)
+            if target == current_edge or target.startswith(":"):
+                continue
+            try:
+                route = traci.simulation.findRoute(current_edge, target, vType=self.vtype)
+                if route and len(route.edges) > 0:
+                    traci.vehicle.changeTarget(vid, target)
+                    self.spawn_stats["trap_avoided"] += 1
+                    return True
+            except Exception as e:
+                if type(e).__name__ == "FatalTraCIError":
+                    raise
+                continue
+        return False
 
     def _respawn_taxi(self, old_vid: str):
         try:
@@ -229,7 +319,10 @@ class TaxiFleetManager:
             arrived = self._safe_ids("getArrivedIDList")
             colliding = self._safe_ids("getCollidingVehiclesIDList")
             for vid in sorted(vanished):
-                if vid in arrived:
+                last = self._last_info.get(vid)
+                if last and last[1] and last[1] in self._trap_edges:
+                    reason = "막다른 길 진입"
+                elif vid in arrived:
                     reason = "경로 끝 도착"
                 elif vid in colliding:
                     reason = "충돌"
@@ -256,6 +349,9 @@ class TaxiFleetManager:
             current_ids = set(current_vids) if current_vids is not None else set(traci.vehicle.getIDList())
             self.fail_counts = {vid: c for vid, c in self.fail_counts.items() if vid in current_ids}
             self._type_cache = {v: ty for v, ty in self._type_cache.items() if v in current_ids}
+
+            if not self._trap_built:
+                self._build_trap_edges()
 
             taxis_now = {vid for vid in current_ids if self._is_taxi(vid)}
             self._track_vanished(now_seconds, taxis_now)
@@ -291,6 +387,24 @@ class TaxiFleetManager:
                     current_vids.difference_update(self._removed_this_step)
                 self._removed_this_step = []
 
+    def _update_pos_track(self, vid: str, now: float, edge: str = None):
+        """vid의 현재 edge를 기록한다. edge가 None이면 기존 기록만 갱신하지 않는다."""
+        if edge is None:
+            return
+        prev = self._pos_track.get(vid)
+        if prev is None or prev[0] != edge:
+            self._pos_track[vid] = (edge, now)
+
+    def _is_stuck(self, vid: str, now: float, current_edge: str) -> bool:
+        """같은 edge에 stuck_reroute_sec 이상 머물렀으면 True (텔레포트 전에 선제 재경로)."""
+        if current_edge.startswith(":"):
+            return False
+        entry = self._pos_track.get(vid)
+        if entry is None or entry[0] != current_edge:
+            self._pos_track[vid] = (current_edge, now)
+            return False
+        return (now - entry[1]) >= self.stuck_reroute_sec
+
     def _next_edge_fallback(self, current_edge: str):
         try:
             links = traci.lane.getLinks(current_edge + "_0")
@@ -302,7 +416,7 @@ class TaxiFleetManager:
             if not lane_id or lane_id.startswith(":"):
                 continue
             edge_id = lane_id.rsplit("_", 1)[0]
-            if edge_id != current_edge and not edge_id.startswith(":"):
+            if edge_id != current_edge and not edge_id.startswith(":") and edge_id not in self._trap_edges:
                 nexts.append(edge_id)
         return random.choice(nexts) if nexts else None
 
@@ -310,10 +424,52 @@ class TaxiFleetManager:
     def _maintain_one(self, vid: str, now_seconds: float):
         if traci.vehicle.getPersonIDList(vid):
             self._last_info[vid] = ("승객 탑승", None, None)
+            # 승객 탑승 중도 위치 추적 + stuck 감지 -> 재경로 (승객 태운 채 소멸 방지)
+            try:
+                _pe = traci.vehicle.getRoadID(vid)
+                if not _pe.startswith(":"):
+                    self._update_pos_track(vid, now_seconds, _pe)
+                    if self._is_stuck(vid, now_seconds, _pe):
+                        # 승객 목적지(드롭오프 stop)까지 경로를 다시 찾아서 연장
+                        try:
+                            _stops = traci.vehicle.getStops(vid, 0)
+                            if _stops:
+                                _stop_edge = _stops[0].lane.rsplit("_", 1)[0]
+                                if (not _stop_edge.startswith(":")
+                                        and _stop_edge not in self._trap_edges):
+                                    _rte = traci.simulation.findRoute(_pe, _stop_edge, vType=self.vtype)
+                                    if _rte and len(_rte.edges) > 0:
+                                        traci.vehicle.changeTarget(vid, _stop_edge)
+                                        self.spawn_stats["passenger_stuck_rerouted"] = \
+                                            self.spawn_stats.get("passenger_stuck_rerouted", 0) + 1
+                                        self._pos_track.pop(vid, None)  # 타이머 리셋
+                        except Exception:
+                            pass
+            except traci.exceptions.TraCIException:
+                pass
             return
 
         try:
-            if traci.vehicle.getStops(vid, 0):
+            stops = traci.vehicle.getStops(vid, 0)
+            if stops:
+                # 배차 stop이 있는데 경로가 곧 끝나면 → stop edge까지 route 연장
+                try:
+                    _sr = traci.vehicle.getRoute(vid)
+                    _si = traci.vehicle.getRouteIndex(vid)
+                    _remaining = len(_sr) - _si - 1
+                    if _remaining <= self.remaining_edges_threshold:
+                        _stop_lane = stops[0].lane  # e.g. "edge_id_0"
+                        _stop_edge = _stop_lane.rsplit("_", 1)[0]
+                        _cur = traci.vehicle.getRoadID(vid)
+                        if (not _cur.startswith(":")
+                                and not _stop_edge.startswith(":")
+                                and _stop_edge not in self._trap_edges):
+                            _rte = traci.simulation.findRoute(_cur, _stop_edge, vType=self.vtype)
+                            if _rte and len(_rte.edges) > 0:
+                                traci.vehicle.changeTarget(vid, _stop_edge)
+                                self.spawn_stats["dispatch_route_extended"] = self.spawn_stats.get("dispatch_route_extended", 0) + 1
+                except Exception:
+                    pass
                 self._last_info[vid] = ("배차 stop 있음", None, None)
                 return
         except traci.exceptions.TraCIException:
@@ -328,7 +484,27 @@ class TaxiFleetManager:
         remaining = len(route) - route_idx - 1
         self._last_info[vid] = ("빈 택시", current_edge, remaining)
 
+        # 경로 끝이 막다른 길이고 아직 그 안에 들어가기 전이면 주 도로망 목적지로 바꾼다
+        if (self._trap_edges and route and route[-1] in self._trap_edges
+                and current_edge not in self._trap_edges):
+            if self._redirect_from_trap(vid, current_edge):
+                return
+
+        # [위치 기반 stuck 감지] remaining이 높아도 같은 edge에 stuck_reroute_sec 이상 머물면 선제 재경로
+        # → 텔레포트(sumo_time_to_teleport) 전에 미리 잡아서 맵 밖 소멸 차단
+        self._update_pos_track(vid, now_seconds, current_edge)
         if remaining > self.remaining_edges_threshold:
+            if self._is_stuck(vid, now_seconds, current_edge):
+                _new = self._pick_target_edge(now_seconds, current_edge) or self._next_edge_fallback(current_edge)
+                if _new and _new != current_edge:
+                    try:
+                        _rte = traci.simulation.findRoute(current_edge, _new, vType=self.vtype)
+                        if _rte and len(_rte.edges) > 0:
+                            traci.vehicle.changeTarget(vid, _new)
+                            self.spawn_stats["stuck_rerouted"] = self.spawn_stats.get("stuck_rerouted", 0) + 1
+                            self._pos_track.pop(vid, None)  # 타이머 리셋
+                    except Exception:
+                        pass
             return
 
         # [최적화 2] RL이 제어 중일 땐 매니저가 새 목적지를 주지 않고(이중 제어 방지), 오직 1칸 생존 연장만 허용

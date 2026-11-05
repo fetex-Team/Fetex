@@ -5,7 +5,7 @@ config_gui.py의 "🧪 A/B 비교하기" 다이얼로그에서 사용자가 고�
 1) 공용 맵을 1회만 생성 (도로망/구역은 taxi_strategy/dispatch_algorithm과 무관하므로 재사용 가능)
 2) 조합 개수만큼 폴더를 복제하고, 각 폴더의 runtime_meta.json / simulation.sumocfg에
    그 조합의 값들을 패치
-3) 조합 개수만큼 새 콘솔 창을 동시에 띄워 병렬 측정 (parallel_dispatch_worker.py 재사용)
+3) 조합 개수만큼 새 콘솔 창을 최대 4개씩만 띄워 병렬 측정 (parallel_dispatch_worker.py 재사용)
 4) 모든 결과 JSON이 도착할 때까지 대기 후 순위표로 비교 출력
 
 사용법:
@@ -20,6 +20,9 @@ import json
 import time
 import datetime
 import shutil
+import uuid
+import signal
+import tempfile
 import subprocess
 import xml.etree.ElementTree as ET
 
@@ -28,6 +31,7 @@ sys.path.insert(0, ROOT)
 
 MODULE1 = os.path.join(ROOT, "module1_simulation")
 CONFIG_PATH = os.path.join(ROOT, "config.json")
+AB_QUEUE_DIR = os.path.join(ROOT, ".ab_compare_queue")
 
 # build_env.py와 동일한 규칙: "hungarian"은 SUMO 내장 알고리즘이 아니라
 # traci 콜백으로 직접 배정하는 모드이므로 SUMO 쪽엔 "traci"로 알려줘야 함
@@ -35,6 +39,31 @@ DISPATCH_SUMO_VALUE = {"hungarian": "traci", "custom_greedy": "traci", "custom_r
 def _sumo_dispatch_value(algo: str, strategy: str = None) -> str:
     # RL은 선배치만 담당한다. 매칭 방식은 사용자가 고른 알고리즘을 보존한다.
     return "traci" if algo in DISPATCH_SUMO_VALUE else algo
+
+
+def _ignore_console_interrupt(signum, frame):
+    """A/B 전용 콘솔에 잘못 전달된 Ctrl+C/Ctrl+Break는 비교를 중단하지 않는다."""
+    print("\n[보호] Ctrl+C/Break 신호를 무시했습니다. A/B 비교와 대기열은 계속 실행됩니다.")
+
+
+def _install_interrupt_guard():
+    signal.signal(signal.SIGINT, _ignore_console_interrupt)
+    if hasattr(signal, "SIGBREAK"):
+        signal.signal(signal.SIGBREAK, _ignore_console_interrupt)
+
+
+def _save_config_atomically(config):
+    """중단 신호가 와도 기존 config.json을 비우지 않는 교체 저장."""
+    fd, temp_path = tempfile.mkstemp(prefix=".config_ab_", suffix=".json", dir=ROOT, text=True)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(config, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp_path, CONFIG_PATH)
+    finally:
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 def _combo_label(combo: dict) -> str:
@@ -74,38 +103,36 @@ def decide_run_dates(combos: list) -> list:
     return dates
 
 
-def build_shared_map(base_combo: dict):
+def build_shared_map(base_combo: dict, config_dir_name: str):
     """combos[0] 값을 config.json에 반영해서 공용 맵을 1회 생성."""
     print(f"[오케스트레이터] 공용 맵 생성 중... (기준 조합: {base_combo})")
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         cfg = json.load(f)
     # holiday_mode(평일/공휴일 비교)는 이번 비교에만 쓰는 값이라 config.json에는 남기지 않음
     cfg.update({k: v for k, v in base_combo.items() if k != "holiday_mode"})
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
+    _save_config_atomically(cfg)
 
     build_env_path = os.path.join(MODULE1, "build_env.py")
-    subprocess.run([sys.executable, build_env_path, "--config-dir", "sumo_config_combo0"],
+    subprocess.run([sys.executable, build_env_path, "--config-dir", config_dir_name],
                     check=True, cwd=ROOT)
 
 
 import time
 
-def patch_combo(idx, combo, run_date=None):
-    base_dir = os.path.join(MODULE1, "sumo_config_combo0")
-    dst_dir = base_dir if idx == 0 else os.path.join(MODULE1, f"sumo_config_combo{idx}")
+def patch_combo(idx, combo, run_date=None, config_dir_names=None):
+    """이번 A/B 요청만의 고유 폴더에 조합을 준비한다.
+
+    이전 실행의 sumo_config_combo* 폴더를 지우지 않는다. 실행 중인 SUMO가
+    파일을 잠그는 문제와, 다른 A/B 요청의 결과가 섞이는 문제를 함께 막는다.
+    """
+    if not config_dir_names:
+        config_dir_names = [f"sumo_config_combo{i}" for i in range(idx + 1)]
+    base_dir = os.path.join(MODULE1, config_dir_names[0])
+    dst_dir = os.path.join(MODULE1, config_dir_names[idx])
 
     if idx != 0:
         if os.path.exists(dst_dir):
-            for attempt in range(5):
-                try:
-                    shutil.rmtree(dst_dir)
-                    break
-                except PermissionError:
-                    print(f"[경고] {dst_dir} 삭제 재시도 중... (이전 SUMO 프로세스가 아직 안 죽었을 수 있음)")
-                    time.sleep(2)
-            else:
-                raise RuntimeError(f"{dst_dir}를 삭제할 수 없습니다 — 남아있는 sumo.exe/python.exe 프로세스를 수동으로 종료해주세요.")
+            raise RuntimeError(f"고유 A/B 작업 폴더가 이미 존재합니다: {dst_dir}")
         shutil.copytree(base_dir, dst_dir)
 
     meta_path = os.path.join(dst_dir, "runtime_meta.json")
@@ -132,8 +159,211 @@ def patch_combo(idx, combo, run_date=None):
     return dst_dir
 
 
-def launch_workers(combos: list) -> list:
-    """조합마다 parallel_dispatch_worker.py를 새 콘솔에서 동시에 실행."""
+
+MAX_PARALLEL_SLOTS = 4  # 스타크래프트 건물 슬롯: 최대 동시 실행 프로세스 수
+
+
+def _pid_is_alive(pid):
+    """종료된 A/B 실행이 남긴 대기표는 다음 실행이 자동으로 치운다."""
+    try:
+        pid = int(pid)
+    except (ValueError, TypeError):
+        return False
+
+    # Windows의 os.kill(pid, 0)은 일부 Python/Windows 조합에서 WinError 87을
+    # SystemError로 바꿔 내보낸다. OpenProcess로 확인해야 안정적이다.
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+        kernel32.OpenProcess.restype = wintypes.HANDLE
+        kernel32.GetExitCodeProcess.argtypes = (wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD))
+        kernel32.GetExitCodeProcess.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            # 접근 거부라면 존재는 하지만 다른 권한으로 실행 중인 프로세스다.
+            return ctypes.get_last_error() == 5
+        try:
+            exit_code = wintypes.DWORD()
+            if not kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return True
+            return exit_code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _join_ab_queue(combos, config_snapshot=None):
+    """A/B 비교 '한 판' 자체를 전역 대기열에 넣는다.
+
+    한 판 안에서는 run_queue_and_wait가 4개 슬롯을 관리한다. 이 바깥 대기열은
+    사용자가 A/B 버튼을 다시 눌러도 두 번째 오케스트레이터가 같은 임시 파일과
+    SUMO 슬롯을 동시에 쓰지 않게 한다.
+    """
+    os.makedirs(AB_QUEUE_DIR, exist_ok=True)
+    ticket_name = f"{time.time_ns():020d}_{os.getpid()}_{uuid.uuid4().hex}.json"
+    ticket_path = os.path.join(AB_QUEUE_DIR, ticket_name)
+    ticket = {
+        "pid": os.getpid(),
+        "created_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        "combo_count": len(combos),
+        "config_snapshot": config_snapshot,
+    }
+    # x 모드는 같은 이름의 대기표를 절대 덮어쓰지 않게 한다.
+    with open(ticket_path, "x", encoding="utf-8") as f:
+        json.dump(ticket, f, ensure_ascii=False, indent=2)
+
+    announced_wait = False
+    try:
+        while True:
+            tickets = []
+            for name in os.listdir(AB_QUEUE_DIR):
+                if not name.endswith(".json"):
+                    continue
+                path = os.path.join(AB_QUEUE_DIR, name)
+                try:
+                    with open(path, encoding="utf-8") as f:
+                        info = json.load(f)
+                    if not _pid_is_alive(info.get("pid")):
+                        os.remove(path)
+                        print(f"[A/B 대기열] 종료된 실행의 대기표를 정리했습니다: {name}")
+                        continue
+                    tickets.append((name, path, info))
+                except (OSError, json.JSONDecodeError):
+                    # 파일을 쓰는 짧은 순간에는 다음 확인 주기에 다시 읽는다.
+                    continue
+
+            tickets.sort(key=lambda item: item[0])
+            own_index = next((i for i, item in enumerate(tickets) if item[1] == ticket_path), None)
+            if own_index == 0:
+                print("[A/B 대기열] 내 차례입니다. 최대 4개 슬롯으로 비교를 시작합니다.")
+                return ticket_path, ticket
+            if own_index is None:
+                raise RuntimeError("A/B 대기표를 찾을 수 없습니다. 다시 실행해주세요.")
+            if not announced_wait:
+                print(f"[A/B 대기열] 이미 실행 중인 비교가 있습니다. 이번 비교는 대기열 {own_index}번째입니다. "
+                      "앞선 비교가 끝나면 자동으로 시작합니다.")
+                announced_wait = True
+            time.sleep(2)
+    except Exception:
+        try:
+            os.remove(ticket_path)
+        except OSError:
+            pass
+        raise
+
+
+def _leave_ab_queue(ticket_path):
+    try:
+        os.remove(ticket_path)
+        print("[A/B 대기열] 이번 비교를 완료하여 다음 대기 작업에 자리를 넘겼습니다.")
+    except OSError:
+        pass
+
+
+def run_queue_and_wait(combos: list, config_dir_names: list, result_prefix: str,
+                       max_slots: int = MAX_PARALLEL_SLOTS,
+                       session_dir: str = None) -> list:
+    """조합 목록을 최대 max_slots(기본 4개)까지만 동시에 실행하고,
+    하나가 완료될 때마다 대기열의 다음 조합을 즉시 투입하는 생산 큐 오케스트레이터.
+    session_dir: ROOT 기준 상대경로 (ab_results/<session_id>). 지정 시 결과 JSON을 그 안에 저장."""
+    worker_path = os.path.join(ROOT, "parallel_dispatch_worker.py")
+    env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    category_model = os.environ.get("AI_CATEGORY_MODEL_PATH")
+    if category_model:
+        env["AI_CATEGORY_MODEL_PATH"] = category_model
+
+    total = len(combos)
+    result_paths = []
+    items = []
+    for idx, combo in enumerate(combos):
+        label = _combo_label(combo)
+        if session_dir:
+            # ab_results/<session_id>/combo{idx}.json — ROOT 기준 상대경로
+            result_path = os.path.join(session_dir, f"combo{idx}.json").replace("\\", "/")
+        else:
+            result_path = f"_result_{result_prefix}_combo{idx}.json"
+        result_paths.append((label, result_path))
+        items.append((idx, combo, label, result_path))
+
+    pending_queue = list(items)  # 대기열
+    running = {}  # {idx: (label, result_path, proc, start_time)}
+    finished = set()
+
+    print(f"\n[오케스트레이터] 총 {total}개 조합 비교 시작 (최대 동시 실행 배럭 슬롯: {max_slots}개)")
+
+    while len(finished) < total:
+        # 1. 빈 슬롯이 있고 대기열에 작업이 남아있으면 투입
+        while len(running) < max_slots and pending_queue:
+            idx, combo, label, result_path = pending_queue.pop(0)
+            config_dir_name = config_dir_names[idx]
+
+            full_res = os.path.join(ROOT, result_path)
+            if os.path.exists(full_res):
+                try:
+                    os.remove(full_res)
+                except Exception:
+                    pass
+
+            if os.name == "nt":
+                inner_cmd = subprocess.list2cmdline([sys.executable, worker_path, config_dir_name, label, result_path])
+                full_cmd = f'cmd /k call {inner_cmd}'
+                proc = subprocess.Popen(
+                    full_cmd,
+                    cwd=ROOT, env=env, creationflags=subprocess.CREATE_NEW_CONSOLE
+                )
+            else:
+                proc = subprocess.Popen(
+                    [sys.executable, worker_path, config_dir_name, label, result_path],
+                    cwd=ROOT, env=env
+                )
+
+            running[idx] = (label, result_path, proc, time.time())
+            print(f"  ▶ [슬롯 투입] 조합 #{idx+1}/{total} '{label}' 시작! (현재 가동 중: {len(running)}/{max_slots})")
+
+        # 2. 실행 중인 프로세스 완료 여부 확인
+        just_finished = []
+        for idx, (label, result_path, proc, st) in list(running.items()):
+            full_res = os.path.join(ROOT, result_path)
+            if os.path.exists(full_res):
+                elapsed = time.time() - st
+                print(f"  ✓ [완료] 조합 #{idx+1}/{total} '{label}' 완료! ({elapsed:.1f}초 소요)")
+                just_finished.append(idx)
+                finished.add(idx)
+            elif proc.poll() is not None:
+                time.sleep(1)
+                if os.path.exists(full_res):
+                    elapsed = time.time() - st
+                    print(f"  ✓ [완료] 조합 #{idx+1}/{total} '{label}' 완료! ({elapsed:.1f}초 소요)")
+                    just_finished.append(idx)
+                    finished.add(idx)
+
+        for idx in just_finished:
+            del running[idx]
+            if pending_queue:
+                print(f"  ➔ 빈 슬롯 확보! 대기 중인 다음 조합 즉시 투입...")
+
+        time.sleep(1.5)
+
+    print(f"\n[오케스트레이터] 모든 {total}개 조합 시뮬레이션 완료!\n")
+    return result_paths
+
+def launch_workers(combos: list, session_dir: str = None) -> list:
+    """조합마다 parallel_dispatch_worker.py를 새 콘솔에서 동시에 실행.
+    session_dir: ROOT 기준 상대경로 (ab_results/<session_id>). 지정 시 결과 JSON을 그 안에 저장."""
     worker_path = os.path.join(ROOT, "parallel_dispatch_worker.py")
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
@@ -143,7 +373,10 @@ def launch_workers(combos: list) -> list:
     print(f"[오케스트레이터] 조합 {len(combos)}개를 새 창에서 동시 측정 시작...")
     for idx, combo in enumerate(combos):
         label = _combo_label(combo)
-        result_path = f"_result_combo{idx}.json"
+        if session_dir:
+            result_path = os.path.join(session_dir, f"combo{idx}.json").replace("\\", "/")
+        else:
+            result_path = f"_result_combo{idx}.json"
         full_result_path = os.path.join(ROOT, result_path)
         if os.path.exists(full_result_path):
             os.remove(full_result_path)
@@ -189,9 +422,13 @@ def _day_type(iso: str, is_holiday=None) -> str:
     return "공휴일/주말" if is_holiday else "평일"
 
 
-def save_ranking_text(ranked, results, labels_total, combos=None):
-    """최종 순위를 ab_results/ab_ranking_<시각>.txt 로 저장하고 경로를 반환."""
-    out_dir = os.path.join(ROOT, "ab_results")
+def save_ranking_text(ranked, results, labels_total, combos=None, session_dir: str = None):
+    """최종 순위를 ab_results/<session_id>/ab_ranking_<시각>.txt 로 저장하고 경로를 반환.
+    session_dir: ROOT 기준 상대경로. None 이면 ab_results/ 바로 아래에 저장 (구버전 호환)."""
+    if session_dir:
+        out_dir = os.path.join(ROOT, session_dir)
+    else:
+        out_dir = os.path.join(ROOT, "ab_results")
     os.makedirs(out_dir, exist_ok=True)
     now = datetime.datetime.now()
     path = os.path.join(out_dir, f"ab_ranking_{now.strftime('%Y%m%d_%H%M%S')}.txt")
@@ -240,7 +477,7 @@ def save_ranking_text(ranked, results, labels_total, combos=None):
     return path
 
 
-def compare(result_paths: list):
+def compare(result_paths: list, session_dir: str = None):
     from measure_wait_time import print_result
 
     metrics = {}
@@ -265,13 +502,14 @@ def compare(result_paths: list):
         print(f" {rank}위: {k} — 평균 대기(타임아웃 포함) {v}초{marker}")
 
     try:
-        saved = save_ranking_text(ranked, results, len(result_paths))
+        saved = save_ranking_text(ranked, results, len(result_paths), session_dir=session_dir)
         print(f"\n[오케스트레이터] 최종 순위를 텍스트로 저장했습니다: {saved}")
     except Exception as e:
         print(f"\n[경고] 순위 텍스트 저장 실패: {e}")
 
 
 def main():
+    _install_interrupt_guard()
     if len(sys.argv) < 2:
         print("사용법: python multi_factor_compare.py '<json_combos>'")
         sys.exit(1)
@@ -281,16 +519,41 @@ def main():
         print("비교할 조합이 없습니다.")
         sys.exit(1)
 
-    run_dates = decide_run_dates(combos)
-    print("[오케스트레이터] 이번 비교의 시뮬 날짜: " + ", ".join(sorted({d.isoformat() for d in run_dates})))
+    # GUI는 클릭 시점의 설정 스냅샷도 함께 넘긴다. 대기 중 다른 A/B 요청이
+    # config.json을 바꿔도, 내 차례에는 이 요청을 만들었던 설정으로 맵을 만든다.
+    config_snapshot = json.loads(sys.argv[2]) if len(sys.argv) >= 3 else None
+    ticket_path, ticket = _join_ab_queue(combos, config_snapshot)
+    try:
+        # 대기표 이름은 시간/PID/UUID라서, 매 요청마다 충돌 없는 작업 공간이 된다.
+        session_id = os.path.splitext(os.path.basename(ticket_path))[0]
+        config_dir_names = [f"sumo_config_ab_{session_id}_combo{idx}" for idx in range(len(combos))]
+        result_prefix = f"ab_{session_id}"
+        print(f"[A/B 작업 공간] 이번 비교 전용 폴더를 사용합니다: {config_dir_names[0]}")
 
-    build_shared_map(combos[0])
-    for idx, combo in enumerate(combos):
-        patch_combo(idx, combo, run_dates[idx])
+        if ticket.get("config_snapshot") is not None:
+            _save_config_atomically(ticket["config_snapshot"])
+            print("[A/B 대기열] 버튼을 누른 시점의 설정을 복원했습니다.")
 
-    result_paths = launch_workers(combos)
-    wait_for_results(result_paths)
-    compare(result_paths)
+        run_dates = decide_run_dates(combos)
+        print("[오케스트레이터] 이번 비교의 시뮬 날짜: " + ", ".join(sorted({d.isoformat() for d in run_dates})))
+
+        build_shared_map(combos[0], config_dir_names[0])
+        for idx, combo in enumerate(combos):
+            patch_combo(idx, combo, run_dates[idx], config_dir_names)
+
+        # 최대 4개 슬롯 생산 큐 방식으로 순차 투입 및 완료 대기
+        # ab_results/<session_id>/ 하위 폴더를 미리 생성 — 모든 JSON/txt 여기에 모임
+        session_dir = os.path.join("ab_results", session_id)
+        os.makedirs(os.path.join(ROOT, session_dir), exist_ok=True)
+        print(f"[A/B 결과 폴더] ab_results/{session_id}/")
+
+        result_paths = run_queue_and_wait(
+            combos, config_dir_names, result_prefix,
+            max_slots=MAX_PARALLEL_SLOTS, session_dir=session_dir
+        )
+        compare(result_paths, session_dir=session_dir)
+    finally:
+        _leave_ab_queue(ticket_path)
 
     print("\n[오케스트레이터] 완료. 자동 종료하지 않습니다.")
     input("엔터를 누르면 종료합니다...")

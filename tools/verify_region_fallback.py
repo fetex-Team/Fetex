@@ -89,9 +89,10 @@ def main():
 
     print("\n3) 프리셋에 없는 지역")
     cfg, log = _load("부산 해운대", geo_ok=False, weather=None)
-    swapped = cfg["region"] != "부산 해운대"
-    check("좌표 실패 시 다른 지역으로 대체되는지 감지", swapped,
-          f"요청=부산 해운대 → 실제={cfg['region']} (지도가 통째로 바뀜)")
+    # [수정 후 기대 동작] 다른 지역으로 몰래 바꾸지 않고, 지역은 그대로 둔 채 '미해결' 표시 → build_env가 중단
+    flagged = cfg["region"] == "부산 해운대" and cfg.get("region_unresolved") == "부산 해운대"
+    check("좌표 실패 시 다른 지역으로 바꾸지 않고 '미해결'로 표시 (A-1 수정)", flagged,
+          f"요청=부산 해운대 → region={cfg['region']}, region_unresolved={cfg.get('region_unresolved')}")
     cfg, _ = _load("부산 해운대", geo_ok=True, weather=None)
     wrong_temp = cfg["temp_min"] == 15.0 and cfg["temp_max"] == 25.0
     check("좌표 성공+날씨 실패 시 온도가 하드코딩 기본값인지 감지", wrong_temp,

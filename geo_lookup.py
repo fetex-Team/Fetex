@@ -27,6 +27,9 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 CACHE_PATH = os.path.join(ROOT, "region_cache.json")
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+# 응답 없는 서버를 기다리는 최대 시간(초). 예전 10초 -> 3초 (docs/module1_map_verification.md A-3)
+API_TIMEOUT_SEC = 3
+_FAILED_IN_PROCESS = {}
 # Nominatim 사용 정책: User-Agent를 명시해야 함 (익명 요청 차단 방지)
 USER_AGENT = "ai-mobility-project-region-lookup/1.0"
 
@@ -138,9 +141,16 @@ def lookup_region(place_name: str, margin_deg: float = 0.006, margin_m: float = 
 
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
 
+    if place_name in _FAILED_IN_PROCESS:
+        # 같은 프로세스에서 이미 실패한 지역은 다시 기다리지 않는다 (build_env 등에서 최대 수십 초 지연 방지)
+        raise _FAILED_IN_PROCESS[place_name]
     print(f"[조회 중] '{place_name}' → Nominatim API 호출...")
-    with urllib.request.urlopen(req, timeout=10) as response:
-        data = json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(req, timeout=API_TIMEOUT_SEC) as response:
+            data = json.loads(response.read().decode("utf-8"))
+    except Exception as exc:
+        _FAILED_IN_PROCESS[place_name] = exc
+        raise
 
     # 정책상 연속 요청 사이 최소 1초 대기
     time.sleep(1.0)
@@ -201,7 +211,7 @@ def search_suggestions(query: str, limit: int = 5) -> list:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
 
     try:
-        with urllib.request.urlopen(req, timeout=5) as response:
+        with urllib.request.urlopen(req, timeout=API_TIMEOUT_SEC) as response:
             data = json.loads(response.read().decode("utf-8"))
     except Exception:
         return []

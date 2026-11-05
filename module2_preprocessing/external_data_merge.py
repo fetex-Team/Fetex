@@ -97,6 +97,10 @@ def merge_external_data(df: pd.DataFrame, weather: pd.DataFrame = None, weather_
         df["weather_source"] = "fallback"
     else:
         w = _fill_short_gaps(weather, interpolate_limit_hours)
+        # pandas 3은 문자열 파싱 결과를 μs 단위로, 집계 칸은 ns 단위로 만들 수 있어 merge_asof가
+        # "incompatible merge keys" 오류를 낸다 → 두 키를 같은 단위(ns)로 맞춘다 (pandas 2에서도 무해).
+        df[time_col] = df[time_col].astype("datetime64[ns]")
+        w["time"] = w["time"].astype("datetime64[ns]")
         df["_row_order"] = np.arange(len(df))
         merged = pd.merge_asof(df.sort_values(time_col), w.sort_values("time"),
                                left_on=time_col, right_on="time", direction="backward",

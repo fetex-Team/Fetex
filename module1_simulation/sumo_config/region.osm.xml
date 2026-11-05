@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (3344183 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
+<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (2537952 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
  <bounds minlat="37.4954430" minlon="127.0213060" maxlat="37.5044260" maxlon="127.0326290"/>
  <node id="286490183" visible="true" version="3" changeset="35203064" timestamp="2015-11-09T21:42:01Z" user="panhoong" uid="624466" lat="37.5039457" lon="127.0259991"/>
  <node id="287525731" visible="true" version="23" changeset="115122718" timestamp="2021-12-19T11:39:36Z" user="user_5239402" uid="5239402" lat="37.5091066" lon="127.0642476">
@@ -1766,24 +1766,6 @@
   <tag k="railway" v="stop"/>
   <tag k="ref" v="925"/>
   <tag k="subway" v="yes"/>
- </node>
- <node id="3824606390" visible="true" version="12" changeset="177667049" timestamp="2026-01-25T02:25:46Z" user="aaei924" uid="10626814" lat="37.5043224" lon="127.0245306">
-  <tag k="name" v="신논현"/>
-  <tag k="name:en" v="Sinnonhyeon"/>
-  <tag k="name:ja" v="シンノンヒョン(新論峴)"/>
-  <tag k="name:ko" v="신논현"/>
-  <tag k="name:zh" v="新论岘"/>
-  <tag k="network" v="수도권 전철"/>
-  <tag k="network:en" v="Seoul Metropolitan Subway"/>
-  <tag k="network:ko" v="수도권 전철"/>
-  <tag k="network:wikidata" v="Q16950"/>
-  <tag k="operator" v="서울교통공사;네오트랜스주식회사"/>
-  <tag k="public_transport" v="station"/>
-  <tag k="railway" v="station"/>
-  <tag k="station" v="subway"/>
-  <tag k="subway" v="yes"/>
-  <tag k="wheelchair" v="yes"/>
-  <tag k="wikidata" v="Q53000"/>
  </node>
  <node id="3824606391" visible="true" version="5" changeset="121608610" timestamp="2022-05-28T09:32:42Z" user="rhtb0" uid="15977403" lat="37.5046143" lon="127.0244580">
   <tag k="name" v="신논현"/>
@@ -5400,7 +5382,7 @@
   <tag k="ref" v="220"/>
   <tag k="subway" v="yes"/>
  </node>
- <node id="5927529147" visible="true" version="5" changeset="185807526" timestamp="2026-07-15T20:04:27Z" user="aaei924" uid="10626814" lat="37.4979497" lon="127.0275574">
+ <node id="5927529147" visible="true" version="7" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.4980418" lon="127.0279845">
   <tag k="name" v="강남"/>
   <tag k="name:en" v="Gangnam"/>
   <tag k="name:ja" v="カンナム(江南)"/>
@@ -5415,6 +5397,7 @@
   <tag k="operator:ko" v="서울교통공사"/>
   <tag k="operator:type" v="public"/>
   <tag k="operator:wikidata" v="Q28699048"/>
+  <tag k="payment:climate_card" v="yes"/>
   <tag k="public_transport" v="station"/>
   <tag k="railway" v="station"/>
   <tag k="station" v="subway"/>
@@ -5965,7 +5948,7 @@
   <tag k="amenity" v="restaurant"/>
   <tag k="name" v="unbong eden sidang,Tradition Korean"/>
  </node>
- <node id="7287842392" visible="true" version="7" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.5099469" lon="127.0218958">
+ <node id="7287842392" visible="true" version="8" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5106168" lon="127.0215956">
   <tag k="name" v="논현"/>
   <tag k="name:en" v="Nonhyeon"/>
   <tag k="name:ko" v="논현"/>
@@ -7974,7 +7957,7 @@
  <node id="8557145494" visible="true" version="1" changeset="101649100" timestamp="2021-03-24T13:04:04Z" user="Sebin Johny" uid="8782072" lat="37.5050146" lon="127.0264913"/>
  <node id="8557145497" visible="true" version="1" changeset="101649100" timestamp="2021-03-24T13:04:04Z" user="Sebin Johny" uid="8782072" lat="37.5046542" lon="127.0253521"/>
  <node id="8778604008" visible="true" version="1" changeset="105526813" timestamp="2021-05-29T09:41:12Z" user="user_5239402" uid="5239402" lat="37.4851609" lon="127.0336841"/>
- <node id="8793714495" visible="true" version="7" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4964624" lon="127.0282667">
+ <node id="8793714495" visible="true" version="8" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.4964624" lon="127.0282667">
   <tag k="name" v="강남"/>
   <tag k="name:en" v="Gangnam"/>
   <tag k="name:ja" v="カンナム(江南)"/>
@@ -7992,7 +7975,6 @@
   <tag k="public_transport" v="station"/>
   <tag k="railway" v="station"/>
   <tag k="station" v="train"/>
-  <tag k="subway" v="yes"/>
   <tag k="train" v="yes"/>
   <tag k="wikidata" v="Q17469"/>
   <tag k="wikipedia" v="ko:강남역"/>
@@ -9265,7 +9247,7 @@
   <tag k="subway" v="yes"/>
   <tag k="train" v="yes"/>
  </node>
- <node id="9776192971" visible="true" version="5" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.5035631" lon="127.0248903">
+ <node id="9776192971" visible="true" version="6" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5035542" lon="127.0248726">
   <tag k="name" v="신논현"/>
   <tag k="name:en" v="Sinnonhyeon"/>
   <tag k="name:ja" v="シンノンヒョン(新論峴)"/>
@@ -9282,7 +9264,7 @@
   <tag k="subway" v="yes"/>
   <tag k="train" v="yes"/>
  </node>
- <node id="9776192972" visible="true" version="5" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.5099274" lon="127.0218148">
+ <node id="9776192972" visible="true" version="6" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5105973" lon="127.0215146">
   <tag k="name" v="논현"/>
   <tag k="name:en" v="Nonhyeon"/>
   <tag k="name:ko" v="논현"/>
@@ -19738,6 +19720,50 @@
  <node id="14320176873" visible="true" version="1" changeset="191035855" timestamp="2026-10-26T02:58:35Z" user="Nqye" uid="24581138" lat="37.4969848" lon="127.0311121"/>
  <node id="14320176874" visible="true" version="1" changeset="191035855" timestamp="2026-10-26T02:58:35Z" user="Nqye" uid="24581138" lat="37.4970588" lon="127.0310752"/>
  <node id="14320176875" visible="true" version="1" changeset="191035855" timestamp="2026-10-26T02:58:35Z" user="Nqye" uid="24581138" lat="37.4970870" lon="127.0310953"/>
+ <node id="14332451401" visible="true" version="1" changeset="191218830" timestamp="2026-10-30T02:20:17Z" user="Ventrix" uid="24143958" lat="37.4964396" lon="127.0278073">
+  <tag k="addr:city" v="서울특별시"/>
+  <tag k="addr:district" v="서초구"/>
+  <tag k="addr:housenumber" v="375"/>
+  <tag k="addr:postcode" v="06620"/>
+  <tag k="addr:street" v="강남대로"/>
+  <tag k="amenity" v="clinic"/>
+  <tag k="healthcare" v="clinic"/>
+  <tag k="healthcare:speciality" v="dermatology"/>
+  <tag k="language:en" v="yes"/>
+  <tag k="language:zh" v="yes"/>
+  <tag k="level" v="6"/>
+  <tag k="name" v="고트의원"/>
+  <tag k="name:en" v="GOAT Clinic"/>
+  <tag k="name:ko" v="고트의원"/>
+  <tag k="name:zh" v="高特 江南皮肤科"/>
+  <tag k="name:zh-Hans" v="高特 江南皮肤科"/>
+  <tag k="opening_hours" v="Mo-Fr 10:00-20:00; Sa,Su 10:00-16:00"/>
+  <tag k="phone" v="+82 2-6949-2428"/>
+  <tag k="website" v="https://www.goatgangnam.com/en"/>
+ </node>
+ <node id="14342995837" visible="true" version="1" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5039435" lon="127.0247147">
+  <tag k="name" v="신논현"/>
+  <tag k="name:en" v="Sinnonhyeon"/>
+  <tag k="name:ja" v="シンノンヒョン(新論峴)"/>
+  <tag k="name:ko" v="신논현"/>
+  <tag k="name:zh" v="新论岘"/>
+  <tag k="network" v="수도권 전철"/>
+  <tag k="network:en" v="Seoul Metropolitan Subway"/>
+  <tag k="network:ko" v="수도권 전철"/>
+  <tag k="network:wikidata" v="Q16950"/>
+  <tag k="operator" v="네오트랜스주식회사"/>
+  <tag k="operator:en" v="NEO TRANS CO., LTD"/>
+  <tag k="operator:ko" v="네오트랜스주식회사"/>
+  <tag k="operator:type" v="private"/>
+  <tag k="operator:wikidata" v="Q13709959"/>
+  <tag k="payment:climate_card" v="no"/>
+  <tag k="public_transport" v="station"/>
+  <tag k="railway" v="station"/>
+  <tag k="station" v="subway"/>
+  <tag k="subway" v="yes"/>
+  <tag k="wheelchair" v="yes"/>
+  <tag k="wikidata" v="Q53000"/>
+ </node>
  <way id="26004328" visible="true" version="11" changeset="71948798" timestamp="2019-07-06T02:40:51Z" user="octel" uid="238290">
   <nd ref="1326174679"/>
   <nd ref="1326174672"/>
@@ -39520,7 +39546,7 @@
   <tag k="route" v="bus"/>
   <tag k="type" v="route"/>
  </relation>
- <relation id="2894763" visible="true" version="92" changeset="183425657" timestamp="2026-05-31T04:17:08Z" user="dusrndnpdl" uid="23772506">
+ <relation id="2894763" visible="true" version="93" changeset="191139689" timestamp="2026-10-28T09:58:11Z" user="aaei924" uid="10626814">
   <member type="way" ref="59079492" role="forward"/>
   <member type="way" ref="59079477" role="forward"/>
   <member type="way" ref="1091572952" role="forward"/>
@@ -39613,6 +39639,7 @@
   <member type="way" ref="183521200" role=""/>
   <member type="way" ref="37403279" role=""/>
   <member type="way" ref="815640318" role="forward"/>
+  <member type="way" ref="1572398820" role="forward"/>
   <member type="way" ref="815640320" role="forward"/>
   <member type="way" ref="815640321" role="forward"/>
   <member type="way" ref="218835373" role=""/>
@@ -39810,7 +39837,7 @@
   <tag k="to" v="상계동 주공7단지"/>
   <tag k="type" v="route"/>
  </relation>
- <relation id="2895884" visible="true" version="111" changeset="185442998" timestamp="2026-07-09T23:32:44Z" user="brendan77" uid="193835">
+ <relation id="2895884" visible="true" version="114" changeset="191186532" timestamp="2026-10-29T10:29:10Z" user="Wildsharky" uid="16577436">
   <member type="node" ref="357830753" role="platform"/>
   <member type="node" ref="357830721" role="platform"/>
   <member type="node" ref="357843486" role="platform"/>
@@ -39930,8 +39957,8 @@
   <member type="way" ref="829379107" role=""/>
   <member type="way" ref="382012194" role="forward"/>
   <member type="way" ref="955622253" role="forward"/>
-  <member type="way" ref="955622256" role="forward"/>
   <member type="way" ref="955622250" role="forward"/>
+  <member type="way" ref="1571979538" role="forward"/>
   <member type="way" ref="37403233" role=""/>
   <member type="way" ref="911205070" role=""/>
   <member type="way" ref="584841562" role=""/>
@@ -45184,7 +45211,7 @@
   <tag k="wikidata" v="Q110408469"/>
   <tag k="wikipedia" v="en:Seoul Subway Line 9"/>
  </relation>
- <relation id="6024921" visible="true" version="42" changeset="190962143" timestamp="2026-10-24T09:36:21Z" user="aaei924" uid="10626814">
+ <relation id="6024921" visible="true" version="43" changeset="191059178" timestamp="2026-10-26T14:52:21Z" user="aaei924" uid="10626814">
   <member type="way" ref="180238309" role=""/>
   <member type="way" ref="494855765" role=""/>
   <member type="way" ref="522326435" role=""/>
@@ -45261,7 +45288,11 @@
   <member type="way" ref="925878106" role=""/>
   <member type="way" ref="515849802" role=""/>
   <member type="way" ref="516169314" role=""/>
-  <tag k="name" v="400"/>
+  <tag k="colour" v="#3d5bab"/>
+  <tag k="name" v="서울 버스 400"/>
+  <tag k="network" v="서울특별시 시내버스"/>
+  <tag k="network:ko" v="서울특별시 시내버스"/>
+  <tag k="network:wikidata" v="Q3724007"/>
   <tag k="ref" v="400"/>
   <tag k="route" v="bus"/>
   <tag k="type" v="route"/>
@@ -45455,7 +45486,7 @@
   <tag k="route" v="bus"/>
   <tag k="type" v="route"/>
  </relation>
- <relation id="6503601" visible="true" version="73" changeset="189566241" timestamp="2026-09-25T23:40:38Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
+ <relation id="6503601" visible="true" version="74" changeset="191125917" timestamp="2026-10-28T00:14:06Z" user="aaei924" uid="10626814">
   <member type="node" ref="4356434937" role="platform"/>
   <member type="node" ref="4356434936" role="platform"/>
   <member type="node" ref="4356434933" role="platform"/>
@@ -45599,10 +45630,10 @@
   <member type="way" ref="1084408281" role=""/>
   <member type="way" ref="1482114515" role=""/>
   <member type="way" ref="1084408276" role=""/>
-  <member type="way" ref="424940172" role=""/>
-  <member type="way" ref="333725870" role=""/>
   <member type="way" ref="218923156" role=""/>
   <member type="way" ref="1499619440" role=""/>
+  <member type="way" ref="1572334178" role=""/>
+  <member type="way" ref="1572334174" role=""/>
   <member type="way" ref="520484567" role=""/>
   <member type="way" ref="219096265" role=""/>
   <member type="way" ref="708672701" role=""/>
@@ -45629,6 +45660,8 @@
   <member type="way" ref="1499619437" role=""/>
   <member type="way" ref="1499619441" role=""/>
   <member type="way" ref="1499619439" role=""/>
+  <member type="way" ref="1572334171" role=""/>
+  <member type="way" ref="1572334167" role=""/>
   <member type="way" ref="333972426" role=""/>
   <member type="way" ref="331994920" role=""/>
   <member type="way" ref="855890659" role=""/>
@@ -45649,7 +45682,7 @@
   <tag k="to" v="숭례문"/>
   <tag k="type" v="route"/>
  </relation>
- <relation id="6521095" visible="true" version="88" changeset="187130607" timestamp="2026-08-08T11:59:18Z" user="october13" uid="22393082">
+ <relation id="6521095" visible="true" version="89" changeset="191125917" timestamp="2026-10-28T00:14:06Z" user="aaei924" uid="10626814">
   <member type="node" ref="4194405504" role="stop"/>
   <member type="node" ref="4360908792" role="stop"/>
   <member type="node" ref="4360908794" role="stop"/>
@@ -45725,10 +45758,10 @@
   <member type="way" ref="1084408281" role="forward"/>
   <member type="way" ref="1482114515" role="forward"/>
   <member type="way" ref="1084408276" role="forward"/>
-  <member type="way" ref="424940172" role="forward"/>
-  <member type="way" ref="333725870" role="forward"/>
   <member type="way" ref="218923156" role="forward"/>
   <member type="way" ref="1499619440" role="forward"/>
+  <member type="way" ref="1572334178" role="forward"/>
+  <member type="way" ref="1572334174" role="forward"/>
   <member type="way" ref="520484567" role="forward"/>
   <member type="way" ref="219096265" role="forward"/>
   <member type="way" ref="184083175" role="forward"/>
@@ -45768,10 +45801,13 @@
   <member type="way" ref="1499619442" role=""/>
   <member type="way" ref="1499619441" role=""/>
   <member type="way" ref="1499619439" role=""/>
+  <member type="way" ref="1572334171" role=""/>
+  <member type="way" ref="1572334167" role=""/>
   <member type="way" ref="289213613" role="forward"/>
   <member type="way" ref="619342756" role="forward"/>
   <member type="way" ref="919984683" role="forward"/>
   <member type="way" ref="585341917" role=""/>
+  <member type="way" ref="1572334177" role="backward"/>
   <member type="way" ref="516948900" role="forward"/>
   <member type="way" ref="183272601" role="forward"/>
   <member type="way" ref="438360331" role="forward"/>
@@ -48757,7 +48793,7 @@
   <tag k="route_master" v="bus"/>
   <tag k="type" v="route_master"/>
  </relation>
- <relation id="7570631" visible="true" version="82" changeset="189567013" timestamp="2026-09-26T00:32:30Z" user="IJNSenaaaaaaaaaaaaaa" uid="17927050">
+ <relation id="7570631" visible="true" version="83" changeset="191079697" timestamp="2026-10-27T01:13:26Z" user="aaei924" uid="10626814">
   <member type="way" ref="977107431" role="forward"/>
   <member type="way" ref="554246843" role="forward"/>
   <member type="way" ref="37414517" role="forward"/>
@@ -48836,8 +48872,8 @@
   <member type="way" ref="408042842" role="backward"/>
   <member type="way" ref="516948908" role="backward"/>
   <member type="way" ref="524280026" role="forward"/>
-  <member type="way" ref="834099802" role="forward"/>
   <member type="way" ref="524280027" role="forward"/>
+  <member type="way" ref="1572088831" role="forward"/>
   <member type="way" ref="524280028" role="forward"/>
   <member type="way" ref="203969409" role="forward"/>
   <member type="way" ref="203973727" role="forward"/>
@@ -48924,7 +48960,7 @@
   <tag k="to" v="시민의숲.양재꽃시장"/>
   <tag k="type" v="route"/>
  </relation>
- <relation id="7570632" visible="true" version="83" changeset="183424402" timestamp="2026-05-31T02:46:51Z" user="한창훈" uid="2281401">
+ <relation id="7570632" visible="true" version="84" changeset="191059178" timestamp="2026-10-26T14:52:21Z" user="aaei924" uid="10626814">
   <member type="way" ref="494822050" role="forward"/>
   <member type="way" ref="1251522286" role="forward"/>
   <member type="way" ref="524280033" role="forward"/>
@@ -48981,8 +49017,8 @@
   <member type="way" ref="1029222090" role="forward"/>
   <member type="way" ref="482777266" role="forward"/>
   <member type="way" ref="382012160" role="backward"/>
+  <member type="way" ref="1571979538" role="forward"/>
   <member type="way" ref="955622250" role="forward"/>
-  <member type="way" ref="955622256" role="forward"/>
   <member type="way" ref="955622253" role="forward"/>
   <member type="way" ref="382012194" role="forward"/>
   <member type="way" ref="911205070" role="backward"/>
@@ -49888,14 +49924,18 @@
   <tag k="wikidata" v="Q20388"/>
   <tag k="wikipedia" v="en:Shinbundang Line"/>
  </relation>
- <relation id="7728400" visible="true" version="10" changeset="176707627" timestamp="2026-01-01T15:21:19Z" user="aaei924" uid="10626814">
+ <relation id="7728400" visible="true" version="11" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814">
   <member type="node" ref="3087681529" role="stop"/>
   <member type="node" ref="8793714494" role=""/>
   <member type="node" ref="8808844621" role=""/>
+  <member type="node" ref="3403630062" role=""/>
+  <member type="node" ref="3403630064" role=""/>
+  <member type="node" ref="3403630063" role=""/>
+  <member type="node" ref="3403630061" role=""/>
   <tag k="description" v="신분당선 양재역"/>
-  <tag k="name" v="양재"/>
+  <tag k="name" v="양재(신분당선)"/>
   <tag k="name:en" v="Yangjae"/>
-  <tag k="name:ko" v="양재"/>
+  <tag k="name:ko" v="양재(신분당선)"/>
   <tag k="note" v="신분당선"/>
   <tag k="operator" v="네오트랜스주식회사"/>
   <tag k="operator:en" v="NEO TRANS CO., LTD"/>
@@ -50700,7 +50740,7 @@
   <tag k="route_master" v="bus"/>
   <tag k="type" v="route_master"/>
  </relation>
- <relation id="8218597" visible="true" version="7" changeset="176713267" timestamp="2026-01-01T17:53:28Z" user="aaei924" uid="10626814">
+ <relation id="8218597" visible="true" version="8" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814">
   <member type="node" ref="3824606390" role=""/>
   <member type="node" ref="3824606392" role="stop"/>
   <member type="node" ref="3824606389" role="stop"/>
@@ -50710,10 +50750,8 @@
   <member type="node" ref="3396343278" role=""/>
   <member type="node" ref="3396445131" role=""/>
   <member type="node" ref="3396445129" role=""/>
-  <member type="node" ref="3396445130" role=""/>
   <member type="node" ref="3413867727" role=""/>
   <member type="node" ref="9776527215" role=""/>
-  <member type="node" ref="9776527216" role=""/>
   <tag k="name" v="9호선 신논현역"/>
   <tag k="name:en" v="Sinnonhyeon Station"/>
   <tag k="name:ja" v="新論峴駅"/>
@@ -54685,14 +54723,12 @@
   <tag k="restriction" v="no_straight_on"/>
   <tag k="type" v="restriction"/>
  </relation>
- <relation id="14191652" visible="true" version="3" changeset="176707627" timestamp="2026-01-01T15:21:19Z" user="aaei924" uid="10626814">
-  <member type="node" ref="3824606390" role=""/>
+ <relation id="14191652" visible="true" version="4" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814">
   <member type="node" ref="9776192971" role="stop"/>
   <member type="node" ref="9776192970" role="stop"/>
-  <member type="node" ref="3396445129" role=""/>
   <member type="node" ref="9776527216" role=""/>
   <member type="node" ref="3396445130" role=""/>
-  <member type="node" ref="9776527215" role=""/>
+  <member type="node" ref="14342995837" role=""/>
   <tag k="name" v="신논현"/>
   <tag k="name:en" v="Sinnonhyeon"/>
   <tag k="name:ko" v="신분당선 신논현"/>
@@ -54714,20 +54750,12 @@
   <tag k="public_transport" v="stop_area_group"/>
   <tag k="type" v="public_transport"/>
  </relation>
- <relation id="14191654" visible="true" version="3" changeset="176707627" timestamp="2026-01-01T15:21:19Z" user="aaei924" uid="10626814">
-  <member type="node" ref="6048954785" role=""/>
+ <relation id="14191654" visible="true" version="4" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814">
   <member type="node" ref="7287842392" role="stop"/>
   <member type="node" ref="9776192972" role=""/>
-  <member type="node" ref="3401317019" role=""/>
-  <member type="node" ref="3401317020" role=""/>
   <member type="node" ref="9776544718" role=""/>
-  <member type="node" ref="3401317018" role=""/>
   <member type="node" ref="9776544717" role=""/>
-  <member type="node" ref="3401317017" role=""/>
-  <member type="node" ref="3401317013" role=""/>
-  <member type="node" ref="3401317016" role=""/>
-  <member type="node" ref="3401317015" role=""/>
-  <member type="node" ref="3401317014" role=""/>
+  <member type="node" ref="14342995836" role=""/>
   <tag k="name" v="논현"/>
   <tag k="name:en" v="Nonhyeon"/>
   <tag k="name:ko" v="논현"/>
@@ -54750,18 +54778,10 @@
   <tag k="public_transport" v="stop_area_group"/>
   <tag k="type" v="public_transport"/>
  </relation>
- <relation id="14191656" visible="true" version="2" changeset="170245921" timestamp="2025-08-10T13:35:10Z" user="honnip" uid="19642799">
-  <member type="node" ref="6033544395" role=""/>
+ <relation id="14191656" visible="true" version="3" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814">
   <member type="node" ref="8808822195" role="stop"/>
   <member type="node" ref="9776192973" role="stop"/>
-  <member type="node" ref="3403630035" role=""/>
-  <member type="node" ref="3403630032" role=""/>
-  <member type="node" ref="3403630033" role=""/>
-  <member type="node" ref="3403630031" role=""/>
-  <member type="node" ref="3403630030" role=""/>
-  <member type="node" ref="3403630029" role=""/>
-  <member type="node" ref="3403630028" role=""/>
-  <member type="node" ref="3403630034" role=""/>
+  <member type="node" ref="14342995835" role=""/>
   <tag k="name" v="신분당선 신사"/>
   <tag k="name:en" v="Sinsa"/>
   <tag k="name:ko" v="신분당선 신사"/>

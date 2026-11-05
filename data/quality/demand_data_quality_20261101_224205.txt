@@ -1,0 +1,19 @@
+=== Demand Log 데이터 품질 검사 ===
+검사 시각: 2026-11-01 22:42:05
+검사 파일: 9개
+정상: 9개 | 의심: 0개 | 제외 권장: 0개
+
+[날짜 중복] 같은 날짜에 여러 로그가 존재합니다. 비교/학습에서는 같은 날짜를 여러 전략이 공유하지 않도록 주의하세요.
+  2026-08-14: 2개
+  2026-09-05: 2개
+
+[파일별 결과]
+[정상] demand_log_강남역patrol_hungarian260814.csv | rows=5,092 | 2026-08-14T08:00:10 ~ 2026-08-14T10:00:00 | 119.8min | 
+[정상] demand_log_강남역patrol_hungarian공휴일260905.csv | rows=2,588 | 2026-09-05T08:00:10 ~ 2026-09-05T10:00:00 | 119.8min | 
+[정상] demand_log_강남역prepositioned_hungarian260807.csv | rows=5,068 | 2026-08-07T08:00:10 ~ 2026-08-07T10:00:00 | 119.8min | 
+[정상] demand_log_강남역prepositioned_hungarian260814.csv | rows=5,095 | 2026-08-14T08:00:10 ~ 2026-08-14T09:59:58 | 119.8min | 
+[정상] demand_log_강남역prepositioned_hungarian261014.csv | rows=6,429 | 2026-10-14T08:00:10 ~ 2026-10-14T10:00:00 | 119.8min | 
+[정상] demand_log_강남역prepositioned_hungarian공휴일260822.csv | rows=4,101 | 2026-08-22T08:00:10 ~ 2026-08-22T10:00:00 | 119.8min | 
+[정상] demand_log_강남역prepositioned_hungarian공휴일260905.csv | rows=2,603 | 2026-09-05T08:00:10 ~ 2026-09-05T10:00:00 | 119.8min | 
+[정상] demand_log_강남역prepositioned_hungarian공휴일260926.csv | rows=2,551 | 2026-09-26T08:00:10 ~ 2026-09-26T09:59:58 | 119.8min | 
+[정상] demand_log_강남역prepositioned_hungarian공휴일260927.csv | rows=2,619 | 2026-09-27T08:00:10 ~ 2026-09-27T09:59:57 | 119.8min | 

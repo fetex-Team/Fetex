@@ -15,6 +15,7 @@ RL 재배치 정책 학습 스크립트. headless(sumo, GUI 없음)로 빠르게
 import os
 import sys
 import json
+from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -23,7 +24,8 @@ if PROJECT_ROOT not in sys.path:
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import BaseCallback, CheckpointCallback
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNormalize
 
 from config_loader import CFG
 from module4_dispatch.rl_env import TaxiRepositionEnv
@@ -32,6 +34,8 @@ from module4_dispatch.category_demand_predictor import CategoryDemandPredictor
 SUMO_CFG = os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
 META_PATH = os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 MODEL_OUT = os.path.join(PROJECT_ROOT, "module4_dispatch", "rl_reposition_model.zip")
+# VecNormalize 통계(obs 평균/분산). 추론 때 rl_reposition_maintainer가 같은 이름 규칙으로 찾아 쓴다.
+VECNORM_OUT = os.path.splitext(MODEL_OUT)[0] + "_vecnorm.pkl"
 CATEGORY_MODEL_PATH = os.environ.get(
     "AI_CATEGORY_MODEL_PATH",
     os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl"),
@@ -96,12 +100,19 @@ def main():
         print(f"[경고] {CATEGORY_MODEL_PATH}가 없어 예측수요=0으로 대체합니다. "
               f"module3_prediction/train_category_demand.py를 먼저 돌리는 것을 권장합니다.")
 
+    # episode reward/length를 남겨야 학습이 실제로 개선됐는지 사후에 검증할 수 있다.
+    monitor_dir = os.path.join(
+        PROJECT_ROOT, "module4_dispatch", "training_logs",
+        datetime.now().strftime("%Y%m%d_%H%M%S"),
+    )
+    os.makedirs(monitor_dir, exist_ok=True)
+
     def make_env(worker_index):
         # SubprocVecEnv가 각 worker 프로세스에서 이 함수를 호출해서 env를 만든다.
         # (SUMO/TraCI는 프로세스별로 완전히 독립이라 포트/좀비프로세스 정리 모두
         #  worker마다 자연히 분리됨 - 별도 처리 불필요)
         def _init():
-            return TaxiRepositionEnv(
+            env = TaxiRepositionEnv(
                 sumo_cfg_path=SUMO_CFG,
                 meta=meta,
                 demand_predictor=demand_predictor,
@@ -115,6 +126,7 @@ def main():
                 training_seed_base=int(CFG.get("rl_training_seed_base", 1000)),
                 worker_index=worker_index,
             )
+            return Monitor(env, filename=os.path.join(monitor_dir, f"ppo_worker_{worker_index}"))
         return _init
 
     # 최초 1회는 환경 스펙이 맞는지 검증 (문제 있으면 여기서 assert로 알려줌).
@@ -138,12 +150,22 @@ def main():
         f"행동=구역별 유휴 택시 배분"
     )
 
+    use_vecnorm = bool(CFG.get("rl_vecnormalize", True))
+
     if n_envs > 1:
         # 병렬: env마다 별도 OS 프로세스(SUMO도 각자 따로 뜸) -> CPU 코어 수만큼 실속도 향상
         vec_env = SubprocVecEnv([make_env(i) for i in range(n_envs)])
     else:
         # 기존과 완전히 동일한 단일 env 동작 (worker_index=0 -> seed도 그대로)
         vec_env = DummyVecEnv([make_env(0)])
+
+    if use_vecnorm:
+        # obs(인원수)와 보상(-230~+17) 스케일이 커서 PPO가 불안정했음 -> 정규화.
+        # Monitor는 VecNormalize 안쪽이라 training_logs의 보상은 계속 '원래 값'으로 기록된다.
+        vec_env = VecNormalize(
+            vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0,
+            gamma=float(CFG.get("rl_gamma", 0.99)),
+        )
 
     model = PPO(
         "MlpPolicy",
@@ -167,10 +189,31 @@ def main():
         save_freq=max((rollout_steps * 2) // n_envs, 1),
         save_path=os.path.join(PROJECT_ROOT, "module4_dispatch", "checkpoints"),
         name_prefix="rl_reposition_model",
+        save_vecnormalize=use_vecnorm,
     )
     model.learn(total_timesteps=total_timesteps, callback=[progress_cb, checkpoint_cb])
     model.save(MODEL_OUT)
     print(f"[완료] 학습된 정책을 저장했습니다: {MODEL_OUT}")
+    if use_vecnorm:
+        vec_env.save(VECNORM_OUT)
+        print(f"[완료] 관측 정규화 통계를 저장했습니다: {VECNORM_OUT}")
+    elif os.path.exists(VECNORM_OUT):
+        os.remove(VECNORM_OUT)  # 예전 통계가 남아 있으면 추론 때 잘못 적용되므로 제거
+
+    # ── rl_model_backups 안전 백업 보관 ──
+    try:
+        import shutil
+        backup_dir = os.path.join(PROJECT_ROOT, "rl_model_backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        rmode = CFG.get("rl_reward_mode", "default")
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_file = os.path.join(backup_dir, f"rl_model_{rmode}_{ts}_{total_timesteps}steps.zip")
+        shutil.copy2(MODEL_OUT, backup_file)
+        if use_vecnorm:
+            shutil.copy2(VECNORM_OUT, os.path.splitext(backup_file)[0] + "_vecnorm.pkl")
+        print(f"[백업 보존] {backup_file} 에 안전 보관 완료!")
+    except Exception as _be:
+        print(f"[백업 경고] 백업 저장 실패: {_be}")
 
 
 if __name__ == "__main__":

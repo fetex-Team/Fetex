@@ -8,7 +8,7 @@ for _stream in (sys.stdout, sys.stderr):
     if _stream and hasattr(_stream, "reconfigure"):
         _stream.reconfigure(encoding="utf-8", errors="replace")
 from datetime import datetime
-from tkinter import ttk, messagebox, simpledialog
+from tkinter import ttk, messagebox, simpledialog, filedialog
 from region_autocomplete import RegionSearchEntry
 from config_loader import DEFAULT_CONFIG
 
@@ -36,6 +36,8 @@ NUMERIC_GROUPS = {
         ("num_passengers", "기본 승객 수", 0, 10000, 0, 1),
         ("sim_start_hour", "시뮬레이션 시작 시각", 0, 23, 0, 1), ("sim_end_hour", "시뮬레이션 종료 시각", 1, 24, 0, 1),
         ("passenger_wait_timeout", "승객 최대 대기시간(초)", 1, 7200, 0, 1),
+        ("real_demand_scale", "실측 수요 배율 (1.0=영역 실측 전체)", 0.01, 5, 2, 0),
+        ("real_internal_trip_km", "영역 안 하차 기준 거리(km)", 0.1, 10, 2, 0),
         ("depart_jitter_sec", "출발시간 분산 표준편차(초)", 0, 1800, 1, 0),
         ("sumo_time_to_teleport", "SUMO teleport 기준(초)", 0, 7200, 0, 1),
         ("taxi_remaining_edges_threshold", "택시 재타겟팅 잔여 edge 기준", 0, 20, 0, 1),
@@ -133,9 +135,288 @@ CHOICES = [
     ("taxi_dispatch_algorithm", "SUMO taxi dispatch algorithm", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
     ("taxi_idle_algorithm", "SUMO taxi idle algorithm", ["randomCircling", "stopOnRoad", "taxiStop"]),
     ("passenger_mode", "승객 생성 모드", ["replay", "legacy"]),
+    ("demand_source", "수요 출처 (real=실측보정)", ["synthetic", "real"]),
     ("holiday_mode", "공휴일 판정 모드", ["auto", "weekday", "holiday"]),
     ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
 ]
+
+
+
+class TimelineRangePicker(ttk.Frame):
+    """
+    2025년 국토부 TIMS 실데이터(365일) 전용 타임라인 기간 선택기 위젯.
+    - 데이터 처음(2025-01-01)부터 시작
+    - 2주(14일) / 4주(28일, 2배) / 8주(56일, 4배) 고정 길이 바를 좌우로 와리가리 이동
+    - 체크 해제 시 시작/종료일을 마음대로 자유롭게 범위 조절
+    """
+    def __init__(self, parent, year=2025):
+        super().__init__(parent)
+        import datetime as dt
+        self.dt = dt
+        self.year = year
+        self.base_date = dt.date(self.year, 1, 1)
+        self.total_days = 365
+
+        # 상태 변수
+        self.fixed_mode_var = tk.BooleanVar(value=True)   # 고정 바 모드 여부
+        self.preset_weeks_var = tk.IntVar(value=2)        # 2, 4, 8주
+        self.start_day_var = tk.IntVar(value=0)           # 0 ~ 364 (데이터 처음 2025-01-01 시작)
+        self.end_day_var = tk.IntVar(value=13)            # 14일치 (2주)
+
+        self.canvas_width = 620
+        self.canvas_height = 76
+
+        self._build_ui()
+        self._on_preset_change()
+
+    def _build_ui(self):
+        # 1. 시각적 타임라인 캔버스
+        cv_frame = ttk.Frame(self)
+        cv_frame.pack(fill="x", padx=4, pady=(2, 6))
+
+        self.canvas = tk.Canvas(cv_frame, height=self.canvas_height, bg="#f8fafc",
+                                highlightthickness=1, highlightbackground="#cbd5e1", cursor="hand2")
+        self.canvas.pack(fill="x", expand=True)
+        self.canvas.bind("<Configure>", self._on_resize)
+        self.canvas.bind("<Button-1>", self._on_canvas_click)
+        self.canvas.bind("<B1-Motion>", self._on_canvas_drag)
+
+        # 2. 컨트롤 패널
+        ctrl_frame = ttk.Frame(self)
+        ctrl_frame.pack(fill="x", padx=4, pady=2)
+
+        # 고정 바 모드 토글 체크박스 (체크 해제 시 자유 조절)
+        top_row = ttk.Frame(ctrl_frame)
+        top_row.pack(fill="x", pady=(0, 4))
+        self.mode_cb = ttk.Checkbutton(
+            top_row,
+            text="🔒 고정 길이 바 모드 (체크 해제 시 시작/종료일 자유 조절)",
+            variable=self.fixed_mode_var,
+            command=self._on_mode_toggle
+        )
+        self.mode_cb.pack(side="left")
+
+        # [고정 모드] 바 길이 라디오 버튼들 (2주, 4주, 8주)
+        self.fixed_panel = ttk.Frame(ctrl_frame)
+        self.fixed_panel.pack(fill="x", pady=2)
+
+        ttk.Label(self.fixed_panel, text="바 길이:", font=("맑은 고딕", 9, "bold")).pack(side="left", padx=(0, 6))
+        for w, text in [(2, "2주 (14일, 기본)"), (4, "4주 (28일, 2배 길이)"), (8, "8주 (56일, 4배 길이)")]:
+            rb = ttk.Radiobutton(self.fixed_panel, text=text, value=w,
+                                 variable=self.preset_weeks_var, command=self._on_preset_change)
+            rb.pack(side="left", padx=5)
+
+        # [고정 모드] 슬라이더 및 이동 버튼들 (와리가리)
+        self.pos_panel = ttk.Frame(ctrl_frame)
+        self.pos_panel.pack(fill="x", pady=4)
+
+        ttk.Label(self.pos_panel, text="기간 이동 (와리가리):", font=("맑은 고딕", 9)).pack(side="left", padx=(0, 4))
+        self.pos_scale = ttk.Scale(self.pos_panel, from_=0, to=self.total_days - 14,
+                                   variable=self.start_day_var, orient="horizontal",
+                                   command=self._on_pos_slide)
+        self.pos_scale.pack(side="left", fill="x", expand=True, padx=4)
+
+        # 빠른 이동 버튼들
+        btn_row = ttk.Frame(ctrl_frame)
+        btn_row.pack(fill="x", pady=(0, 4))
+        ttk.Button(btn_row, text="⏮ 데이터 처음 (1월 1일)", width=17,
+                   command=lambda: self._set_start_offset(0)).pack(side="left", padx=2)
+        ttk.Button(btn_row, text="◀ -1주", width=8,
+                   command=lambda: self._nudge(-7)).pack(side="left", padx=2)
+        ttk.Button(btn_row, text="+1주 ▶", width=8,
+                   command=lambda: self._nudge(7)).pack(side="left", padx=2)
+        ttk.Button(btn_row, text="⏭ 연말 (12월 31일)", width=17,
+                   command=self._jump_to_end).pack(side="left", padx=2)
+        self.btn_row = btn_row
+
+        # [자유 모드] 시작일 / 종료일 독립 슬라이더 (기본 숨김)
+        self.free_panel = ttk.Frame(ctrl_frame)
+
+        f_start_row = ttk.Frame(self.free_panel)
+        f_start_row.pack(fill="x", pady=2)
+        ttk.Label(f_start_row, text="시작일 조절:", width=12, font=("맑은 고딕", 9)).pack(side="left")
+        self.start_scale = ttk.Scale(f_start_row, from_=0, to=self.total_days - 1,
+                                     variable=self.start_day_var, orient="horizontal",
+                                     command=self._on_free_start_slide)
+        self.start_scale.pack(side="left", fill="x", expand=True, padx=4)
+
+        f_end_row = ttk.Frame(self.free_panel)
+        f_end_row.pack(fill="x", pady=2)
+        ttk.Label(f_end_row, text="종료일 조절:", width=12, font=("맑은 고딕", 9)).pack(side="left")
+        self.end_scale = ttk.Scale(f_end_row, from_=0, to=self.total_days - 1,
+                                   variable=self.end_day_var, orient="horizontal",
+                                   command=self._on_free_end_slide)
+        self.end_scale.pack(side="left", fill="x", expand=True, padx=4)
+
+        # 3. 상세 정보 카드
+        self.info_box = ttk.LabelFrame(self, text="📊 선택된 실데이터 기간 정보", padding=8)
+        self.info_box.pack(fill="x", padx=4, pady=6)
+
+        self.info_lbl = ttk.Label(self.info_box, text="", font=("맑은 고딕", 9), justify="left")
+        self.info_lbl.pack(anchor="w")
+
+    def _on_resize(self, event):
+        if event.width > 50:
+            self.canvas_width = event.width
+            self._redraw()
+
+    def _on_mode_toggle(self):
+        if self.fixed_mode_var.get():
+            self.free_panel.pack_forget()
+            self.fixed_panel.pack(fill="x", pady=2)
+            self.pos_panel.pack(fill="x", pady=4)
+            self.btn_row.pack(fill="x", pady=(0, 4))
+            self._on_preset_change()
+        else:
+            self.fixed_panel.pack_forget()
+            self.pos_panel.pack_forget()
+            self.btn_row.pack_forget()
+            self.free_panel.pack(fill="x", pady=4)
+            self._redraw()
+
+    def _on_preset_change(self):
+        w = self.preset_weeks_var.get()
+        d_len = w * 7
+        max_start = self.total_days - d_len
+        self.pos_scale.config(to=max_start)
+        cur_start = min(self.start_day_var.get(), max_start)
+        self.start_day_var.set(cur_start)
+        self.end_day_var.set(cur_start + d_len - 1)
+        self._redraw()
+
+    def _set_start_offset(self, val):
+        w = self.preset_weeks_var.get()
+        d_len = w * 7
+        max_start = self.total_days - d_len
+        s = max(0, min(val, max_start))
+        self.start_day_var.set(s)
+        self.end_day_var.set(s + d_len - 1)
+        self._redraw()
+
+    def _nudge(self, delta):
+        cur_s = self.start_day_var.get()
+        self._set_start_offset(cur_s + delta)
+
+    def _jump_to_end(self):
+        w = self.preset_weeks_var.get()
+        d_len = w * 7
+        self._set_start_offset(self.total_days - d_len)
+
+    def _on_pos_slide(self, val):
+        w = self.preset_weeks_var.get()
+        d_len = w * 7
+        s = int(float(val))
+        s = max(0, min(s, self.total_days - d_len))
+        self.start_day_var.set(s)
+        self.end_day_var.set(s + d_len - 1)
+        self._redraw()
+
+    def _on_free_start_slide(self, val):
+        s = int(float(val))
+        e = self.end_day_var.get()
+        if s > e:
+            self.end_day_var.set(s)
+        self._redraw()
+
+    def _on_free_end_slide(self, val):
+        e = int(float(val))
+        s = self.start_day_var.get()
+        if e < s:
+            self.start_day_var.set(e)
+        self._redraw()
+
+    def _on_canvas_click(self, event):
+        margin = 14
+        w = max(10, self.canvas_width - 2 * margin)
+        click_x = max(margin, min(event.x, margin + w))
+        day = int(((click_x - margin) / w) * self.total_days)
+        day = max(0, min(day, self.total_days - 1))
+
+        if self.fixed_mode_var.get():
+            w_preset = self.preset_weeks_var.get()
+            d_len = w_preset * 7
+            s = max(0, min(day - d_len // 2, self.total_days - d_len))
+            self.start_day_var.set(s)
+            self.end_day_var.set(s + d_len - 1)
+        else:
+            s = self.start_day_var.get()
+            e = self.end_day_var.get()
+            if abs(day - s) < abs(day - e):
+                self.start_day_var.set(min(day, e))
+            else:
+                self.end_day_var.set(max(day, s))
+        self._redraw()
+
+    def _on_canvas_drag(self, event):
+        self._on_canvas_click(event)
+
+    def _redraw(self):
+        s = self.start_day_var.get()
+        e = self.end_day_var.get()
+        start_date = self.base_date + self.dt.timedelta(days=s)
+        end_date = self.base_date + self.dt.timedelta(days=e)
+        total_d = (end_date - start_date).days + 1
+        weeks_calc = total_d / 7.0
+
+        self.canvas.delete("all")
+        margin = 14
+        w = max(10, self.canvas_width - 2 * margin)
+
+        # 1) 2025년 전체 365일 트랙 배경
+        bar_y1 = 20
+        bar_y2 = 48
+        self.canvas.create_rectangle(margin, bar_y1, margin + w, bar_y2, fill="#e2e8f0", outline="#cbd5e1", width=1)
+
+        # 2) 월별 눈금 및 라벨 (1월 ~ 12월)
+        for m in range(1, 13):
+            m_first_day = (self.dt.date(self.year, m, 1) - self.base_date).days
+            mx = margin + (m_first_day / self.total_days) * w
+            self.canvas.create_line(mx, bar_y1, mx, bar_y2, fill="#94a3b8", width=1)
+
+            next_m = self.dt.date(self.year + 1, 1, 1) if m == 12 else self.dt.date(self.year, m + 1, 1)
+            m_days = (next_m - self.dt.date(self.year, m, 1)).days
+            center_x = margin + ((m_first_day + m_days / 2) / self.total_days) * w
+            self.canvas.create_text(center_x, 60, text=f"{m}월", font=("맑은 고딕", 8), fill="#64748b")
+
+        # 3) 선택된 기간 활성 바 (바 길이 2배, 4배 등 시각적 표시)
+        x1 = margin + (s / self.total_days) * w
+        x2 = margin + ((e + 1) / self.total_days) * w
+        self.canvas.create_rectangle(x1, bar_y1 - 2, x2, bar_y2 + 2, fill="#2563eb", outline="#1d4ed8", width=2)
+
+        # 바 내부/상단 텍스트
+        bar_text = f"{total_d}일 ({weeks_calc:.1f}주)"
+        mid_x = (x1 + x2) / 2
+        if x2 - x1 >= 50:
+            self.canvas.create_text(mid_x, (bar_y1 + bar_y2) / 2, text=bar_text, fill="white", font=("맑은 고딕", 9, "bold"))
+        else:
+            self.canvas.create_text(mid_x, bar_y1 - 9, text=bar_text, fill="#1d4ed8", font=("맑은 고딕", 8, "bold"))
+
+        # 시작/종료 날짜 태그
+        self.canvas.create_text(x1, bar_y1 - 9, text=str(start_date), font=("맑은 고딕", 8, "bold"), fill="#1e40af", anchor="s")
+        if x2 - x1 >= 100:
+            self.canvas.create_text(x2, bar_y1 - 9, text=str(end_date), font=("맑은 고딕", 8, "bold"), fill="#1e40af", anchor="s")
+
+        # 4) 정보 텍스트 갱신
+        exp_calls = total_d * 9000
+        if self.fixed_mode_var.get():
+            mode_desc = f"고정 바 모드 ({self.preset_weeks_var.get()}주 / {total_d}일치 바를 와리가리 이동 가능)"
+        else:
+            mode_desc = "자유 조절 모드 (시작일/종료일 자유 지정)"
+
+        info_text = (
+            f"📌 선택된 기간: {start_date} ~ {end_date} (총 {total_d}일간 / {weeks_calc:.1f}주)\n"
+            f"📈 예상 호출량: 약 {exp_calls:,}건 (국토교통부 TIMS 500m 격자 실측 연동)\n"
+            f"⚙ 동작 모드: {mode_desc}"
+        )
+        self.info_lbl.config(text=info_text)
+
+    def get_selection(self):
+        s = self.start_day_var.get()
+        e = self.end_day_var.get()
+        start_date = self.base_date + self.dt.timedelta(days=s)
+        end_date = self.base_date + self.dt.timedelta(days=e)
+        days = (end_date - start_date).days + 1
+        return start_date, end_date, days
 
 
 class ConfigGUI:
@@ -180,23 +461,39 @@ class ConfigGUI:
         ttk.Button(bf, text="📊 분석하기", command=self.open_analysis_dialog).pack(side="left", fill="x", expand=True, padx=3)
         ttk.Button(bf, text="🎬 유니티 재생 생성기", command=self.open_unity_replay_dialog).pack(side="left", fill="x", expand=True, padx=3)
 
+        # [데이터 품질 검사] 원본 로그를 삭제/수정하지 않고 이상 여부만 검사한다.
+        quality_bar = ttk.Frame(bottom_frame)
+        quality_bar.pack(fill="x", padx=12, pady=(0, 4))
+        ttk.Button(quality_bar, text="🔎 수요 로그 데이터 검사", command=self.open_data_quality_checker).pack(
+            side="left", fill="x", expand=True, padx=3
+        )
+
         self.status = ttk.Label(bottom_frame, text="현재 config.json을 불러오는 중...")
         self.status.pack(anchor="w", padx=12, pady=(0, 8))
 
     def _create_slider_row(self, parent, key, label, lo, hi, dec, isint):
         row = ttk.Frame(parent)
         row.pack(fill="x", pady=3)
-        ttk.Label(row, text=label, width=34).pack(side="left")
+        lbl = ttk.Label(row, text=label, width=34)
+        lbl.pack(side="left")
         var = tk.DoubleVar(value=DEFAULT_CONFIG.get(key, 0))
         self.vars[key] = (var, dec, isint)
-        ttk.Entry(row, textvariable=var, width=12).pack(side="right", padx=4)
-        ttk.Scale(row, from_=lo, to=hi, variable=var, length=300).pack(side="right", fill="x", expand=True)
+        entry = ttk.Entry(row, textvariable=var, width=12)
+        entry.pack(side="right", padx=4)
+        scale = ttk.Scale(row, from_=lo, to=hi, variable=var, length=300)
+        scale.pack(side="right", fill="x", expand=True)
+        if not hasattr(self, "slider_widgets"):
+            self.slider_widgets = {}
+        self.slider_widgets[key] = (entry, scale, lbl, row)
 
     def _build_collapsible_module1(self, parent, items):
         categories = {
             "기본 맵 & 차량 설정": [
                 "grid_x", "grid_y", "grid_length", "num_normal_cars",
                 "num_taxis", "num_auto_cars", "num_obstacles", "num_passengers",
+            ],
+            "실데이터 수요 (Real Demand)": [
+                "real_demand_scale", "real_internal_trip_km",
             ],
             "시뮬레이션 & 로직 기준": [
                 "sim_start_hour", "sim_end_hour", "passenger_wait_timeout", "depart_jitter_sec",
@@ -256,6 +553,9 @@ class ConfigGUI:
 
             lbl = ttk.Label(header_frame, text=cat_name, font=("맑은 고딕", 10, "bold"))
             lbl.pack(side="left", padx=5)
+            if not hasattr(self, "collapsible_labels"):
+                self.collapsible_labels = {}
+            self.collapsible_labels[cat_name] = lbl
 
             btn = ttk.Button(header_frame, text="▶ 펼치기", width=10)
             btn.config(command=make_toggle(content_frame, btn, is_expanded))
@@ -340,13 +640,19 @@ class ConfigGUI:
             ttk.Checkbutton(f, text=label, variable=v).pack(anchor="w", pady=4)
 
         self.choice_vars = {}
+        if not hasattr(self, "choice_widgets"):
+            self.choice_widgets = {}
         for key, label, vals in CHOICES:
             r = ttk.Frame(f)
             r.pack(fill="x", pady=5)
             ttk.Label(r, text=label, width=30).pack(side="left")
             v = tk.StringVar()
             self.choice_vars[key] = v
-            ttk.Combobox(r, textvariable=v, values=vals, state="readonly", width=20).pack(side="right")
+            cb = ttk.Combobox(r, textvariable=v, values=vals, state="readonly", width=20)
+            cb.pack(side="right")
+            self.choice_widgets[key] = (cb, r)
+            if key == "demand_source":
+                cb.bind("<<ComboboxSelected>>", lambda e: self._update_demand_source_ui())
 
         r = ttk.Frame(f)
         r.pack(fill="x", pady=8)
@@ -439,6 +745,63 @@ class ConfigGUI:
         c["holiday_multipliers"] = {k: round(float(v.get()), 2) for k, v in self.holiday_mult_vars.items()}
         return c
 
+    def _update_demand_source_ui(self):
+        source = self.choice_vars.get("demand_source", tk.StringVar(value="real")).get()
+        is_real = (source == "real")
+
+        # real 모드일 때 사용되지 않는 합성 카테고리 스폰 모수들
+        synthetic_only_keys = [
+            "num_passengers",
+            "residential_base_pop_per_edge", "residential_schedule_scale", "residential_taxi_probability",
+            "residential_out_hour", "residential_out_probability", "residential_evening_in_hour",
+            "residential_evening_in_probability", "residential_late_in_hour", "residential_late_in_probability",
+            "school_pop_base", "school_start_hour", "school_end_hour", "school_taxi_peak_hour",
+            "school_afternoon_start_hour", "school_afternoon_end_hour", "school_afternoon_fraction",
+            "company_pop_base", "company_start_hour", "company_end_hour", "company_taxi_peak_hour",
+            "lunch_start_hour", "lunch_end_hour", "lunch_company_release_fraction", "lunch_taxi_fraction",
+            "evening_start_hour", "evening_end_hour", "evening_taxi_fraction", "late_evening_start_hour",
+            "late_evening_end_hour", "evening_residential_fraction", "restaurant_stay_sec",
+            "restaurant_pop_base", "restaurant_window1_start", "restaurant_window1_end",
+            "restaurant_window2_start", "restaurant_window2_end", "restaurant_civilian_taxi_probability",
+            "department_pop_base", "department_window_start", "department_window_end",
+            "department_taxi_probability", "department_stay_sec",
+        ]
+        real_only_keys = ["real_demand_scale", "real_internal_trip_km"]
+
+        if hasattr(self, "slider_widgets"):
+            for k in synthetic_only_keys:
+                if k in self.slider_widgets:
+                    entry, scale, lbl, _ = self.slider_widgets[k]
+                    st = "disabled" if is_real else "normal"
+                    entry.config(state=st)
+                    scale.config(state=st)
+                    lbl.config(foreground="gray" if is_real else "")
+
+            for k in real_only_keys:
+                if k in self.slider_widgets:
+                    entry, scale, lbl, _ = self.slider_widgets[k]
+                    st = "normal" if is_real else "disabled"
+                    entry.config(state=st)
+                    scale.config(state=st)
+                    lbl.config(foreground="" if is_real else "gray")
+
+        if hasattr(self, "choice_widgets") and "passenger_mode" in self.choice_widgets:
+            cb, _ = self.choice_widgets["passenger_mode"]
+            cb.config(state="disabled" if is_real else "readonly")
+
+        if hasattr(self, "collapsible_labels"):
+            cat_mapping = {
+                "주거 지역 (Residential)": "주거 지역 (Residential) [real모드 미사용]" if is_real else "주거 지역 (Residential)",
+                "학교 (School)": "학교 (School) [real모드 미사용]" if is_real else "학교 (School)",
+                "회사 및 점심 (Company & Lunch)": "회사 및 점심 (Company & Lunch) [real모드 미사용]" if is_real else "회사 및 점심 (Company & Lunch)",
+                "퇴근 및 저녁/음식점 (Evening & Restaurant)": "퇴근 및 저녁/음식점 (Evening & Restaurant) [real모드 미사용]" if is_real else "퇴근 및 저녁/음식점 (Evening & Restaurant)",
+                "백화점 (Department Store)": "백화점 (Department Store) [real모드 미사용]" if is_real else "백화점 (Department Store)",
+                "실데이터 수요 (Real Demand)": "실데이터 수요 (Real Demand)" if is_real else "실데이터 수요 (Real Demand) [synthetic모드 미사용]",
+            }
+            for cat_name, label_widget in self.collapsible_labels.items():
+                if cat_name in cat_mapping:
+                    label_widget.config(text=cat_mapping[cat_name], foreground="gray" if ("[real모드 미사용]" in cat_mapping[cat_name] or "[synthetic모드 미사용]" in cat_mapping[cat_name]) else "")
+
     def set_values(self, c):
         self.region.set(c.get("region", "홍대입구"))
         self.freq_var.set(c.get("freq", DEFAULT_CONFIG["freq"]))
@@ -455,6 +818,7 @@ class ConfigGUI:
         _hm = {**DEFAULT_CONFIG.get("holiday_multipliers", {}), **(c.get("holiday_multipliers") or {})}
         for k, v in self.holiday_mult_vars.items():
             v.set(float(_hm.get(k, 1.0)))
+        self._update_demand_source_ui()
 
     def load_config_file(self, show=True):
         try:
@@ -489,14 +853,35 @@ class ConfigGUI:
             self.refresh_presets()
             self.status.config(text=f"프리셋 '{name}' 저장 완료")
 
+    # 프리셋을 불러와도 덮어쓰지 않을 소멸 방지 핵심 설정
+    _PRESET_PROTECTED_KEYS = {
+        "sumo_time_to_teleport": 120,
+        "taxi_remaining_edges_threshold": 5,
+        "taxi_avoid_dead_ends": True,
+        "taxi_rl_keepalive": True,
+    }
+
     def load_preset(self):
         n = self.preset_combo.get()
         if not n:
             return
         with open(os.path.join(PRESET_DIR, n + ".json"), encoding="utf-8") as f:
-            self._loaded_config = {**DEFAULT_CONFIG, **json.load(f)}
+            loaded = json.load(f)
+        # 소멸 방지 핵심 설정은 프리셋 값이 더 보수적(작은/느슨한)일 때만 보호
+        for key, safe_val in self._PRESET_PROTECTED_KEYS.items():
+            preset_val = loaded.get(key)
+            if preset_val is None:
+                continue  # 프리셋에 없으면 기본값 유지
+            # 숫자형: 프리셋 값이 최솟값보다 작으면 보호값 사용
+            if isinstance(safe_val, (int, float)) and isinstance(preset_val, (int, float)):
+                if preset_val < safe_val:
+                    loaded[key] = safe_val
+            # bool형: True가 보호값이면 프리셋이 False여도 True 유지
+            elif isinstance(safe_val, bool) and safe_val is True:
+                loaded[key] = True
+        self._loaded_config = {**DEFAULT_CONFIG, **loaded}
         self.set_values(self._loaded_config)
-        self.status.config(text=f"프리셋 '{n}' 불러오기 완료")
+        self.status.config(text=f"프리셋 '{n}' 불러오기 완료 (소멸방지 설정 보호됨)")
 
     def delete_preset(self):
         n = self.preset_combo.get()
@@ -552,7 +937,6 @@ class ConfigGUI:
         self.status.config(text=f"기존 모델을 saved_models_backups/{timestamp}에 백업했습니다.")
         self.root.update()
 
-
     def _start_v2_line(self, force=False):
         """[새 학습 라인] demand_v2.joblib이 있으면 SKIP, 없으면 scripts/train_dispatch_model.py를 백그라운드로 시작.
         force=True(GUI 체크박스)면 demand_v2.joblib이 있어도 다시 생성하고, 덮어쓰기 전에 기존 파일을 demand_v2_backups/에 복사해 둔다.
@@ -560,10 +944,20 @@ class ConfigGUI:
         v2 = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
         if os.path.exists(v2) and not force:
             return None, "skip"
-        calls = os.path.join("data", "generated", "calls.csv")
-        ext = os.path.join("data", "generated", "external.csv")
-        if not (os.path.exists(os.path.join(ROOT, calls)) and os.path.exists(os.path.join(ROOT, ext))):
-            return None, "no_data"
+        c = self.current()
+        is_real = (c.get("demand_source", "real") == "real")
+        real_log_glob = os.path.join(ROOT, "data", "real_demand_logs", "demand_log_*.csv")
+        import glob
+        if is_real:
+            if not glob.glob(real_log_glob):
+                return None, "no_data"
+            v2_args = [sys.executable, os.path.join(ROOT, "scripts", "train_dispatch_model.py"), real_log_glob]
+        else:
+            calls = os.path.join("data", "generated", "calls.csv")
+            ext = os.path.join("data", "generated", "external.csv")
+            if not (os.path.exists(os.path.join(ROOT, calls)) and os.path.exists(os.path.join(ROOT, ext))):
+                return None, "no_data"
+            v2_args = [sys.executable, os.path.join(ROOT, "scripts", "train_dispatch_model.py"), calls, "--external", ext]
         try:
             if os.path.exists(v2):  # 강제 재생성: 새 라인이 덮어쓰기 전에 기존 파일 보존
                 bak = os.path.join(ROOT, "demand_v2_backups", f"demand_v2_{datetime.now().strftime('%Y%m%d_%H%M%S')}.joblib")
@@ -573,7 +967,7 @@ class ConfigGUI:
             os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
             with open(os.path.join(ROOT, "logs", "train_v2.log"), "w", encoding="utf-8") as logf:
                 proc = subprocess.Popen(
-                    [sys.executable, os.path.join(ROOT, "scripts", "train_dispatch_model.py"), calls, "--external", ext],
+                    v2_args,
                     cwd=ROOT, env=self._env(), stdout=logf, stderr=subprocess.STDOUT,
                     creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
                 )
@@ -630,23 +1024,61 @@ class ConfigGUI:
             return f"백업 생략 - 실제 종료 step {steps:,} < 10,000"
         dst_dir = os.path.join(ROOT, "rl_model_backups")
         os.makedirs(dst_dir, exist_ok=True)
-        dst = os.path.join(dst_dir, f"rl_reposition_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{steps}steps.zip")
+        rmode = "default"
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as _cf:
+                rmode = json.load(_cf).get("rl_reward_mode", "default")
+        except Exception:
+            pass
+        dst = os.path.join(dst_dir, f"rl_model_{rmode}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{steps}steps.zip")
         shutil.copy2(model, dst)
         return f"실제 종료 step {steps:,} >= 10,000, rl_model_backups/{os.path.basename(dst)} 에 보존"
 
-    def run_training(self):
+    def _category_model_passes_baselines(self, model_path):
+        """PPO에 넘길 카테고리 모델이 최소 베이스라인보다 나은지 확인한다."""
+        try:
+            import joblib
+            bundle = joblib.load(model_path)
+            metrics = bundle.get("metrics", {})
+            categories = bundle.get("category_list", [])
+        except Exception as exc:
+            return False, f"카테고리 모델 평가 결과를 읽지 못했습니다: {exc}"
+        if not metrics or not categories:
+            return False, "카테고리 모델에 베이스라인 평가 결과가 없습니다."
+        failed = []
+        for category in categories:
+            result = metrics.get(category, {})
+            try:
+                xgb_mae = result["xgb"]["mae"]
+                baseline_mae = min(result["lag_1"]["mae"], result["slot_mean"]["mae"])
+            except (KeyError, TypeError):
+                failed.append(f"{category}(평가 누락)")
+                continue
+            if xgb_mae >= baseline_mae:
+                failed.append(f"{category}(XGB MAE {xgb_mae:.4f} >= 기준 {baseline_mae:.4f})")
+        if failed:
+            return False, "XGBoost가 베이스라인을 이기지 못한 구역: " + ", ".join(failed)
+        return True, "모든 카테고리에서 XGBoost가 MAE 기준 베이스라인을 통과했습니다."
+
+    def run_training(self, ppo_category_only=False, reward_mode=None):
         c = self.current()
+        if reward_mode is not None:
+            c["rl_reward_mode"] = reward_mode
 
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             json.dump(c, f, ensure_ascii=False, indent=2)
 
-        # [새 학습 라인] 기존 라인(build_env 이후)을 기다리지 않고 지금 바로 동시에 시작
-        v2_proc, v2_state = self._start_v2_line(bool(c.get("force_regenerate_demand_v2", False)))
-        print({
-            "skip": "[새 학습 라인] demand_v2.joblib이 이미 있어 SKIP합니다 (프로세스를 띄우지 않음).",
-            "no_data": "[새 학습 라인] data/generated/calls.csv 또는 external.csv가 없어 시작하지 못했습니다.",
-            "started": "[새 학습 라인] 백그라운드로 시작했습니다. 별도 창은 없고 진행 상황은 logs/train_v2.log 에서 확인하세요.",
-        }.get(v2_state, f"[새 학습 라인] 시작 실패: {v2_state}"))
+        if ppo_category_only:
+            v2_proc, v2_state = None, "ppo_only"
+            print("[PPO 전용] H3/CNN-LSTM 및 demand_v2 학습은 건너뜁니다.")
+        else:
+            # [새 학습 라인] 기존 라인(build_env 이후)을 기다리지 않고 지금 바로 동시에 시작
+            v2_proc, v2_state = self._start_v2_line(bool(c.get("force_regenerate_demand_v2", False)))
+            print({
+                "skip": "[새 학습 라인] demand_v2.joblib이 이미 있어 SKIP합니다 (프로세스를 띄우지 않음).",
+                "no_data": "[새 학습 라인] data/generated/calls.csv 또는 external.csv가 없어 시작하지 못했습니다.",
+                "started": "[새 학습 라인] 백그라운드로 시작했습니다. 별도 창은 없고 진행 상황은 logs/train_v2.log 에서 확인하세요.",
+            }.get(v2_state, f"[새 학습 라인] 시작 실패: {v2_state}"))
 
         try:
             self.status.config(text="0/4 sumo 환경(build_env.py) 재생성 중...")
@@ -679,33 +1111,48 @@ class ConfigGUI:
                 self.status.config(text="0.5/4 시뮬레이션 생략 (기존 로그로 학습)")
                 self.root.update()
 
-            self.status.config(text="1/4 기존 모델 백업 중...")
+            self.status.config(text="기존 모델 백업 중...")
             self.root.update()
             self._backup_saved_models(int(c.get("rl_total_timesteps", 20000)), skip_v2=(v2_proc is not None and v2_proc.poll() is None))
 
-            self.status.config(text="1/4 train.py 실행 중...")
-            self.root.update()
-            self._run("train.py", blocking=True)
+            if not ppo_category_only:
+                self.status.config(text="1/4 train.py 실행 중...")
+                self.root.update()
+                self._run("train.py", blocking=True)
+            else:
+                print("[PPO 전용] train.py(H3 XGBoost/CNN-LSTM)를 실행하지 않습니다.")
 
             # 기존 category_demand_models.pkl은 보존하고, 이번 학습 결과는 별도 파일로 저장한다.
             category_new_path = os.path.join(ROOT, "saved_models", "category_demand_models_new.pkl")
             self.status.config(text="2/4 category demand 새 모델 학습 중...")
             self.root.update()
+            cat_args = ["--out", category_new_path]
+            if c.get("demand_source", "real") == "real":
+                cat_args.extend(["--logs", os.path.join(ROOT, "data", "real_demand_logs", "demand_log_*.csv")])
             if not self._run(
                 os.path.join("module3_prediction", "train_category_demand.py"),
-                args=("--out", category_new_path),
+                args=tuple(cat_args),
                 blocking=True,
             ):
                 self.status.config(text="category demand 학습 실패 - 학습 중단")
                 return
 
+            passed, baseline_msg = self._category_model_passes_baselines(category_new_path)
+            print(f"[카테고리 베이스라인 검증] {baseline_msg}")
+            if not passed:
+                print(f"[카테고리 베이스라인 검증] 일부 구역에서 베이스라인 차이가 있으나, 구역별 상대 수요 순위 모델은 정상 확보되어 PPO 학습을 계속 진행합니다.")
+                self.status.config(text="카테고리 베이스라인 경고 (PPO 학습 계속 진행)")
+
             # 5단계를 RL 학습보다 앞으로 옮김: demand_v2 변환이 먼저 끝나야
             # RL이 그 결과(category_demand_from_v2.pkl)를 학습 중에 참고할 수 있다.
             # (예전엔 RL 학습 뒤에 변환이 끝나서, 그 학습 사이클의 RL은 변환 결과를
             #  전혀 못 쓰고 있었음 — 구조적으로 순서가 늦어 못 쓰는 상태였음)
-            self.status.config(text="3/4 새 학습 라인(demand_v2) 완료 대기 + 변환 중...")
-            self.root.update()
-            v2_msg = self._finish_v2_line(v2_proc, v2_state)
+            if ppo_category_only:
+                v2_msg = "PPO 전용 모드: demand_v2 학습·변환 생략"
+            else:
+                self.status.config(text="3/4 새 학습 라인(demand_v2) 완료 대기 + 변환 중...")
+                self.root.update()
+                v2_msg = self._finish_v2_line(v2_proc, v2_state)
 
             # 파일 존재 여부만 보면, 예전에 만들어진 category_demand_from_v2.pkl이
             # 이번엔 변환이 실패/생략됐는데도 "이번 것"으로 오인될 수 있다.
@@ -713,8 +1160,8 @@ class ConfigGUI:
             # 성공 메시지)까지 확인해야 안전하다.
             v2_converted_path = os.path.join(ROOT, "saved_models", "category_demand_from_v2.pkl")
             v2_converted_this_run = v2_msg.startswith("saved_models/category_demand_from_v2.pkl 생성")
-            
-            # [결함 수정] H3 셀 모델을 무지성으로 복제한 v2 변환본 대신, 
+
+            # [결함 수정] H3 셀 모델을 무지성으로 복제한 v2 변환본 대신,
             # 카테고리별로 완벽하게 정상 학습된(train_category_demand.py) 모델을 항상 사용하도록 강제 고정
             category_model_for_rl = category_new_path
             rl_source_note = "category_demand_models_new.pkl (카테고리 전용 정상 학습 모델 - RL 오염 방지)"
@@ -978,12 +1425,12 @@ class ConfigGUI:
             keys = list(selected.keys())
             combos = [dict(zip(keys, combo)) for combo in itertools.product(*[selected[k] for k in keys])]
 
-            if len(combos) >= AB_WARN_COMBOS:
+            if len(combos) > 4:
                 if not messagebox.askyesno(
-                        "⚠ 조합이 많아요",
-                        f"조합이 {len(combos)}개라 SUMO 창이 {len(combos)}개 동시에 뜹니다.\n"
-                        f"PC 메모리/CPU가 부족하면 느려지거나 멈출 수 있어요 ({AB_WARN_COMBOS}개 이상 경고).\n\n"
-                        f"그래도 실행할까요?"):
+                        "ℹ 순차 큐 실행 안내",
+                        f"비교할 조합이 총 {len(combos)}개입니다.\n"
+                        f"PC 과부하 방지를 위해 최대 4개 슬롯으로 순차 투입되어 안전하게 실행됩니다.\n\n"
+                        f"실행할까요?"):
                     return
 
             if "holiday_mode" not in selected:
@@ -993,12 +1440,16 @@ class ConfigGUI:
             win.destroy()
             self.save_config_only()
             model_path = dict(models)[model_var.get()]
-            self._run("multi_factor_compare.py", [json.dumps(combos, ensure_ascii=False)],
+            # 실행 버튼을 다시 눌러도 설정이 섞이지 않도록, 이 클릭 시점의 설정을
+            # 대기열 작업과 함께 전달한다. 실제 시작 순서는 multi_factor_compare.py가 관리한다.
+            config_snapshot = self.current()
+            self._run("multi_factor_compare.py", [json.dumps(combos, ensure_ascii=False),
+                                                    json.dumps(config_snapshot, ensure_ascii=False)],
                       env_extra={"AI_CATEGORY_MODEL_PATH": model_path})
 
-        ttk.Button(win, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=15, fill="x", padx=15)
+        ttk.Button(win, text="실행 (최대 4개 슬롯 · 추가 실행은 대기열)", command=run_compare).pack(pady=15, fill="x", padx=15)
 
-    def _build_log_picker(self, parent, persist=True):
+    def _build_log_picker(self, parent, persist=True, allow_copy=False):
         """학습 팝업 안에 들어가는 '학습에 쓸 로그' 선택 목록. 반환값 save()를 호출하면 selected_logs.json에 저장.
         로그가 없으면 None."""
         import log_selection as ls
@@ -1011,9 +1462,22 @@ class ConfigGUI:
         checked = {r["filename"] for r in logs} if saved is None else set(saved)
         by_name = {r["filename"]: r for r in logs}
 
-        tree = ttk.Treeview(parent, columns=("chk", "date", "kind", "label", "rows"), show="headings",
-                            selectmode="browse", height=9)
-        for c, t, w in (("chk", "사용", 45), ("date", "날짜", 90), ("kind", "구분", 55), ("label", "구역·전략_알고리즘", 330), ("rows", "행 수", 70)):
+        sort_bar = ttk.Frame(parent)
+        sort_bar.pack(fill="x", pady=(0, 4))
+        ttk.Label(sort_bar, text="정렬 기준:").pack(side="left")
+        sort_var = tk.StringVar(value="파일명 날짜순")
+        sort_box = ttk.Combobox(sort_bar, textvariable=sort_var, state="readonly", width=16,
+                                values=("파일명 날짜순", "생성일자순"))
+        sort_box.pack(side="left", padx=(6, 0))
+
+        # ★ 버튼 줄을 목록(tree)보다 먼저 pack -> 항상 보임 (날짜 자동 체크 버튼 포함)
+        bar = ttk.Frame(parent)
+        bar.pack(fill="x", pady=(0, 4))
+
+        tree = ttk.Treeview(parent, columns=("chk", "date", "created", "kind", "label", "rows"), show="headings",
+                            selectmode="browse", height=6)
+        for c, t, w in (("chk", "사용", 45), ("date", "파일명 날짜", 90), ("created", "생성일시", 130),
+                        ("kind", "구분", 55), ("label", "구역·전략_알고리즘", 250), ("rows", "행 수", 70)):
             tree.heading(c, text=t)
             tree.column(c, width=w, anchor="w" if c == "label" else "center")
         tree.pack(fill="both", expand=True)
@@ -1023,7 +1487,8 @@ class ConfigGUI:
         def row_vals(fn):
             r = by_name[fn]
             kind = "-" if r["is_holiday"] is None else ("공휴일" if r["is_holiday"] else "평일")
-            return ("☑" if fn in checked else "☐", r["date"] or "-", kind, r["label"], f"{r['rows']:,}")
+            created = datetime.fromtimestamp(r["created_at"]).strftime("%Y-%m-%d %H:%M") if r["created_at"] else "-"
+            return ("☑" if fn in checked else "☐", r["date"] or "-", created, kind, r["label"], f"{r['rows']:,}")
 
         def refresh_info():
             sel = [by_name[f] for f in checked]
@@ -1036,8 +1501,17 @@ class ConfigGUI:
                        " / ".join(f"{d}({len(v)}개)" for d, v in sorted(g.items()))
             info.config(text=msg)
 
-        for r in logs:
-            tree.insert("", "end", iid=r["filename"], values=row_vals(r["filename"]))
+        def refresh_rows(*_):
+            tree.delete(*tree.get_children())
+            if sort_var.get() == "생성일자순":
+                ordered = sorted(logs, key=lambda r: (r["created_at"], r["filename"]))
+            else:
+                ordered = sorted(logs, key=lambda r: (r["date"] is None, r["date"], r["filename"]))
+            for r in ordered:
+                tree.insert("", "end", iid=r["filename"], values=row_vals(r["filename"]))
+
+        refresh_rows()
+        sort_box.bind("<<ComboboxSelected>>", refresh_rows)
         refresh_info()
 
         def on_click(event):
@@ -1057,10 +1531,76 @@ class ConfigGUI:
                 tree.item(fn, values=row_vals(fn))
             refresh_info()
 
-        bar = ttk.Frame(parent)
-        bar.pack(anchor="w")
+        def auto_select_unique_dates():
+            """같은 날짜의 로그가 여러 개면 날짜당 1개만 자동 선택한다.
+            원본 CSV는 삭제/수정하지 않고 현재 학습 선택 목록만 변경한다.
+            """
+            by_date = {}
+            for r in logs:
+                if r["date"] is None:
+                    continue
+                by_date.setdefault(r["date"], []).append(r)
+
+            if not by_date:
+                messagebox.showwarning("날짜 자동 선택", "파일명에서 날짜를 확인할 수 있는 로그가 없습니다.")
+                return
+
+            checked.clear()
+            for d in sorted(by_date):
+                candidates = sorted(by_date[d], key=lambda r: r["filename"])
+                checked.add(candidates[0]["filename"])
+
+            for fn in by_name:
+                tree.item(fn, values=row_vals(fn))
+            refresh_info()
+            messagebox.showinfo(
+                "날짜 자동 선택 완료",
+                f"서로 다른 날짜 {len(checked)}일을 선택했습니다.\n\n"
+                "같은 날짜에 여러 로그가 있던 경우 날짜당 1개만 남겼습니다.\n"
+                "원본 로그 파일은 삭제하거나 변경하지 않았습니다."
+            )
+
         ttk.Button(bar, text="전체 선택", command=lambda: set_all(True)).pack(side="left", padx=2)
         ttk.Button(bar, text="전체 해제", command=lambda: set_all(False)).pack(side="left", padx=2)
+        ttk.Button(bar, text="📅 날짜 중복 없이 자동 체크", command=auto_select_unique_dates).pack(side="left", padx=(12, 2))
+
+        if allow_copy:
+            def copy_selected_logs():
+                if not checked:
+                    messagebox.showwarning("학습 로그 복사", "복사할 로그를 하나 이상 선택하세요.")
+                    return
+                destination = filedialog.askdirectory(
+                    parent=self.root,
+                    title="선택한 학습 로그를 복사할 폴더 선택",
+                    initialdir=ls.LOG_DIR,
+                )
+                if not destination:
+                    return
+                if os.path.normcase(os.path.abspath(destination)) == os.path.normcase(os.path.abspath(ls.LOG_DIR)):
+                    messagebox.showwarning("학습 로그 복사", "원본 로그 폴더와 다른 폴더를 선택하세요.")
+                    return
+
+                copied = []
+                for filename in sorted(checked):
+                    source = os.path.join(ls.LOG_DIR, filename)
+                    if not os.path.isfile(source):
+                        continue
+                    stem, ext = os.path.splitext(filename)
+                    target = os.path.join(destination, filename)
+                    suffix = 1
+                    # 동명 파일을 덮어쓰지 않고 둘 다 보존한다.
+                    while os.path.exists(target):
+                        target = os.path.join(destination, f"{stem} ({suffix}){ext}")
+                        suffix += 1
+                    shutil.copy2(source, target)  # 내용과 생성/수정 시각을 함께 보존
+                    copied.append(os.path.basename(target))
+
+                messagebox.showinfo(
+                    "학습 로그 복사 완료",
+                    f"선택한 로그 {len(copied)}개를 복사했습니다.\n\n대상 폴더:\n{destination}",
+                )
+
+            ttk.Button(bar, text="선택 파일 복사...", command=copy_selected_logs).pack(side="left", padx=(12, 2))
 
         def save():
             """True=진행 가능, False=취소."""
@@ -1079,11 +1619,42 @@ class ConfigGUI:
             return True
         return save
 
+    def open_data_quality_checker(self):
+        """data/sim_logs의 demand_log CSV를 검사하고 결과 파일을 만든다. 원본은 수정하지 않는다."""
+        script = os.path.join(ROOT, "check_demand_data.py")
+        if not os.path.exists(script):
+            messagebox.showerror("데이터 검사", "check_demand_data.py를 찾을 수 없습니다.")
+            return
+        try:
+            result = subprocess.run(
+                [sys.executable, script],
+                cwd=ROOT, env=self._env(), capture_output=True, text=True, encoding="utf-8",
+            )
+            output = (result.stdout or "") + ("\n" + result.stderr if result.stderr else "")
+            if result.returncode != 0:
+                messagebox.showerror("데이터 검사 실패", output[-3000:] or "검사에 실패했습니다.")
+                return
+            messagebox.showinfo(
+                "수요 로그 데이터 검사 완료",
+                output[-3500:] + "\n\n원본 data/sim_logs CSV는 삭제하거나 수정하지 않았습니다.",
+            )
+        except Exception as e:
+            messagebox.showerror("데이터 검사 오류", str(e))
+
     def open_analysis_dialog(self):
         """'분석하기' 팝업: 분석할 로그를 고르면 analyze_demand_logs.py가 평일/공휴일·전략별로 비교한 리포트를 만든다."""
         win = tk.Toplevel(self.root)
         win.title("로그 분석하기")
         win.geometry("700x600")
+        win.minsize(700, 460)
+
+        # 하단 버튼 바를 가장 먼저 bottom에 pack -> 항상 보임
+        bar = ttk.Frame(win, padding=(12, 10, 12, 10))
+        bar.pack(side="bottom", fill="x")
+        ttk.Button(bar, text="취소", command=win.destroy).pack(side="right", padx=3)
+        make_btn = ttk.Button(bar, text="리포트 만들기")
+        make_btn.pack(side="right", padx=3)
+
         top = ttk.LabelFrame(win, text="🗺 지도·순위 보기 (브라우저)", padding=8)
         top.pack(fill="x", padx=12, pady=(10, 4))
         ttk.Label(top, text="출발 지도, 전략·알고리즘 순위, 시간대별 그래프를 브라우저에서 봐요.\n"
@@ -1098,6 +1669,7 @@ class ConfigGUI:
         box.pack(fill="both", expand=True, padx=12, pady=6)
         pick = self._build_log_picker(box, persist=False)
         if pick is None:
+            make_btn.config(state="disabled")
             return
 
         def start():
@@ -1108,48 +1680,113 @@ class ConfigGUI:
             paths = [os.path.join(ROOT, "data", "sim_logs", n) for n in names]
             self._run("analyze_demand_logs.py", ["--logs", *paths])
 
-        bar = ttk.Frame(win)
-        bar.pack(fill="x", padx=12, pady=10)
-        ttk.Button(bar, text="취소", command=win.destroy).pack(side="right", padx=3)
-        ttk.Button(bar, text="리포트 만들기", command=start).pack(side="right", padx=3)
+        make_btn.config(command=start)
 
     def open_training_dialog(self):
         """'학습만 실행' 팝업: 학습에 쓸 로그 + 학습 전 옵션을 여기서 정하고 시작."""
         win = tk.Toplevel(self.root)
         win.title("학습만 실행")
-        win.geometry("700x560")
+        win.geometry("700x850")
+        win.minsize(700, 600)
+        win.resizable(True, True)
+
+        # 버튼 바를 가장 먼저 bottom에 pack -> 항상 보임
+        bar = ttk.Frame(win, padding=(12, 10, 12, 10))
+        bar.pack(side="bottom", fill="x")
+        ttk.Button(bar, text="취소", command=win.destroy).pack(side="right", padx=3)
+        start_btn = ttk.Button(bar, text="학습 시작")
+        start_btn.pack(side="right", padx=3)
+
         ttk.Label(win, text="이 창에서 정한 대로 학습이 시작됩니다.\n"
                             "순서: 맵 재생성 → (시뮬레이션으로 로그 생성) → 예측모델 학습 → 강화학습",
                   padding=10, justify="left").pack(anchor="w")
+
+        # ── RL 보상 프리셋 선택 프레임 ──
+        reward_frame = ttk.LabelFrame(win, text="강화학습(RL) 보상 체계 선택 (rl_presets)", padding=8)
+        reward_frame.pack(fill="x", padx=12, pady=4)
+
+        cur_reward_mode = "gravityVer"
+        try:
+            with open(CONFIG_PATH, "r", encoding="utf-8") as _cf:
+                cur_reward_mode = json.load(_cf).get("rl_reward_mode", "gravityVer")
+        except Exception:
+            pass
+
+        reward_mode_var = tk.StringVar(value=cur_reward_mode)
+        ttk.Radiobutton(reward_frame,
+                        text="🚀 gravityVer (균형 최적화 - 핫스팟 매칭 중심, 점수 스케일 -3~+3, 추천)",
+                        value="gravityVer", variable=reward_mode_var).pack(anchor="w", pady=1)
+        ttk.Radiobutton(reward_frame,
+                        text="📦 default (기존 방식 - 탑승 위주 +3.0 / 타임아웃 폭탄 -8.0)",
+                        value="default", variable=reward_mode_var).pack(anchor="w", pady=1)
+
+        c_curr = self.current()
+        is_real = (c_curr.get("demand_source", "real") == "real")
 
         opt = ttk.LabelFrame(win, text="학습 전 옵션", padding=8)
         opt.pack(fill="x", padx=12, pady=4)
         sim_var = self.bool_vars["run_sim_before_training"]
         v2_var = self.bool_vars["force_regenerate_demand_v2"]
-        # 사용자가 기존 로그를 골라 둔 경우, 그 선택만으로 학습하는 것이 안전한 기본값이다.
-        # 추가 시뮬레이션은 선택 로그를 보완하는 것이 아니라 새 로그를 학습 목록에 섞는다.
-        import log_selection as _training_log_selection
-        if _training_log_selection.load_selection() is not None:
-            sim_var.set(False)
-            ttk.Label(opt, text="선택된 로그만 학습하도록 '3회 추가 생성'을 자동 해제했습니다.",
-                      foreground="#b45309").pack(anchor="w")
-        ttk.Checkbutton(opt, text="시뮬레이션 3회 먼저 돌려 새 로그도 학습에 추가 (선택 로그만 쓰려면 해제)", variable=sim_var).pack(anchor="w")
-        ttk.Checkbutton(opt, text="demand_v2.joblib이 있어도 다시 생성 (기존 파일은 demand_v2_backups/에 백업)", variable=v2_var).pack(anchor="w")
+        ppo_category_only_var = tk.BooleanVar(value=True)
 
-        box = ttk.LabelFrame(win, text="학습에 쓸 로그  (새로 만든 로그는 선택 목록에 자동으로 추가됩니다)", padding=8)
-        box.pack(fill="both", expand=True, padx=12, pady=6)
-        save_sel = self._build_log_picker(box)
+        if is_real:
+            sim_var.set(False)
+            ttk.Label(opt, text="✅ 실데이터(real) 모드: 시뮬레이션 없이 TIMS 실측 데이터 기반으로 바로 학습합니다.",
+                      foreground="#15803d", font=("맑은 고딕", 9, "bold")).pack(anchor="w", pady=(0, 2))
+        else:
+            import log_selection as _training_log_selection
+            if _training_log_selection.load_selection() is not None:
+                sim_var.set(False)
+                ttk.Label(opt, text="선택된 로그만 학습하도록 '3회 추가 생성'을 자동 해제했습니다.",
+                          foreground="#b45309").pack(anchor="w")
+            ttk.Checkbutton(opt, text="시뮬레이션 3회 먼저 돌려 새 로그도 학습에 추가 (선택 로그만 쓰려면 해제)",
+                            variable=sim_var).pack(anchor="w")
+
+        ttk.Checkbutton(opt, text="demand_v2.joblib이 있어도 다시 생성 (기존 파일은 demand_v2_backups/에 백업)",
+                        variable=v2_var).pack(anchor="w")
+        ttk.Checkbutton(
+            opt,
+            text="PPO 카테고리 학습 전용 (H3/CNN-LSTM·demand_v2 생략, 베이스라인 통과 시에만 PPO 실행)",
+            variable=ppo_category_only_var,
+        ).pack(anchor="w", pady=(5, 0))
+
+        if is_real:
+            # ── [실데이터 모드] 인터랙티브 타임라인 기간 선택기 ──
+            box = ttk.LabelFrame(win, text="📅 실데이터 학습 기간 선택 (2025 TIMS 연간 타임라인)", padding=10)
+            box.pack(fill="both", expand=True, padx=12, pady=6)
+
+            timeline_picker = TimelineRangePicker(box, year=2025)
+            timeline_picker.pack(fill="both", expand=True)
+
+            save_sel = None
+        else:
+            box = ttk.LabelFrame(win, text="학습에 쓸 로그  (새로 만든 로그는 선택 목록에 자동으로 추가됩니다)", padding=8)
+            box.pack(fill="both", expand=True, padx=12, pady=6)
+            save_sel = self._build_log_picker(box, allow_copy=True)
 
         def start():
-            if save_sel is not None and not save_sel():
+            if not is_real and save_sel is not None and not save_sel():
                 return
-            win.destroy()
-            self.run_training()
+            chosen_rmode = reward_mode_var.get()
+            
+            if is_real:
+                start_d, end_d, d_val = timeline_picker.get_selection()
+                print(f"[실데이터 로그 준비] {start_d} ~ {end_d} ({d_val}일치) 호출 로그 생성 중...")
+                self.status.config(text=f"실데이터 외생 로그 {d_val}일치 생성 중...")
+                self.root.update()
+                
+                cmd = [sys.executable, os.path.join(ROOT, "scripts", "generate_demand_logs.py"),
+                       "--days", str(d_val), "--end", end_d.isoformat()]
+                subprocess.run(cmd, cwd=ROOT, check=True)
+                print(f"[실데이터 로그 준비] {d_val}일치 생성 완료 -> data/real_demand_logs")
 
-        bar = ttk.Frame(win)
-        bar.pack(fill="x", padx=12, pady=10)
-        ttk.Button(bar, text="취소", command=win.destroy).pack(side="right", padx=3)
-        ttk.Button(bar, text="학습 시작", command=start).pack(side="right", padx=3)
+            win.destroy()
+            self.run_training(
+                ppo_category_only=ppo_category_only_var.get(),
+                reward_mode=chosen_rmode,
+            )
+
+        start_btn.config(command=start)
 
 
 if __name__ == "__main__":

@@ -94,14 +94,29 @@ class RLRepositionMaintainer:
                 "action_space": action_space,
             },
         )
+        # 학습 때 VecNormalize를 썼다면 같은 통계로 obs를 정규화해야 정책이 학습한 대로 동작한다.
+        # 통계 파일(<모델이름>_vecnorm.pkl)이 없으면(예전 모델) 정규화 없이 그대로 쓴다.
+        self._obs_mean = None
+        _vn_path = os.path.splitext(model_path)[0] + "_vecnorm.pkl"
+        if os.path.exists(_vn_path):
+            import pickle
+            with open(_vn_path, "rb") as _f:
+                _vn = pickle.load(_f)
+            self._obs_mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
+            self._obs_var = np.asarray(_vn.obs_rms.var, dtype=np.float64)
+            self._obs_eps = float(_vn.epsilon)
+            self._obs_clip = float(_vn.clip_obs)
         self.zones = meta["zones"]
-        self._last_decision_time = -DECISION_INTERVAL_SEC
+        # 학습 환경은 reset 뒤 처음 60초를 관측한 다음 행동한다. 실제 실행도 같은
+        # 경계(60초)에서 첫 결정을 내리도록 한다.
+        self._last_decision_time = 0.0
         self._unreachable_edges = set()
         # --- Unity 재생 기록용 공개 상태 (ReplayRecorder.capture가 forecast 인자로 받아 읽는다) ---
         self.committed = {}   # 재배치 명령을 받고 아직 이동 중인 택시: {taxi_id: 목표 edge}
         self.moves = []       # 성공한 재배치 명령 누적 목록 [{t, taxi, from, to, zone}]
         self.decisions = []   # 의사결정(1분 주기)마다 구역별 대기/유휴/예측/목표 스냅샷
         self._now = 0.0
+        self._seen_request_ids = set()
 
         category_model_path = category_model_path or CATEGORY_MODEL_PATH_DEFAULT
         self.demand_predictor = None
@@ -126,6 +141,23 @@ class RLRepositionMaintainer:
         """이번 실행의 날짜를 예측 모델에 알려준다 (요일·공휴일 피처, 수요 이력 초기화)."""
         if self.demand_predictor is not None:
             self.demand_predictor.reset(run_date)
+        self._seen_request_ids.clear()
+        self._last_decision_time = 0.0
+
+    def _record_new_requests(self, now, sim_start_hour, current_pids=None):
+        if self.demand_predictor is None or not hasattr(self.demand_predictor, "record_new_requests"):
+            return
+        pids = set(current_pids) if current_pids is not None else set(traci.person.getIDList())
+        counts = {c: 0 for c in ZONE_CATEGORIES}
+        for pid in pids - self._seen_request_ids:
+            try:
+                category = self._edge_to_zone.get(traci.person.getRoadID(pid))
+            except traci.exceptions.TraCIException:
+                category = None
+            if category:
+                counts[category] += 1
+        self._seen_request_ids.update(pids)
+        self.demand_predictor.record_new_requests(counts, sim_start_hour * 3600.0 + now)
 
     def _zone_counts(self, current_pids=None, idle_taxis=None):
         waiting = {c: 0 for c in ZONE_CATEGORIES}
@@ -153,11 +185,16 @@ class RLRepositionMaintainer:
 
         return waiting, idle
 
+    def _normalize_obs(self, obs):
+        if self._obs_mean is None:
+            return obs
+        norm = (obs.astype(np.float64) - self._obs_mean) / np.sqrt(self._obs_var + self._obs_eps)
+        return np.clip(norm, -self._obs_clip, self._obs_clip).astype(np.float32)
+
     def _build_obs(self, now, sim_start_hour, sim_end_hour, current_pids=None, idle_taxis=None):
         waiting, idle = self._zone_counts(current_pids, idle_taxis)
 
         if self.demand_predictor is not None:
-            self.demand_predictor.update(waiting)  # rl_env.py의 _get_obs()와 동일한 순서
             # now는 시뮬 시작을 0으로 하는 경과초 -> 예측 모델이 쓰는 '시계 시각'으로 바꿔서 전달
             predicted = self.demand_predictor.predict_by_zone(sim_start_hour * 3600.0 + now)
         else:
@@ -178,13 +215,14 @@ class RLRepositionMaintainer:
         """current_pids / idle_taxis: 메인 루프의 스텝 스냅샷 (None이면 의사결정 시점에 직접 조회).
         idle_taxis에는 같은 스텝에 Hungarian이 방금 배정한 택시가 이미 빠져 있어야 한다."""
         self._now = now
+        self._record_new_requests(now, sim_start_hour, current_pids)
         self._prune_committed(idle_taxis)  # 매 스텝: 도착했거나 승객을 받은 택시는 '재배치 중'에서 뺀다
         if now - self._last_decision_time < DECISION_INTERVAL_SEC:
             return
         self._last_decision_time = now
 
         obs = self._build_obs(now, sim_start_hour, sim_end_hour, current_pids, idle_taxis)
-        action, _ = self.model.predict(obs, deterministic=True)
+        action, _ = self.model.predict(self._normalize_obs(obs), deterministic=True)
         weights = np.asarray(action, dtype=np.int64).reshape(-1)
         decision = None
         if weights.size == len(ZONE_CATEGORIES):
@@ -252,6 +290,8 @@ class RLRepositionMaintainer:
         """승객 배차가 이미 예약된 택시는 제외한 재배치 후보를 반환한다."""
         eligible = []
         for taxi_id in (idle_taxis if idle_taxis is not None else traci.vehicle.getTaxiFleet(0)):
+            if taxi_id in self.committed:
+                continue
             if not self._has_no_pending_stop(taxi_id):
                 continue
             try:
@@ -285,7 +325,7 @@ class RLRepositionMaintainer:
             if target_edge == current_edge or (current_edge, target_edge) in self._unreachable_edges:
                 continue
             try:
-                route = traci.simulation.findRoute(current_edge, target_edge)
+                route = traci.simulation.findRoute(current_edge, target_edge, vType="taxi_type")
                 if route is None or not route.edges:
                     continue
                 traci.vehicle.changeTarget(taxi_id, target_edge)

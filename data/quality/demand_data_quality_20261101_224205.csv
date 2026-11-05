@@ -1,0 +1,10 @@
+﻿filename,filename_date,rows,valid_timestamp_rows,unique_timestamps,start,end,duration_min,median_gap_sec,max_gap_sec,large_gap_count,duplicate_timestamp_rows,duplicate_full_rows,invalid_timestamp_rows,invalid_coordinate_rows,zero_coordinate_rows,status,reason
+demand_log_강남역patrol_hungarian260814.csv,2026-08-14,5092,5092,4193,2026-08-14T08:00:10,2026-08-14T10:00:00,119.83,1.0,50.0,0,1469,0,0,0,0,정상,
+demand_log_강남역patrol_hungarian공휴일260905.csv,2026-09-05,2588,2588,1716,2026-09-05T08:00:10,2026-09-05T10:00:00,119.83,3.0,40.0,0,1376,0,0,0,0,정상,
+demand_log_강남역prepositioned_hungarian260807.csv,2026-08-07,5068,5068,4158,2026-08-07T08:00:10,2026-08-07T10:00:00,119.83,1.0,40.0,0,1490,0,0,0,0,정상,
+demand_log_강남역prepositioned_hungarian260814.csv,2026-08-14,5095,5095,4192,2026-08-14T08:00:10,2026-08-14T09:59:58,119.8,1.0,40.0,0,1494,0,0,0,0,정상,
+demand_log_강남역prepositioned_hungarian261014.csv,2026-10-14,6429,6429,4396,2026-10-14T08:00:10,2026-10-14T10:00:00,119.83,1.0,30.0,0,2943,0,0,0,0,정상,
+demand_log_강남역prepositioned_hungarian공휴일260822.csv,2026-08-22,4101,4101,1924,2026-08-22T08:00:10,2026-08-22T10:00:00,119.83,3.0,20.0,0,2935,0,0,0,0,정상,
+demand_log_강남역prepositioned_hungarian공휴일260905.csv,2026-09-05,2603,2603,1716,2026-09-05T08:00:10,2026-09-05T10:00:00,119.83,3.0,20.0,0,1389,0,0,0,0,정상,
+demand_log_강남역prepositioned_hungarian공휴일260926.csv,2026-09-26,2551,2551,1677,2026-09-26T08:00:10,2026-09-26T09:59:58,119.8,3.0,40.0,0,1371,0,0,0,0,정상,
+demand_log_강남역prepositioned_hungarian공휴일260927.csv,2026-09-27,2619,2619,1708,2026-09-27T08:00:10,2026-09-27T09:59:57,119.78,3.0,40.0,0,1447,0,0,0,0,정상,

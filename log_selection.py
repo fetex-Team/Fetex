@@ -38,8 +38,11 @@ def _count_rows(path: str) -> int:
         return 0
 
 
-def list_logs(log_dir: str = None) -> list:
-    """[{filename, label, date, is_holiday, rows}] 날짜순."""
+def list_logs(log_dir: str = None, sort_by: str = "filename_date") -> list:
+    """학습 로그 목록.
+
+    sort_by: ``filename_date``(파일명 속 날짜순) 또는 ``created_at``(실제 생성일자순).
+    """
     log_dir = log_dir or LOG_DIR
     try:
         from holiday_utils import is_holiday_date
@@ -48,6 +51,10 @@ def list_logs(log_dir: str = None) -> list:
     out = []
     for p in sorted(glob.glob(os.path.join(log_dir, "demand_log_*.csv"))):
         info = parse_log_name(p)
+        try:
+            created_at = os.path.getctime(p)
+        except OSError:
+            created_at = 0.0
         out.append({
             "filename": os.path.basename(p),
             "label": info["label"],
@@ -56,8 +63,12 @@ def list_logs(log_dir: str = None) -> list:
             "is_holiday": True if "공휴일" in info["label"] else (
                 bool(is_holiday_date(info["date"])) if (is_holiday_date and info["date"]) else None),
             "rows": _count_rows(p),
+            "created_at": created_at,
         })
-    out.sort(key=lambda r: (r["date"] is None, r["date"], r["filename"]))
+    if sort_by == "created_at":
+        out.sort(key=lambda r: (r["created_at"], r["filename"]))
+    else:
+        out.sort(key=lambda r: (r["date"] is None, r["date"], r["filename"]))
     return out
 
 

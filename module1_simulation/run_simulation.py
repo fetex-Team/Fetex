@@ -106,7 +106,10 @@ def run_sumo_gui():
         sim_end_seconds = 24 * 3600
 
     try:
-        traci.start([sumo_binary, "-c", sumo_cfg])
+        traci.start([
+            sumo_binary, "-c", sumo_cfg,
+            "--no-step-log", "true", "--no-warnings", "true",
+        ])
 
         step = 0
         max_steps = int(sim_end_seconds) + 100  # 종료시각보다 넉넉히 큰 안전 상한 (실제 종료는 아래 sim_end_seconds 체크가 담당)
