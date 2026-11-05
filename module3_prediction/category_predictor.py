@@ -30,6 +30,40 @@ from config_loader import CFG
 MODEL_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl")
 
 
+def build_past_requests(demand_model, run_date, sim_start_hour: float, seed, request_category: dict,
+                        days: int = 8):
+    """시뮬레이션 시작 전 호출 기록 [(시각, 카테고리), ...] — 지난 days일(하루 전체) + 오늘 0시~시작 시각.
+
+    실측 보정 수요 모델(RealDemandModel)로 학습 로그와 같은 규칙·시드로 만든다 (forecast 재배치와 같은 방식).
+    예측기의 lag(시작 직후)와 '어제·지난주 같은 시각' 피처를 학습 때처럼 채우는 데 쓴다."""
+    from module1_simulation.holiday_utils import is_holiday_date
+    from module1_simulation.weather_history import load_hourly_weather
+
+    def precip(d):
+        w = load_hourly_weather(d, CFG.get("region")) if CFG.get("use_historical_weather", True) else None
+        return w["precipitation"] if w else None
+
+    seed = 42 if seed is None else seed
+    out = []
+
+    def add(day, calls):
+        base = datetime.datetime.combine(day, datetime.time(0))
+        for c in calls:
+            cat = request_category.get(c.origin)
+            if cat is not None:
+                out.append((base + datetime.timedelta(seconds=float(c.t)), cat))
+
+    for k in range(days, 0, -1):
+        d = run_date - datetime.timedelta(days=k)
+        add(d, demand_model.build_schedule(d, 0, 24, seed, is_holiday=bool(is_holiday_date(d)),
+                                           hourly_precip_mm=precip(d)))
+    if sim_start_hour > 0:
+        add(run_date, demand_model.build_schedule(run_date, 0, sim_start_hour, seed,
+                                                  is_holiday=bool(is_holiday_date(run_date)),
+                                                  hourly_precip_mm=precip(run_date)))
+    return out
+
+
 def edge_request_categories(config_dir: str) -> dict:
     """{도로 id: 카테고리} — 시뮬레이션 중 새 호출을 '어느 카테고리 수요인지' 세는 기준.
 
@@ -71,6 +105,8 @@ class CategoryDemandPredictor:
         self._history = {c: deque([0.0] * hist_len, maxlen=hist_len) for c in self.category_list}
         self._active_bucket = None
         self._bucket_counts = {c: 0.0 for c in self.category_list}
+        # 칸 시각 -> {카테고리: 호출 수}. '어제·지난주 같은 칸' 조회용 (과거 기록 + 실행 중 완료된 칸)
+        self._bucket_log = {}
 
         # [성능] add_time_features()가 호출마다 korean_holidays()로 holidays.KR()을 새로 만들면
         # (내부적으로 음력 변환 포함) RL 스텝마다(카테고리 수 배) 반복돼 체감 속도를 떨어뜨림.
@@ -94,10 +130,39 @@ class CategoryDemandPredictor:
             self._history[c].extend([0.0] * n)
         self._active_bucket = None
         self._bucket_counts = {c: 0.0 for c in self.category_list}
+        self._bucket_log = {}
+
+    def _bucket_time(self, bucket_index: int):
+        return pd.Timestamp(datetime.datetime.combine(self.run_date, datetime.time(0))) + \
+            pd.Timedelta(seconds=bucket_index * self._bucket_seconds)
 
     def _finish_active_bucket(self):
         for c in self.category_list:
             self._history[c].append(self._bucket_counts[c])
+        self._bucket_log[self._bucket_time(self._active_bucket)] = dict(self._bucket_counts)
+
+    def set_past_requests(self, requests, start_seconds: float):
+        """시뮬레이션 시작 전 호출 [(datetime, 카테고리), ...]을 칸별로 모아 넣는다 (reset 뒤에 호출).
+        - 어제·지난주 같은 칸 피처가 학습 때처럼 실제 값을 갖는다 (없으면 0 + has_*=0).
+        - lag·이동평균 이력을 시작 직전 칸들로 채워, 시작 직후부터 학습 때와 같은 입력이 된다.
+        start_seconds: 시뮬레이션 시작 시각(자정 기준 초). 그 전 칸들은 호출이 없으면 0으로 관측된 것으로 본다."""
+        freq = pd.Timedelta(seconds=self._bucket_seconds)
+        start = self._bucket_time(int(float(start_seconds) // self._bucket_seconds))
+        if requests:
+            first = min(pd.Timestamp(t) for t, _ in requests).floor("D")
+        else:
+            first = start
+        log = {ts: {c: 0.0 for c in self.category_list} for ts in pd.date_range(first, start - freq, freq=freq)}
+        for t, cat in requests:
+            ts = pd.Timestamp(t).floor(freq)
+            if ts in log and cat in log[ts]:
+                log[ts][cat] += 1.0
+        self._bucket_log.update(log)
+        for c in self.category_list:
+            n = self._history[c].maxlen
+            recent = [log[ts][c] for ts in sorted(log)[-n:]]
+            self._history[c].clear()
+            self._history[c].extend([0.0] * (n - len(recent)) + recent)
 
     def record_new_requests(self, request_counts: dict, sim_time: float):
         """새 요청을 수집한다. 학습의 ``aggregate_demands``와 동일하게 완료된
@@ -176,14 +241,17 @@ class CategoryDemandPredictor:
         feats["rolling_mean_1h"] = _mean(self._buckets_1h)
         feats["rolling_std_1h"] = _std(self._buckets_1h)
         feats["diff_1"] = (hist[-1] - hist[-2]) if len(hist) >= 2 else 0.0
-        # 실시간 시뮬레이션에는 1주일 전 이력이 없다. 학습 테이블도 이 경우
-        # same_time_last_week=0 / has_last_week=0으로 채우므로 동일하게 맞춘다.
-        feats["same_time_last_week"] = 0.0
-        feats["has_last_week"] = 0
-
-        # 시간 피처: 학습 때와 똑같은 함수를 1행짜리 DataFrame에 적용해 이름/값 불일치 제거
         sim_dt = (datetime.datetime.combine(self.run_date, datetime.time(0, 0))
                   + datetime.timedelta(seconds=float(sim_time)))
+        # 어제·지난주 같은 칸: 지금 칸(학습의 행 시각) 기준 1일·7일 전 칸의 호출 수.
+        # 기록이 없으면 학습 때와 같이 값 0 + has_*=0 (set_past_requests로 과거 기록을 넣으면 실제 값)
+        row = pd.Timestamp(sim_dt).floor(pd.Timedelta(seconds=self._bucket_seconds))
+        for name, days in (("yesterday", 1), ("last_week", 7)):
+            rec = self._bucket_log.get(row - pd.Timedelta(days=days))
+            feats[f"same_time_{name}"] = float(rec.get(category, 0.0)) if rec is not None else 0.0
+            feats[f"has_{name}"] = 1 if rec is not None else 0
+
+        # 시간 피처: 학습 때와 똑같은 함수를 1행짜리 DataFrame에 적용해 이름/값 불일치 제거
         tf = add_time_features(pd.DataFrame({"time_bucket": [pd.Timestamp(sim_dt)]}), ts_col="time_bucket",
                               holiday_dates=self._holiday_dates)
         for col in tf.columns:

@@ -144,10 +144,18 @@ class RLRepositionMaintainer:
             self._request_category = edge_request_categories(
                 config_dir or os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config"))
 
-    def set_run_date(self, run_date):
-        """이번 실행의 날짜를 예측 모델에 알려준다 (요일·공휴일 피처, 수요 이력 초기화)."""
+    def set_run_date(self, run_date, demand_model=None, sim_start_hour: float = None, seed=None):
+        """이번 실행의 날짜를 예측 모델에 알려준다 (요일·공휴일 피처, 수요 이력 초기화).
+        demand_model(실측 보정 수요 모델)을 주면 시작 전 호출(지난 8일 + 오늘 시작 전)로
+        lag·어제·지난주 피처를 학습 때처럼 채운다 (RL 학습 환경 rl_env와 같은 방식)."""
         if self.demand_predictor is not None:
             self.demand_predictor.reset(run_date)
+            if (demand_model is not None and sim_start_hour is not None and self._request_category
+                    and hasattr(self.demand_predictor, "set_past_requests")):
+                from module3_prediction.category_predictor import build_past_requests
+                self.demand_predictor.set_past_requests(
+                    build_past_requests(demand_model, run_date, sim_start_hour, seed, self._request_category),
+                    sim_start_hour * 3600.0)
         self._seen_request_ids.clear()
         self._last_decision_time = 0.0
 

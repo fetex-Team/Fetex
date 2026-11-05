@@ -378,6 +378,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
     run_date, holiday_mode = _resolve_run_date(meta)
     # RL 재배치가 쓰는 수요예측 모델에도 이번 실행 날짜를 알려줌 (요일·공휴일 피처)
+    # — 과거 호출 기록은 승객 매니저(실측 수요 모델)를 만든 뒤 아래에서 넣는다
     if rl_maintainer is not None and hasattr(rl_maintainer, "set_run_date"):
         rl_maintainer.set_run_date(run_date)
     print(f"[안내] 이번 실행 날짜: {run_date} ({'공휴일/주말' if is_holiday_date(run_date) else '평일'}, "
@@ -396,6 +397,10 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         holiday_mode=holiday_mode,
         meta=meta,
     )
+
+    if rl_maintainer is not None and getattr(spawn_manager, "_real_model", None) is not None:
+        rl_maintainer.set_run_date(run_date, demand_model=spawn_manager._real_model,
+                                   sim_start_hour=sim_start_hour, seed=meta.get("passenger_seed"))
 
     # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
     away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))

@@ -185,6 +185,14 @@ class TaxiRepositionEnv(gym.Env):
 
         if self.demand_predictor is not None and hasattr(self.demand_predictor, "reset"):
             self.demand_predictor.reset(episode_date)
+        # 시작 전 호출(지난 8일 + 오늘 시작 전)로 예측기의 lag·어제·지난주 피처를 학습 때처럼 채운다 (실측 수요 모드)
+        if (hasattr(self.demand_predictor, "set_past_requests")
+                and getattr(self.spawn_manager, "_real_model", None) is not None and self._request_category):
+            from module3_prediction.category_predictor import build_past_requests
+            self.demand_predictor.set_past_requests(
+                build_past_requests(self.spawn_manager._real_model, episode_date, sim_start_hour,
+                                    passenger_seed, self._request_category),
+                sim_start_hour * 3600.0)
 
         self._advance_sim(DECISION_INTERVAL_SEC)
         self._last_riding = self._riding_passenger_ids()
