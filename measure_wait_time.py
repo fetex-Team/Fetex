@@ -109,7 +109,8 @@ def _create_controllers(meta: dict, sumo_cfg: str):
     rl_maintainer = None
     if meta.get("taxi_strategy") == "rl_prepositioned":
         if os.path.exists(RL_MODEL_PATH):
-            rl_maintainer = RLRepositionMaintainer(RL_MODEL_PATH, meta, category_model_path=CATEGORY_MODEL_PATH)
+            rl_maintainer = RLRepositionMaintainer(RL_MODEL_PATH, meta, category_model_path=CATEGORY_MODEL_PATH,
+                                                   config_dir=os.path.dirname(os.path.abspath(sumo_cfg)))
             print(f"[안내] RL 재배치 정책을 불러왔습니다: {RL_MODEL_PATH}")
             print(f"[안내] 수요예측은 이걸 씁니다: {CATEGORY_MODEL_PATH}")
         else:

@@ -7,6 +7,7 @@ saved_models_backups/
 demand_v2_backups/
 rl_model_backups/
 module4_dispatch/checkpoints/
+module4_dispatch/training_logs/
 data/sim_logs/backup/
 _backup_custom_dispatch/
 logs/

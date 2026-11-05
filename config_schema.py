@@ -116,9 +116,12 @@ BOOLS = [
     ("department_enabled", "백화점 승객 생성 (건물 위치는 build_env 때 OSM에서 찾음, 없으면 자동 꺼짐)"),
     ("run_sim_before_training", "학습만 실행 시 시뮬레이션 먼저 돌려서 로그 생성 (끄면 기존 로그로 바로 학습)"),
     ("rl_randomize_passenger_seed", "RL 학습: 매 에피소드마다 다른 승객 호출 패턴 사용"),
+    ("rl_vecnormalize", "RL 학습: 관측·보상 정규화(VecNormalize)"),
 ]
 CHOICES = [
     ("taxi_strategy", "택시 전략", STRATEGIES),
+    ("rl_reward_mode", "RL 보상 방식", ["default", "gravityVer"]),
+    ("rl_train_day_type", "RL 학습 날짜 종류", ["weekday", "holiday", "mixed"]),
     ("taxi_dispatch_algorithm", "배차 알고리즘", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
     ("taxi_idle_algorithm", "빈 택시 동작 (SUMO)", ["randomCircling", "stopOnRoad", "taxiStop"]),
     ("dispatch_cost", "헝가리안 배차 비용", ["network", "euclidean"]),
@@ -195,7 +198,8 @@ DETAIL_SECTIONS = [
                           "cnn_batch_size", "cnn_lr",
                           "xgb_random_state", "train_random_state"]),
     ("강화학습 (RL)", ["rl_max_decisions", "rl_total_timesteps", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
-                   "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed"]),
+                   "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed", "rl_reward_mode",
+                   "rl_train_day_type", "rl_vecnormalize"]),
     ("학습 실행 옵션", ["run_sim_before_training", "taxi_respawn_prefix"]),
 ]
 
@@ -327,6 +331,11 @@ TIPS = {
     "rl_learning_rate": "PPO 학습률.",
     "rl_gamma": "미래 보상 할인율(gamma).",
     "rl_randomize_passenger_seed": "RL 학습 때 에피소드마다 다른 승객 호출 패턴을 쓴다.",
+    "rl_reward_mode": "RL 보상 방식 (KJS). default = 탑승 +3·대기 -0.1·놓침 -8·이동거리 감점·핫스팟 배치 점수, "
+                      "gravityVer = 항목별 상한을 둔 -3~+3 범위 보상(예측 수요와 빈 택시 분포 일치에 비중).",
+    "rl_train_day_type": "RL 학습 날짜 종류 (KJS). weekday = 평일만(기본), holiday = 공휴일·주말만, mixed = 둘 다. "
+                         "섞으면 보상 차이가 대부분 '무슨 날이냐'로 정해져 정책 개선이 잘 안 보인다.",
+    "rl_vecnormalize": "RL 학습 때 관측값·보상을 정규화(VecNormalize). 통계는 rl_reposition_model_vecnorm.pkl로 저장돼 실행 때도 같이 쓴다.",
     "run_sim_before_training": "'학습만 실행' 때 시뮬레이션을 먼저 돌려 학습 로그를 만든다. 끄면 기존 로그로 바로 학습.",
     "taxi_respawn_prefix": "다시 생성된 택시 ID 앞에 붙이는 접두어.",
 

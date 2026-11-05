@@ -8,9 +8,11 @@ rl_env.py / rl_reposition_maintainer.py의 demand_predictor 슬롯에 그대로 
     predictor.predict_by_zone(sim_time) -> {category: 예측수요값, ...}
 
 모델이 lag_1~lag_6 / rolling_mean 피처를 요구하기 때문에, 실제로 예측하려면
-"최근 몇 구간 동안 각 카테고리에 실제 수요가 몇 건이었는지" 이력이 필요함.
-그래서 이 클래스는 내부에 카테고리별 rolling history를 들고 있고, 매 decision
-interval마다 rl_env.py가 실제 관측치를 update()로 넣어줘야 함.
+"최근 몇 구간 동안 각 목적지 카테고리에 실제 수요가 몇 건이었는지" 이력이 필요함.
+그래서 이 클래스는 내부에 카테고리별 rolling history를 들고 있다. 실시간 실행부는
+신규 요청을 매 스텝 record_new_requests()로 전달하고, 이 클래스가 학습 설정의
+시간 버킷(기본 10분)이 끝날 때만 history에 확정한다. 대기 승객 수는 수요가 아니므로
+history에 넣지 않는다.
 (이력이 max_lag만큼 안 쌓였을 때는 0으로 대체 — 시뮬레이션 초반 워밍업 구간)
 """
 import os
@@ -26,6 +28,23 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from config_loader import CFG
 
 MODEL_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl")
+
+
+def edge_request_categories(config_dir: str) -> dict:
+    """{도로 id: 카테고리} — 시뮬레이션 중 새 호출을 '어느 카테고리 수요인지' 세는 기준.
+
+    학습(train_category_demand.py)은 호출의 승차 위경도를 CategoryIndexer로 가장 가까운 POI 구역 카테고리에
+    붙인다. 실행 중에도 같은 기준이 되도록, 각 도로 중간 지점을 같은 CategoryIndexer로 미리 매핑해 둔다
+    (승객의 승차 도로 → 카테고리). 구역 밖 도로도 가장 가까운 카테고리로 세므로 학습 때와 건수가 맞는다."""
+    from module2_preprocessing.category_indexing import CategoryIndexer
+    idx = CategoryIndexer(config_dir=config_dir)
+    out = {}
+    for edge in idx.net.getEdges():
+        shape = edge.getShape()
+        x, y = shape[len(shape) // 2]
+        lon, lat = idx.net.convertXY2LonLat(x, y)
+        out[edge.getID()] = idx.latlng_to_category(lat, lon)
+    return out
 
 
 class CategoryDemandPredictor:
@@ -45,9 +64,13 @@ class CategoryDemandPredictor:
 
         max_lag = CFG["max_lag"]
         long_w = CFG["rolling_long"]
-        hist_len = max(max_lag, long_w) + 1
-        # 카테고리별 "최근 관측된 수요 건수" 이력 (decision interval 단위)
+        self._bucket_seconds = float(pd.Timedelta(CFG["freq"]).total_seconds())
+        self._buckets_1h = max(1, int(pd.Timedelta(hours=1) / pd.Timedelta(CFG["freq"])))
+        hist_len = max(max_lag, long_w, self._buckets_1h)
+        # 카테고리별 "완료된 시간 버킷의 신규 요청 수" 이력
         self._history = {c: deque([0.0] * hist_len, maxlen=hist_len) for c in self.category_list}
+        self._active_bucket = None
+        self._bucket_counts = {c: 0.0 for c in self.category_list}
 
         # [성능] add_time_features()가 호출마다 korean_holidays()로 holidays.KR()을 새로 만들면
         # (내부적으로 음력 변환 포함) RL 스텝마다(카테고리 수 배) 반복돼 체감 속도를 떨어뜨림.
@@ -69,11 +92,29 @@ class CategoryDemandPredictor:
             n = self._history[c].maxlen
             self._history[c].clear()
             self._history[c].extend([0.0] * n)
+        self._active_bucket = None
+        self._bucket_counts = {c: 0.0 for c in self.category_list}
 
-    def update(self, observed_counts: dict):
-        """rl_env.py가 매 decision interval마다 실제 관측한 대기승객 수(또는 신규 수요)를 넣어줌"""
+    def _finish_active_bucket(self):
         for c in self.category_list:
-            self._history[c].append(float(observed_counts.get(c, 0.0)))
+            self._history[c].append(self._bucket_counts[c])
+
+    def record_new_requests(self, request_counts: dict, sim_time: float):
+        """새 요청을 수집한다. 학습의 ``aggregate_demands``와 동일하게 완료된
+        ``CFG['freq']`` 버킷만 이력에 넣는다.
+
+        ``sim_time``은 자정 기준 초(예: 08:10은 29400)여야 한다. 버킷 경계를
+        건너뛰었으면 중간의 빈 버킷도 0 수요로 보존한다.
+        """
+        bucket = int(float(sim_time) // self._bucket_seconds)
+        if self._active_bucket is None:
+            self._active_bucket = bucket
+        while bucket > self._active_bucket:
+            self._finish_active_bucket()
+            self._bucket_counts = {c: 0.0 for c in self.category_list}
+            self._active_bucket += 1
+        for c in self.category_list:
+            self._bucket_counts[c] += float(request_counts.get(c, 0.0))
 
     def _weather_features(self, sim_dt) -> dict:
         """학습 때(train.py / train_category_demand.py)와 같은 함수(merge_external_data)로 날씨 피처를 만든다.
@@ -132,10 +173,8 @@ class CategoryDemandPredictor:
         feats = {f"lag_{i}": hist[-i] for i in range(1, max_lag + 1)}
         feats[f"rolling_mean_{short_w}"] = _mean(short_w)
         feats[f"rolling_mean_{long_w}"] = _mean(long_w)
-        # 이력 deque는 decision interval 단위라 "1시간 칸 수"를 정확히 모른다 —
-        # 가진 이력 전체를 1시간 창의 근사로 사용.
-        feats["rolling_mean_1h"] = _mean(len(hist))
-        feats["rolling_std_1h"] = _std(len(hist))
+        feats["rolling_mean_1h"] = _mean(self._buckets_1h)
+        feats["rolling_std_1h"] = _std(self._buckets_1h)
         feats["diff_1"] = (hist[-1] - hist[-2]) if len(hist) >= 2 else 0.0
         # 실시간 시뮬레이션에는 1주일 전 이력이 없다. 학습 테이블도 이 경우
         # same_time_last_week=0 / has_last_week=0으로 채우므로 동일하게 맞춘다.

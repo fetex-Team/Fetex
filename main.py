@@ -147,6 +147,9 @@ def backup_rl_model():
     os.makedirs(dst_dir, exist_ok=True)
     dst = os.path.join(dst_dir, f"rl_reposition_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{steps}steps.zip")
     shutil.copy2(model, dst)
+    vecnorm = os.path.splitext(model)[0] + "_vecnorm.pkl"   # 학습 때 쓴 관측 정규화 통계도 같이 보존
+    if os.path.exists(vecnorm):
+        shutil.copy2(vecnorm, os.path.splitext(dst)[0] + "_vecnorm.pkl")
     return f"실제 종료 step {steps:,} >= 10,000, rl_model_backups/{os.path.basename(dst)} 에 보존"
 
 

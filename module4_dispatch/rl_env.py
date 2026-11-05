@@ -62,6 +62,17 @@ class TaxiRepositionEnv(gym.Env):
         self.target_hotspot_ratio = target_hotspot_ratio
         self.randomize_passenger_seed = randomize_passenger_seed
         self.training_seed_base = training_seed_base + worker_index * 100_000
+        # [KJS] 보상 항목별 진단 로그 (10분마다 콘솔 + training_logs/reward_breakdown.csv)
+        self.worker_index = worker_index
+        self._log_file_path = os.path.join(PROJECT_ROOT, "module4_dispatch", "training_logs", "reward_breakdown.csv")
+        self._interval_stats = {
+            "pickups": 0.0, "r_pickup": 0.0,
+            "timeouts": 0.0, "r_timeout": 0.0,
+            "waiting_sum": 0.0, "r_wait": 0.0,
+            "match_sum": 0.0, "r_match": 0.0,
+            "dist_m": 0.0, "r_dist": 0.0,
+            "total_reward": 0.0, "steps": 0.0,
+        }
 
         self.observation_space = spaces.Box(
             low=0, high=np.inf, shape=(N_ZONES * 3 + 1,), dtype=np.float32,
@@ -83,17 +94,36 @@ class TaxiRepositionEnv(gym.Env):
         self._unreachable_edges = set()
         self._last_reposition_distance_m = 0.0
         self._episode_index = 0
+        self._seen_request_ids = set()
+        self.committed = {}          # [KJS] 재배치 명령을 받고 아직 이동 중인 택시 {taxi_id: 목표 edge}
+        self._last_riding = set()    # [KJS] 직전 결정 시점의 탑승 승객 (매 스텝 중복 조회 방지)
+        # 새 호출을 카테고리 수요로 셀 때의 기준 = 학습과 같은 '승차 위치 -> 가장 가까운 POI 구역'
+        self._request_category = {}
+        if demand_predictor is not None and hasattr(demand_predictor, "record_new_requests"):
+            from module3_prediction.category_predictor import edge_request_categories
+            self._request_category = edge_request_categories(os.path.dirname(os.path.abspath(sumo_cfg_path)))
 
     def _pick_episode_date(self):
         """학습 에피소드 날짜. rl_train_start~rl_train_end가 있으면 그 기간 안에서만 뽑는다
         (평가 날짜(sim_date 이후)와 겹치지 않게 시간 순서로 분리 — 수요예측 학습 기간과 같은 8주).
-        없으면 예전처럼 최근 90일에서 평일/공휴일을 번갈아 뽑는다."""
+        [KJS] rl_train_day_type: "weekday"(기본)=평일만, "holiday"=공휴일·주말만, "mixed"=둘 다.
+        평일/공휴일이 섞이면 에피소드 보상 분산의 대부분이 '그날이 무슨 날이냐'로 결정돼 정책 개선이 안 보인다."""
+        import datetime as _dt
+        from module1_simulation.holiday_utils import is_holiday_date
         rng = random.Random(self.training_seed_base + self._episode_index)
+        day_type = str(CFG.get("rl_train_day_type", "weekday")).lower()
         start, end = CFG.get("rl_train_start"), CFG.get("rl_train_end")
         if start and end:
-            import datetime as _dt
             d0, d1 = _dt.date.fromisoformat(str(start)), _dt.date.fromisoformat(str(end))
-            return d0 + _dt.timedelta(days=rng.randint(0, max(0, (d1 - d0).days)))
+            days = [d0 + _dt.timedelta(days=i) for i in range((d1 - d0).days + 1)]
+            if day_type in ("weekday", "holiday"):
+                want = day_type == "holiday"
+                days = [d for d in days if bool(is_holiday_date(d)) == want] or days
+            return rng.choice(days)
+        if day_type == "weekday":
+            return pick_run_date(CFG, index=2 * self._episode_index, rng=rng, mode="alternate")
+        if day_type == "holiday":
+            return pick_run_date(CFG, index=2 * self._episode_index + 1, rng=rng, mode="alternate")
         return pick_run_date(CFG, index=self._episode_index, rng=rng)
 
     def reset(self, seed=None, options=None):
@@ -110,7 +140,11 @@ class TaxiRepositionEnv(gym.Env):
         self._decision_count = 0
         self._depart_time = {}
         self._last_reposition_distance_m = 0.0
+        self._seen_request_ids.clear()
+        self.committed = {}
         self._episode_index += 1
+        for key in self._interval_stats:
+            self._interval_stats[key] = 0.0
         passenger_seed = self.meta.get("passenger_seed")
         if self.randomize_passenger_seed:
             passenger_seed = self.training_seed_base + self._episode_index
@@ -153,12 +187,12 @@ class TaxiRepositionEnv(gym.Env):
             self.demand_predictor.reset(episode_date)
 
         self._advance_sim(DECISION_INTERVAL_SEC)
+        self._last_riding = self._riding_passenger_ids()
         obs = self._get_obs()
         return obs, {}
 
     def step(self, action):
-        prev_waiting, _ = self._zone_counts()
-        prev_in_taxi = self._riding_passenger_ids()
+        prev_in_taxi = self._last_riding
         prev_timeout_count = len(self.pax_manager.removed_pids)
 
         self._apply_action(action)
@@ -166,23 +200,87 @@ class TaxiRepositionEnv(gym.Env):
 
         waiting, idle = self._zone_counts()
         n_waiting = sum(waiting.values())
-        newly_picked_up = len(self._riding_passenger_ids() - prev_in_taxi)
+        riding_now = self._riding_passenger_ids()
+        newly_picked_up = len(riding_now - prev_in_taxi)
+        self._last_riding = riding_now
         new_timeouts = len(self.pax_manager.removed_pids) - prev_timeout_count
 
-        reward = 3.0 * newly_picked_up
-        reward -= 0.10 * n_waiting
-        reward -= 8.0 * max(new_timeouts, 0)
-        reward -= 0.0002 * self._last_reposition_distance_m
+        reward_mode = CFG.get("rl_reward_mode", "default")
+        if reward_mode == "gravityVer":
+            # ── [gravityVer] 균형 최적화 보상 (스케일 정규화: -3.0 ~ +3.0) ──
+            match_score = self._distribution_match_score(idle, self._predicted_demand()) if self.incentive_weight > 0 else self._prepositioned_distribution_score(idle)
+            r_match = 1.5 * match_score
+            r_pickup = min(0.15 * newly_picked_up, 2.5)
+            r_wait = -min(0.01 * n_waiting, 1.5)
+            r_timeout = -min(0.3 * max(new_timeouts, 0), 3.0)
+            r_dist = -0.00005 * self._last_reposition_distance_m
+        else:
+            # ── [default] 기존 보상 방식 ──
+            r_pickup = 3.0 * newly_picked_up
+            r_wait = -0.10 * n_waiting
+            r_timeout = -8.0 * max(new_timeouts, 0)
+            r_dist = -0.0002 * self._last_reposition_distance_m
+            prepositioned_score = self._prepositioned_distribution_score(idle)
+            r_match = 0.5 * prepositioned_score
+            if self.incentive_weight > 0:
+                match_score = self._distribution_match_score(idle, self._predicted_demand())
+                r_match += self.incentive_weight * match_score
+            else:
+                match_score = prepositioned_score
 
-        prepositioned_score = self._prepositioned_distribution_score(idle)
-        reward += 0.5 * prepositioned_score
+        reward = r_match + r_pickup + r_wait + r_timeout + r_dist
 
-        if self.incentive_weight > 0:
-            reward += self.incentive_weight * self._distribution_match_score(
-                idle, self._predicted_demand()
-            )
+        # ── 600초(10분 = 10스텝) 누적 통계 및 진단 로깅 ──
+        s = self._interval_stats
+        s["pickups"] += newly_picked_up
+        s["r_pickup"] += r_pickup
+        s["timeouts"] += max(new_timeouts, 0)
+        s["r_timeout"] += r_timeout
+        s["waiting_sum"] += n_waiting
+        s["r_wait"] += r_wait
+        s["match_sum"] += match_score
+        s["r_match"] += r_match
+        s["dist_m"] += self._last_reposition_distance_m
+        s["r_dist"] += r_dist
+        s["total_reward"] += reward
+        s["steps"] += 1.0
 
-        obs = self._get_obs()
+        if int(s["steps"]) >= 10:  # 매 600초(10스텝)
+            sim_sec = traci.simulation.getTime()
+            sim_start_sec = self.meta.get("sim_start_hour", 0) * 3600.0
+            cur_sec = sim_start_sec + sim_sec
+            h = int(cur_sec // 3600)
+            m = int((cur_sec % 3600) // 60)
+            prev_m = (m - 10) % 60
+            prev_h = h if m >= 10 else (h - 1) % 24
+            time_str = f"{prev_h:02d}:{prev_m:02d}~{h:02d}:{m:02d}"
+
+            avg_wait = s["waiting_sum"] / max(s["steps"], 1.0)
+            avg_match = (s["match_sum"] / max(s["steps"], 1.0)) * 100.0
+            dist_km = s["dist_m"] / 1000.0
+
+            if self.worker_index == 0:
+                print(f"[진단 {time_str}] 탑승:{int(s['pickups'])}건({s['r_pickup']:+.2f}) | "
+                      f"대기:{avg_wait:.1f}명({s['r_wait']:+.2f}) | "
+                      f"타임아웃:{int(s['timeouts'])}건({s['r_timeout']:+.2f}) | "
+                      f"핫존:{avg_match:.0f}%({s['r_match']:+.2f}) | "
+                      f"공차:{dist_km:.1f}km({s['r_dist']:+.2f}) | "
+                      f"구간합:{s['total_reward']:+.2f}점")
+
+                try:
+                    os.makedirs(os.path.dirname(self._log_file_path), exist_ok=True)
+                    write_header = not os.path.exists(self._log_file_path)
+                    with open(self._log_file_path, "a", encoding="utf-8") as _lf:
+                        if write_header:
+                            _lf.write("episode,decision_count,time_str,pickups,r_pickup,waiting_avg,r_wait,timeouts,r_timeout,match_pct,r_match,dist_km,r_dist,total_reward\n")
+                        _lf.write(f"{self._episode_index},{self._decision_count},{time_str},{int(s['pickups'])},{s['r_pickup']:.3f},{avg_wait:.1f},{s['r_wait']:.3f},{int(s['timeouts'])},{s['r_timeout']:.3f},{avg_match:.1f},{s['r_match']:.3f},{dist_km:.2f},{s['r_dist']:.3f},{s['total_reward']:.3f}\n")
+                except Exception:
+                    pass
+
+            for k in s:
+                s[k] = 0.0
+
+        obs = self._get_obs(waiting, idle)   # 위에서 센 결과 재사용 (TraCI 재조회 없음)
         self._decision_count += 1
         terminated = traci.simulation.getMinExpectedNumber() <= 0
         truncated = self._decision_count >= self.max_decisions
@@ -238,6 +336,9 @@ class TaxiRepositionEnv(gym.Env):
             
             self.spawn_manager.maintain(now, timeout_removed_pids=self.pax_manager.removed_pids, current_pids=current_pids)
 
+            # [KJS] spawn_manager가 이번 틱에 넣은 승객까지 포함해 신규 요청을 수집
+            self._record_new_requests(now, current_pids)
+
             if self.dispatcher is not None:
                 self.dispatcher.maintain(now)
 
@@ -245,44 +346,89 @@ class TaxiRepositionEnv(gym.Env):
                 if pid not in self._depart_time:
                     self._depart_time[pid] = now
 
+    def _record_new_requests(self, now: float, current_pids: set):
+        """[KJS] 수요예측에는 현재 대기 인원이 아니라 새로 등장한 승객(호출)만 전달한다.
+        카테고리는 학습(train_category_demand.py)과 같은 기준 — 승차 도로 위치의 가장 가까운 POI 구역."""
+        if self.demand_predictor is None or not hasattr(self.demand_predictor, "record_new_requests"):
+            return
+        counts = {category: 0 for category in ZONE_CATEGORIES}
+        for pid in current_pids - self._seen_request_ids:
+            try:
+                category = self._request_category.get(traci.person.getRoadID(pid))
+            except traci.exceptions.TraCIException:
+                category = None
+            if category in counts:
+                counts[category] += 1
+        self._seen_request_ids.update(current_pids)
+        sim_start_sec = self.meta.get("sim_start_hour", 0) * 3600.0
+        self.demand_predictor.record_new_requests(counts, sim_start_sec + now)
+
+    def _prune_committed(self, idle_taxis):
+        """재배치 중 표시 정리: 더 이상 빈 택시가 아니거나(승객 배정/탑승) 목표 도로에 닿았으면 제거."""
+        if not self.committed:
+            return
+        idle = set(idle_taxis)
+        for taxi_id, target_edge in list(self.committed.items()):
+            if taxi_id not in idle:
+                del self.committed[taxi_id]
+                continue
+            try:
+                if traci.vehicle.getRoadID(taxi_id) == target_edge:
+                    del self.committed[taxi_id]
+            except traci.exceptions.TraCIException:
+                del self.committed[taxi_id]
+
+    def _eligible_idle_taxis(self, idle_taxis):
+        """재배치 후보: 이동 중(committed)이거나 예약된 택시는 제외."""
+        eligible = []
+        for taxi_id in idle_taxis:
+            if taxi_id in self.committed:
+                continue
+            if not _has_no_pending_stop(taxi_id):
+                continue
+            try:
+                edge = traci.vehicle.getRoadID(taxi_id)
+            except traci.exceptions.TraCIException:
+                continue
+            if edge and not edge.startswith(":"):
+                eligible.append((taxi_id, edge, self._edge_to_zone.get(edge)))
+        return eligible
+
     def _apply_action(self, action):
         self._last_reposition_distance_m = 0.0
         weights = np.asarray(action, dtype=np.int64).reshape(-1)
         if weights.size != N_ZONES or not np.any(weights):
             return
 
-        idle_taxis = list(traci.vehicle.getTaxiFleet(0))
-        if not idle_taxis:
+        all_idle = list(traci.vehicle.getTaxiFleet(0))
+        if not all_idle:
+            return
+        self._prune_committed(all_idle)
+        eligible_taxis = self._eligible_idle_taxis(all_idle)
+        if not eligible_taxis:
             return
 
-        idle_taxis = [t for t in idle_taxis if _has_no_pending_stop(t)]
-        if not idle_taxis:
-            return
-            
-        np.random.shuffle(idle_taxis)
-        _, current_idle = self._zone_counts()
-        total_idle = len(idle_taxis)
+        current_idle = {c: 0 for c in ZONE_CATEGORIES}
+        for _, _, source in eligible_taxis:
+            if source:
+                current_idle[source] += 1
+
+        total_idle = len(eligible_taxis)
         raw_targets = weights / weights.sum() * total_idle
         target_counts = np.floor(raw_targets).astype(int)
         for index in np.argsort(raw_targets - target_counts)[::-1][:total_idle - target_counts.sum()]:
             target_counts[index] += 1
 
+        # 목표 대수를 넘긴 구역의 택시만 이동 후보로 삼는다.
         movable = []
-        for taxi_id in idle_taxis:
-            try:
-                current_edge = traci.vehicle.getRoadID(taxi_id)
-            except traci.exceptions.TraCIException:
-                continue
-            if not current_edge or current_edge.startswith(":"):
-                continue
-
-            source = self._edge_to_zone.get(current_edge)
+        np.random.shuffle(eligible_taxis)
+        for taxi_id, edge, source in eligible_taxis:
             if source is not None:
                 source_index = ZONE_CATEGORIES.index(source)
                 if current_idle[source] <= target_counts[source_index]:
                     continue
                 current_idle[source] -= 1
-            movable.append((taxi_id, current_edge))
+            movable.append((taxi_id, edge))
 
         for target_index, target_category in enumerate(ZONE_CATEGORIES):
             deficit = max(0, target_counts[target_index] - current_idle[target_category])
@@ -309,6 +455,7 @@ class TaxiRepositionEnv(gym.Env):
                 if route is None or not route.edges:
                     continue
                 traci.vehicle.changeTarget(taxi_id, target_edge)
+                self.committed[taxi_id] = target_edge
                 self._last_reposition_distance_m += max(float(route.length), 0.0)
                 return True
             except traci.exceptions.TraCIException:
@@ -395,10 +542,9 @@ class TaxiRepositionEnv(gym.Env):
         sim_start_sec = self.meta.get("sim_start_hour", 0) * 3600.0
         return self.demand_predictor.predict_by_zone(sim_start_sec + traci.simulation.getTime())
 
-    def _get_obs(self):
-        waiting, idle = self._zone_counts()
-        if self.demand_predictor is not None and hasattr(self.demand_predictor, "update"):
-            self.demand_predictor.update(waiting)
+    def _get_obs(self, waiting=None, idle=None):
+        if waiting is None or idle is None:
+            waiting, idle = self._zone_counts()
         predicted = self._predicted_demand()
         now = traci.simulation.getTime()
         sim_start = self.meta.get("sim_start_hour", 0) * 3600.0
