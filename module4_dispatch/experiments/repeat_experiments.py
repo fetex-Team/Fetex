@@ -5,9 +5,9 @@
 - 날짜마다 같은 손님 목록(수요 지문 동일)으로 전략들을 돌리고 (해시 시드 고정 → 재실행해도 같은 결과)
 - 날짜를 짝지어(paired) 기준 전략(patrol) 대비 차이의 평균·95% 신뢰구간·부호 검정 p값을 계산한다.
 
-    python tools/repeat_experiments.py --jobs 2
-    python tools/repeat_experiments.py --dates 2026-09-07 2026-09-12 --strategies patrol prepositioned
-    python tools/repeat_experiments.py --scenario external_away     # 외부 운행 복귀 지연 시나리오
+    python module4_dispatch/experiments/repeat_experiments.py --jobs 2
+    python module4_dispatch/experiments/repeat_experiments.py --dates 2026-09-07 2026-09-12 --strategies patrol prepositioned
+    python module4_dispatch/experiments/repeat_experiments.py --scenario external_away     # 외부 운행 복귀 지연 시나리오
     -> results/repeat/<이름>/runs.csv, summary.json, summary.md
     중간에 멈춰도 다시 실행하면 끝난 실행(results/repeat/<이름>/runs/*.json)은 건너뛰고 이어 한다. 처음부터: --fresh
 
@@ -26,8 +26,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-from worker_protocol import emit_result, run_worker  # noqa: E402  (tools/ 같은 폴더)
+ROOT = Path(__file__).resolve().parents[2]
+from worker_protocol import emit_result, run_worker  # noqa: E402  (같은 폴더)
 # 평가 기간(예측·RL 학습 기간 2026-07-13~09-06 이후, 공휴일 제외): 월~일 하루씩 7일, 9~10월에 고르게.
 # 실측 날씨 기준 비 온 날 3일 포함 (9~23시 강수: 10-13 화 2.6mm, 10-18 일 27.5mm, 10-24 토 4.9mm)
 DEFAULT_DATES = ["2026-09-07", "2026-10-13", "2026-10-14", "2026-09-10",   # 월 화 수 목

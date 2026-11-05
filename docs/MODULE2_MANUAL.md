@@ -109,7 +109,7 @@
 ## T4. 외부 데이터 결합 + 결측치 처리 (R4, Q3)
 
 **해야 할 것**
-1. 날씨 실데이터: `scripts/fetch_weather_history.py` — Open-Meteo Archive API(무료, 키 불필요)로 지역 중심 좌표의 **시간별** 기온·강수·풍속 수집 → `data/external/weather_<지역>_<시작>_<끝>.csv`
+1. 날씨 실데이터: `data/loaders/fetch_weather_history.py` — Open-Meteo Archive API(무료, 키 불필요)로 지역 중심 좌표의 **시간별** 기온·강수·풍속 수집 → `data/external/weather_<지역>_<시작>_<끝>.csv`
 2. 병합 로직 (`external_data_merge.py` 재작성)
    - 날씨는 **1시간 단위**, 수요는 **5분 단위** → `pd.merge_asof(direction='backward')`로 "그 시각 이전 가장 최근 관측" 붙임 (미래 정보 누수 없음)
    - 결측: 관측 공백 ≤3시간은 선형 보간, 그 이상은 NaN 유지 + `weather_missing=1` 플래그; 파일 자체가 없으면 `config`의 현재 기온으로 상수 채움 + `weather_source='fallback'`
@@ -130,8 +130,8 @@
 **해야 할 것** — `notebooks/01_EDA_and_Spatial.ipynb` (실행 완료 상태로 커밋)
 1. 데이터 개요: 건수, 기간, 셀 수, 결측
 2. 시간 패턴: 5분/시간대별 수요 곡선, (다일 데이터면) 시간대×요일 히트맵
-3. 공간 패턴: 셀별 총수요 상위 표, 셀×시간 히트맵 (`eda/h3_resolution_compare.py` 재사용), H3 res 비교표
-4. POI zone 검증 요약 (`eda/poi_zone_map.py` 결과)
+3. 공간 패턴: 셀별 총수요 상위 표, 셀×시간 히트맵 (`module2_preprocessing/eda/h3_resolution_compare.py` 재사용), H3 res 비교표
+4. POI zone 검증 요약 (`module2_preprocessing/eda/poi_zone_map.py` 결과)
 5. **정상성**: 전체 수요 시계열 ADF 검정 p-value + 1차 차분 후 재검정 → 결론 한 줄
 6. **자기상관**: ACF 그래프 (lag 몇 개까지 유의한지 → `max_lag` 근거)
 7. **피처 유효성 검증** (Q2): 피처 그룹 ablation — {lag만, +rolling, +calendar, +weather}로 XGBoost 학습, test RMSE/MAE 표 → "어떤 피처가 얼마나 기여했나"
@@ -182,7 +182,7 @@ cd ~/Desktop/20263567/CodeSay20263600/FeTex
 source ../20250907ver/venv/bin/activate
 pip install holidays statsmodels jupyter        # 최초 1회
 python tests/test_module2.py                    # T1~T4 검증
-python scripts/fetch_weather_history.py         # T4 날씨 수집 (네트워크)
+python data/loaders/fetch_weather_history.py         # T4 날씨 수집 (네트워크)
 python -m module2_preprocessing.pipeline --logs "data/sim_logs/*.csv" --out data/processed/features.csv
 bash 실행_EDA.command                            # T5 노트북 실행 + H3/POI 그림
 python module3_prediction/train.py                                 # M3 연동 확인

@@ -1,7 +1,7 @@
 """
 회전 금지(turn restriction) 규칙이 SUMO 도로망에 왜 빠지는지 분석.
 
-    python tools/analyze_turn_restrictions.py
+    python module1_simulation/checks/analyze_turn_restrictions.py
     (module1_simulation/sumo_config/region_filtered.osm.xml 기준, netconvert 필요)
 
 예전 진단(9/12)은 "지도를 영역 크기로 잘라 받아서 relation이 참조하는 도로가 범위 밖"이라고 봤다.
@@ -18,7 +18,7 @@ import sys
 import tempfile
 import xml.etree.ElementTree as ET
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 OSM = os.path.join(ROOT, "module1_simulation", "sumo_config", "region_filtered.osm.xml")
 PROJECT_OPTS = ["--geometry.remove", "true", "--ramps.guess", "true", "--junctions.join", "true",
                 "--remove-edges.isolated", "true", "--ramps.no-split", "true", "--edges.join", "true",

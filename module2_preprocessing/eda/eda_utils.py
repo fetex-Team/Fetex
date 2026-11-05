@@ -5,7 +5,7 @@
 포함: 데이터 개요 / 시간 패턴 / 공간 패턴 / 정상성(ADF) / 자기상관(ACF) / 피처 유효성(ablation) / 외부 변수 상관
 """
 import os, sys, warnings
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 import numpy as np, pandas as pd
 import matplotlib.pyplot as plt

@@ -1,8 +1,8 @@
 """
 실행 재현성 검사: 같은 설정으로 시뮬레이션을 두 번(각각 새 프로세스) 돌려 결과가 똑같은지 확인한다.
 
-    python tools/check_determinism.py --hours 1 --strategy prepositioned
-    python tools/check_determinism.py --hours 1 --random-hash     # 고정 전(예전) 상태 비교용
+    python module4_dispatch/experiments/check_determinism.py --hours 1 --strategy prepositioned
+    python module4_dispatch/experiments/check_determinism.py --hours 1 --random-hash     # 고정 전(예전) 상태 비교용
 
 현재 runtime_meta.json을 복사해 종료 시각만 줄인 임시 meta로 돌리므로 원래 설정은 바뀌지 않는다.
 """
@@ -12,8 +12,8 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-from worker_protocol import emit_result, run_worker  # noqa: E402  (tools/ 같은 폴더)
+ROOT = Path(__file__).resolve().parents[2]
+from worker_protocol import emit_result, run_worker  # noqa: E402  (같은 폴더)
 KEYS = ["demand_fingerprint", "n_total_passengers", "n_measured", "n_timeout_removed", "avg_wait_sec",
         "p90_wait_sec", "true_avg_wait_sec_with_penalty"]
 

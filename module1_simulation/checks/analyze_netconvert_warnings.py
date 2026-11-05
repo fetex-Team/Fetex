@@ -9,7 +9,7 @@ netconvert는 같은 유형 경고를 5회까지만 출력하고 마지막에
 "N total messages of type: ..." 로 총계를 알려주므로, 두 형태를 모두 집계한다.
 
 실행:
-    python tools/analyze_netconvert_warnings.py <netconvert_stderr.txt>
+    python module1_simulation/checks/analyze_netconvert_warnings.py <netconvert_stderr.txt>
 
 stderr 로그를 만드는 법 (module1_simulation/sumo_config 기준):
     netconvert --osm-files region_filtered.osm.xml -o grid.net.xml \

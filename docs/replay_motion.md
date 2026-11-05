@@ -1,7 +1,7 @@
 # Unity 재생에서 차량이 회전할 때 도로 밖으로 나가던 문제 — 원인과 수정
 
-담당: 이동규 / 관련 파일: `tools/export_unity_replay.py`, `tools/replay_motion.py`, `tools/verify_replay_motion.py`,
-`tools/record_motion_truth.py`, Unity `Assets/Fetex/Scripts/ReplayMotion.cs`·`FetexReplayPlayer.cs`
+담당: 이동규 / 관련 파일: `module1_simulation/unity/export_unity_replay.py`, `module1_simulation/unity/replay_motion.py`, `module1_simulation/unity/verify_replay_motion.py`,
+`module1_simulation/unity/record_motion_truth.py`, Unity `Assets/Fetex/Scripts/ReplayMotion.cs`·`FetexReplayPlayer.cs`
 
 ## 1. 증상
 직선 도로에서 좌·우회전할 때 차가 모서리를 가로질러 포물선처럼 움직였다(도로 밖·건물 위로 지나감).
@@ -31,7 +31,7 @@
 6. v1 파일(구버전)도 그대로 재생됨(직선 보간).
 
 `ReplayMotion.cs`는 UnityEngine에 의존하지 않는 순수 C#이라 유니티 없이 컴파일·테스트했다.
-파이썬 판(`tools/replay_motion.py`)과 같은 입력 9,003건에서 위치 차이 최대 **0.1mm**, 방향 차이 최대 **0.002도**(float/double 차이)로 일치.
+파이썬 판(`module1_simulation/unity/replay_motion.py`)과 같은 입력 9,003건에서 위치 차이 최대 **0.1mm**, 방향 차이 최대 **0.002도**(float/double 차이)로 일치.
 
 ## 4. 검증 결과
 ### 4-1. 기존 재생 파일 (v1, 10초 간격 직선 보간) — `results/motion_eval/before_v1_patrol.json`
@@ -40,10 +40,10 @@
 | 움직이는 구간 전체 | **26.3%** | 17.9% | 7.5m |
 | 회전 구간(60도 이상) | **56.0%** | 39.8% | 12.2m |
 
-(도로 = 차선 폭/2 + 1m 띠 또는 교차로 면. `python tools/verify_replay_motion.py --map <map> --replay <file>`)
+(도로 = 차선 폭/2 + 1m 띠 또는 교차로 면. `python module1_simulation/unity/verify_replay_motion.py --map <map> --replay <file>`)
 
 ### 4-2. 실제 궤적 대비 (매초 기록을 솎아낸 뒤 사이 시점 복원, 1시간·택시 50대)
-`python tools/record_motion_truth.py --hours 1` → `python tools/verify_replay_motion.py --truth ... --strides 2 5 10`
+`python module1_simulation/unity/record_motion_truth.py --hours 1` → `python module1_simulation/unity/verify_replay_motion.py --truth ... --strides 2 5 10`
 
 | 기록 간격 | 방식 | 도로 밖 | 평균 위치오차 | 90% 위치오차 | 90% 방향오차 |
 |---|---|---:|---:|---:|---:|
@@ -71,10 +71,10 @@
 |---|---:|---:|
 | patrol (14시간, 5초 간격) | 47.9MB | **8.3MB** (17%) |
 
-- 내보내기: `tools/export_unity_replay.py`가 `.json.gz`로 저장(`--no-gzip`이면 예전처럼 `.json`). 같은 이름의 다른 형식 파일은 지워 헷갈리지 않게 한다.
+- 내보내기: `module1_simulation/unity/export_unity_replay.py`가 `.json.gz`로 저장(`--no-gzip`이면 예전처럼 `.json`). 같은 이름의 다른 형식 파일은 지워 헷갈리지 않게 한다.
 - Unity: `FetexReplayPlayer`가 `<파일>.gz`가 있으면 그것을 `GZipStream`으로 풀어 읽고, 없으면 `.json`을 읽는다(예전 파일도 그대로 재생).
   `map.json`은 0.5MB라 압축하지 않는다.
-- 검증 도구 `tools/verify_replay_motion.py`도 `.gz`를 바로 읽는다.
+- 검증 도구 `module1_simulation/unity/verify_replay_motion.py`도 `.gz`를 바로 읽는다.
 
 ### 4-5. 2026-11 재생성 (2025 수요·카카오 몫·실측 날씨, 재학습 RL)
 | 파일 | 도로 밖 (전체) | 도로 밖 (회전 구간) | 3m 넘는 이탈 | 크기 |
@@ -99,7 +99,7 @@
 
 ## 6. 재현
 ```bash
-python tools/export_unity_replay.py --stride 5 --unity-dir <Unity 프로젝트>/Assets/StreamingAssets
-python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz
+python module1_simulation/unity/export_unity_replay.py --stride 5 --unity-dir <Unity 프로젝트>/Assets/StreamingAssets
+python module1_simulation/unity/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz
 python tests/test_replay_motion.py
 ```

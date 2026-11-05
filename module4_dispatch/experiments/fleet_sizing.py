@@ -5,7 +5,7 @@
 서비스율(제때 태운 비율)·평균/90% 대기시간·타임아웃을 표로 낸다.
 각 실행은 별도 설정 폴더(sumo_config_fleet<N>)에서 돌아서 서로 간섭하지 않고, 원래 config.json도 그대로다.
 
-    python tools/fleet_sizing.py --taxis 50 70 90 --strategy prepositioned --date 2026-09-07 --jobs 2
+    python module4_dispatch/experiments/fleet_sizing.py --taxis 50 70 90 --strategy prepositioned --date 2026-09-07 --jobs 2
     -> results/fleet_sizing/fleet_<전략>_<날짜>.json / .csv
 """
 import argparse
@@ -19,8 +19,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-from worker_protocol import emit_result, run_worker  # noqa: E402  (tools/ 같은 폴더)
+ROOT = Path(__file__).resolve().parents[2]
+from worker_protocol import emit_result, run_worker  # noqa: E402  (같은 폴더)
 
 
 def worker(config_path: str, config_dir: str):

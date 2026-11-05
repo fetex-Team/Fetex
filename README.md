@@ -25,7 +25,7 @@ export_unity_replay ─▶ map.json + 전략별 재생 파일(v2, .json.gz) ─�
 | 시계열 전처리·외부 데이터 | 10분 칸, lag/이동평균/지난주 동일 칸, 날씨·공휴일 병합, 누수 방지 | `module2_preprocessing/` |
 | 수요 예측 | MultiOutput XGBoost(t+1~t+6, 시뮬레이션용 demand_v2) vs CNN-LSTM, 기준선 대비 평가 | `module3_prediction/train.py`, `notebooks/02_Model_Experiments.ipynb` |
 | 동적 배차 | 헝가리안 매칭(비용 = 다익스트라 도로 이동시간) + 시간표 선배치/RL 재배치 + 할증 계산 | `module4_dispatch/`, `module4_dispatch/network_cost.py` |
-| 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `tools/repeat_experiments.py`, `tools/check_determinism.py`, `tools/export_unity_replay.py` |
+| 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `module4_dispatch/experiments/repeat_experiments.py`, `module4_dispatch/experiments/check_determinism.py`, `module1_simulation/unity/export_unity_replay.py` |
 | 시각화 | Unity 3D 재생(차선 경로 보간), 대시보드 | Unity 브랜치 `KJS-UNITY` |
 
 ## 빠른 시작 (Windows PowerShell 기준)
@@ -46,18 +46,18 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | 지도 생성 + SUMO GUI 시뮬레이션 | `python main.py play` (`--config 설정.json`, 기존 지도로 바로: `--no-build`) |
 | 학습 전체(지도 → 로그 → 수요예측 → v2 변환 → RL) | `python main.py train` |
 | A/B 비교 · Unity 재생 · 로그 리포트 | `python main.py compare '<조합 JSON>'` · `python main.py unity --stride 5` · `python main.py analyze --logs <CSV...>` |
-| 전략 3개 공정 비교 + Unity 재생 파일 | `python tools/export_unity_replay.py --stride 5 --unity-dir <Unity>/Assets/StreamingAssets` |
-| 택시 대수 산정 | `python tools/fleet_sizing.py --taxis 50 70 --strategy prepositioned` |
-| 실측 날씨 받기(네트워크 필요) | `python scripts/fetch_weather_history.py 2026-07-01 2026-10-27` |
-| 학습용 8주 호출 생성(SUMO 불필요, 약 10초) | `python scripts/generate_demand_logs.py` |
+| 전략 3개 공정 비교 + Unity 재생 파일 | `python module1_simulation/unity/export_unity_replay.py --stride 5 --unity-dir <Unity>/Assets/StreamingAssets` |
+| 택시 대수 산정 | `python module4_dispatch/experiments/fleet_sizing.py --taxis 50 70 --strategy prepositioned` |
+| 실측 날씨 받기(네트워크 필요) | `python data/loaders/fetch_weather_history.py 2026-07-01 2026-10-27` |
+| 학습용 8주 호출 생성(SUMO 불필요, 약 10초) | `python data/loaders/generate_demand_logs.py` |
 | 수요 예측 학습(demand_v2 + CNN-LSTM 비교) | `python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"` → `saved_models/demand_v2.joblib`(시뮬레이션용), `results/module3/<freq>/`(지표·그래프). 5분 단위: `--freq 5min`, 비교표: `python module3_prediction/evaluate.py --compare-freq 5min 10min` |
 | RL용 카테고리 예측 | `python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` |
 | RL 재배치 정책 학습(약 3시간) | `python module4_dispatch/rl_train.py` |
-| 7일 x 3전략 반복 실험 + 통계 | `python tools/repeat_experiments.py --jobs 2` (`--scenario full_demand` / `network_dispatch` / `network_dispatch_full` / `external_away`) |
-| 결과 재현성 검사 | `python tools/check_determinism.py --hours 1` |
-| 차량 궤적 검사 | `python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz` |
+| 7일 x 3전략 반복 실험 + 통계 | `python module4_dispatch/experiments/repeat_experiments.py --jobs 2` (`--scenario full_demand` / `network_dispatch` / `network_dispatch_full` / `external_away`) |
+| 결과 재현성 검사 | `python module4_dispatch/experiments/check_determinism.py --hours 1` |
+| 차량 궤적 검사 | `python module1_simulation/unity/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz` |
 | 노트북 재생성(실행 결과 포함) | `python notebooks/build_notebooks.py` |
-| 테스트 | `python tests/test_demand_model.py` · `python tests/test_weather_history.py` · `python tests/test_network_cost.py` · `python tests/test_replay_motion.py` · `python tests/test_module2.py` · `python tools/verify_region_fallback.py` |
+| 테스트 | `python tests/test_demand_model.py` · `python tests/test_weather_history.py` · `python tests/test_network_cost.py` · `python tests/test_replay_motion.py` · `python tests/test_module2.py` · `python module1_simulation/checks/verify_region_fallback.py` |
 
 ## 설정 GUI와 프리셋
 - `python config_gui.py` — **기본** 탭(프리셋 버튼 + 자주 쓰는 값)과 **세부 설정** 탭(섹션별 전체 설정, 항목에 마우스를 올리면 설명).
@@ -108,28 +108,36 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 - [`data/external/README.md`](data/external/README.md) — 외부 데이터 출처
 - [`docs/setup.md`](docs/setup.md) — 설치 안내
 
-## 폴더 구조 (주요)
+## 폴더 구조
+과제 결과물 구조(data · module1~4 · notebooks · docs)를 그대로 따르고, 모듈 안의 하위 폴더는 그 모듈의 보조 도구다.
 ```
-main.py                                 실행 진입점 (play / train / compare / unity / analyze — 실행 순서는 여기)
-config_gui.py                           설정 GUI (값 편집·프리셋·저장, 실행은 main.py에 맡기고 진행 상황만 표시)
-config_loader.py                        설정 로더 (DEFAULT_CONFIG = presets/default/기본.json을 읽은 값)
-presets/default/                        팀 공유 프리셋 (기본.json = 팀 기본 설정, 시나리오 4개) — git 포함
-presets/user/                           개인 프리셋 — git 포함(당분간)
-config.json                             내 설정 — git 제외. 없으면 기본.json으로 시작
-measure_wait_time.py                    공용 실행·측정 루프 (여러 도구가 import)
-module1_simulation/    디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model),
-                       지도·날씨·공휴일(geo_lookup, real_map_fetch, weather_*, holiday_utils), 재현성·TraCI 구독 도우미
-module2_preprocessing/ 전처리: H3 인덱싱, 시계열 피처(43개), 외부 데이터 병합, POI 추출, 학습 로그 선택
-module3_prediction/    예측 모델: 학습 train.py(XGBoost vs CNN-LSTM → demand_v2)·train_category_demand.py, 평가 evaluate.py,
-                       실시간 예측 h3_predictor.py(H3 격자, forecast 재배치용)·category_predictor.py(장소 종류별, RL용)
-module4_dispatch/      배차: 헝가리안·커스텀 배차, 예측 재배치(forecast — Module 3 예측기 사용), RL 선배치, 할증
-scripts/               데이터 생성·학습·A/B 비교(multi_factor_compare + parallel_dispatch_worker)
-tools/                 실험·검증·Unity 내보내기·수요 로그 분석기·지역 검색 위젯
-tests/   notebooks/   eda/   docs/
-data/external/         실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
-data/real_demand_logs/ 학습용 8주 호출 (scripts/generate_demand_logs.py로 재생성 가능)
-saved_models/          demand_v2.joblib, category_demand_*.pkl, xgboost/cnn (Module 3)
-results/               repeat/(반복 실험), unity_replay/, fleet_sizing/, motion_eval/, ab_results/, runtime_validation/
+README.md · REPORT.md       실행 가이드 · 통합 분석 보고서
+main.py                     실행 진입점 (play / train / compare / unity / analyze — 실행 순서는 여기)
+config_gui.py               설정 GUI (값 편집·프리셋·저장, 실행은 main.py에 맡기고 진행 상황만 표시)
+config_loader.py · config_schema.py   설정 로더(기본값 = presets/default/기본.json) · GUI 항목 정의
+measure_wait_time.py        공용 시뮬레이션 실행·측정 루프 (여러 도구가 import)
+
+data/                       ① 데이터 + 데이터 로드 스크립트
+  loaders/                    generate_demand_logs(실측 통계 → 호출 로그), fetch_weather_history(Open-Meteo),
+                              fetch_weather_asos·fetch_signal_plans·fetch_all_external(공공데이터포털)
+  external/                   실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
+  real_demand_logs/           학습용 8주 호출 로그   sim_logs/ 시뮬레이션 로그   eda/ EDA 결과   features/ 전처리 저장본(git 제외)
+module1_simulation/         ② 디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model), 지도·날씨·공휴일
+  unity/                      Unity 재생 파일 내보내기·궤적 복원·궤적 검사
+  checks/                     지도 변환 경고·회전 금지·지역 좌표 폴백·날씨 출처 검증
+module2_preprocessing/      ③ 전처리: H3 인덱싱, 시계열 피처(43개), 외부 데이터 병합, 전처리 저장본, POI, 학습 로그 선택
+  eda/                        8주 EDA, H3 해상도 비교, POI 구역 지도, 피처 효과 비교(ablation)
+module3_prediction/         ④ 예측: 학습 train.py(XGBoost vs CNN-LSTM → demand_v2)·train_category_demand.py, 평가 evaluate.py,
+                              실시간 예측 h3_predictor.py(H3 격자, forecast 재배치용)·category_predictor.py(장소 종류별, RL용)
+module4_dispatch/           ⑤ 배차: 헝가리안·커스텀 배차, 예측 재배치(forecast), RL 선배치, 할증
+  experiments/                A/B 비교(multi_factor_compare + 워커), 7일 반복 실험, 택시 대수 산정, 재현성 검사
+notebooks/                  ⑥ EDA·모델 실험 노트북
+docs/                       ⑦ 설계·검증 문서
+tools/                      여러 모듈에 걸친 도구: 수요 로그 분석기, 런타임 검증, GUI 지역 검색 위젯
+tests/                      단위·통합 테스트
+presets/                    팀 프리셋(default/, 기본.json = 팀 기본값)·개인 프리셋(user/)   config.json 내 설정(git 제외)
+saved_models/               demand_v2.joblib · cnn_lstm_demand.pt · category_demand_*.pkl (Module 3)
+results/                    repeat/(반복 실험), unity_replay/, module3/, fleet_sizing/, motion_eval/, ab_results/, runtime_validation/
 ```
 
 ## 역할

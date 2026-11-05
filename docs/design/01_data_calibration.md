@@ -38,7 +38,7 @@
 | 대안 | 기온 계수(+2.73%/°C, p<0.001) — 8월(21.5~34.3°C)로만 추정돼 9~10월에 외삽할 수 없어 미적용 |
 | 검증 | 56일 학습 로그 전부 실측 날씨 연결(결측 0%). 일별 (생성 − 기대)/√기대 평균 0.17, 표준편차 1.04 → 포아송과 일치 |
 | 한계 | 계수는 택시만이 아닌 전체 이동으로 추정한 근사값. Open-Meteo는 재분석 격자값(약 9~11km)이라 국지성 소나기는 약하게 나옴 |
-| 파일 | `data/external/weather_강남역_2026-07-01_2026-10-27.csv`, `module1_simulation/weather_history.py`, `scripts/fetch_weather_history.py` |
+| 파일 | `data/external/weather_강남역_2026-07-01_2026-10-27.csv`, `module1_simulation/weather_history.py`, `data/loaders/fetch_weather_history.py` |
 
 ## 1-4. 이 데이터로 다시 학습한 예측 모델
 

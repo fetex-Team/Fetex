@@ -2,8 +2,8 @@
 """
 [Module 2 / T5] 8주 수요 EDA (실측 보정 호출 로그) — 시간·공간·날씨·휴일 패턴, 정상성, 자기상관 그림과 수치를 한 번에 만든다.
 
-    python eda/eda_8w.py                                   # data/real_demand_logs/demand_log_*.csv + data/external 실측 날씨
-    python eda/eda_8w.py --logs "<로그 글롭>" --out data/eda/8w
+    python module2_preprocessing/eda/eda_8w.py                                   # data/real_demand_logs/demand_log_*.csv + data/external 실측 날씨
+    python module2_preprocessing/eda/eda_8w.py --logs "<로그 글롭>" --out data/eda/8w
 
 산출물 (out 폴더): 01_daily.png 02_hour_dow_heatmap.png 03_cell_profiles.png 04_weekday_holiday.png
                   05_weather_rain.png 06_weather_temp.png 07_rain_day.png 08_stationarity.png 09_acf.png
@@ -12,7 +12,7 @@
 정상성: statsmodels가 있으면 adfuller(p-value), 없으면 같은 회귀를 numpy로 풀어 통계량과 MacKinnon 임계값(1%/5%/10%)으로 판정.
 """
 import os, sys, argparse, warnings
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 warnings.filterwarnings("ignore")
 import numpy as np, pandas as pd

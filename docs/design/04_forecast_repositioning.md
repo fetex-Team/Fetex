@@ -76,7 +76,7 @@
 
 - `tests/test_forecast_repositioner.py`: λ^(2/3) 배분 합·비율, **미래 호출 미사용**, 도착 도로 분산
 - 예측 모델이 시뮬레이션 날짜 이후 데이터로 학습됐으면 실행을 거부 (누수 방지)
-- `tools/check_determinism.py --strategy forecast`: 두 번 실행 결과 동일
+- `module4_dispatch/experiments/check_determinism.py --strategy forecast`: 두 번 실행 결과 동일
 
 ## 한계·후속
 

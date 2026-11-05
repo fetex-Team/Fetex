@@ -1,7 +1,7 @@
 """
 시뮬레이션 날씨(Open-Meteo)와 기상청 ASOS 서울(108) 실측을 비교한다.
 
-    python tools/compare_weather_sources.py
+    python module1_simulation/checks/compare_weather_sources.py
     (data/external/weather_강남역_*.csv 와 data/external/asos/asos108_*.csv 가 있어야 함)
 
 출력: 시간별·일별 강수 상관, 비 온 시간 일치율, 시간당 강수 차이, 기온 차이, 평가 7일 9~23시 강수 비교.
@@ -14,7 +14,7 @@ import os
 import sys
 from collections import defaultdict
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 EVAL_DATES = ["2026-09-07", "2026-10-13", "2026-10-14", "2026-09-10", "2026-09-18", "2026-10-24", "2026-10-18"]
 
 
@@ -41,7 +41,7 @@ def main():
                 if "from_external" not in p)
     asos = sorted(glob.glob(os.path.join(ROOT, "data", "external", "asos", "asos108_*.csv")))
     if not om or not asos:
-        sys.exit("[중단] Open-Meteo 파일과 ASOS 파일이 모두 있어야 합니다 (tools/fetch_weather_asos.py 먼저 실행).")
+        sys.exit("[중단] Open-Meteo 파일과 ASOS 파일이 모두 있어야 합니다 (data/loaders/fetch_weather_asos.py 먼저 실행).")
     a, b = load(om[-1]), load(asos[-1])
     keys = sorted(k for k in a if k in b and a[k][0] is not None and b[k][0] is not None)
     pa, pb = [a[k][0] for k in keys], [b[k][0] for k in keys]

@@ -3,7 +3,7 @@ notebooks/01_EDA_and_Spatial.ipynb, 02_Model_Experiments.ipynb 를 만들고 실
 
     python notebooks/build_notebooks.py          # 프로젝트 루트에서 실행
 필요: nbformat, nbclient, ipykernel (pip install nbformat nbclient ipykernel)
-전제: build_env.py 실행(runtime_meta.json), scripts/generate_demand_logs.py 실행(data/real_demand_logs)
+전제: build_env.py 실행(runtime_meta.json), data/loaders/generate_demand_logs.py 실행(data/real_demand_logs)
 """
 import os
 import sys
@@ -55,8 +55,8 @@ def nb_eda():
 | 택시 시간대별 이용 | 서울시 「2025 서울 교통이용 통계보고서」 | 서울 전체, 1시간 (평일/주말) |
 | 강남구 월별 승차 | 같은 보고서 자치구 통계 | 강남구 × 월 (평일/주말) |
 | 요일 배율 | 서울시 「서울 교통이용 통계보고서」 2022년 1월 | 서울 전체, 평일 안·주말 안 상대값 |
-| 시간별 실측 날씨 | Open-Meteo 과거 날씨 (`scripts/fetch_weather_history.py`) | 강남역 좌표, 1시간 |
-| 실데이터 보정 호출 로그 | `scripts/generate_demand_logs.py` (8주, 24시간) | 호출 1건 |
+| 시간별 실측 날씨 | Open-Meteo 과거 날씨 (`data/loaders/fetch_weather_history.py`) | 강남역 좌표, 1시간 |
+| 실데이터 보정 호출 로그 | `data/loaders/generate_demand_logs.py` (8주, 24시간) | 호출 1건 |
 """),
         code(SETUP),
         md("## 1. TIMS 500m 격자 — 강남역 주변 승차량"),

@@ -1,7 +1,7 @@
 """
 Unity 재생기(Assets/Fetex/Scripts/ReplayMotion.cs)와 똑같은 차량 위치 복원 알고리즘의 파이썬 판.
 
-- 검증 도구(tools/verify_replay_motion.py)와 단위 테스트(tests/test_replay_motion.py)가 이 모듈을 쓴다.
+- 검증 도구(module1_simulation/unity/verify_replay_motion.py)와 단위 테스트(tests/test_replay_motion.py)가 이 모듈을 쓴다.
 - C# 쪽을 고치면 이 파일도 같이 고쳐야 한다 (두 구현의 결과가 같다는 것을 tests에서 확인).
 
 복원 규칙 (두 프레임 A, B 사이, 진행률 f = (t - tA) / (tB - tA))

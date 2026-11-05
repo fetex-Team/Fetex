@@ -1,7 +1,7 @@
 # 실데이터 기반 수요 보정 (TIMS 500m 격자 + 서울시 2025 통계 + 실측 날씨)
 
-담당: 이동규 / 코드: `module1_simulation/demand_model.py`, `module1_simulation/weather_history.py`, `module1_simulation/external_trip_model.py`, `module1_simulation/passenger_spawn_manager.py`(실데이터 모드), `scripts/generate_demand_logs.py`,
-`tools/fleet_sizing.py` / 데이터: `data/external/` (출처·한계는 `data/external/README.md`)
+담당: 이동규 / 코드: `module1_simulation/demand_model.py`, `module1_simulation/weather_history.py`, `module1_simulation/external_trip_model.py`, `module1_simulation/passenger_spawn_manager.py`(실데이터 모드), `data/loaders/generate_demand_logs.py`,
+`module4_dispatch/experiments/fleet_sizing.py` / 데이터: `data/external/` (출처·한계는 `data/external/README.md`)
 
 ## 1. 왜 바꿨나
 | 문제 | 예전 | 지금 |
@@ -28,7 +28,7 @@
    그날 파일이 없을 때만 예전 "날씨적용"(실행 시점 실시간 날씨 가산값)으로 대체. 결과에 `weather_source`, `precip_mm_in_window`.
 6. **재현성**: 난수는 `random.Random("fetex-demand|시드|날짜")` 전용 스트림. 같은 날짜·시드면 시각·도로까지 완전히 같다.
    시뮬레이션 전체도 파이썬 해시 시드를 0으로 고정(`module1_simulation/reproducibility.py`)해 같은 설정이면 결과가 숫자까지 같다
-   (`tools/check_determinism.py`: 고정 시 두 번 실행 결과 동일, 고정 해제 시 다름을 확인).
+   (`module4_dispatch/experiments/check_determinism.py`: 고정 시 두 번 실행 결과 동일, 고정 해제 시 다름을 확인).
 7. **매출 추정**: 태운 손님 수 × TIMS 실측 평균 요금(영역 격자 가중 평균 약 16,300원) → 결과에 `est_revenue_won`.
 
 `config.json`
@@ -46,7 +46,7 @@
 - `python tests/test_weather_history.py` — 실측 날씨 24시간 읽기, 합성 파일 제외, 빠진 날 처리 (2개 통과).
 - 8주 학습 로그(2026-07-13 ~ 09-06, 카카오 T 몫 0.77, 실측 날씨): **446,712건**, 56일 모두 실측 날씨 연결.
   일별 (생성 − 기대)/√기대 = 평균 0.17, 표준편차 1.04 → 포아송 생성과 일치 (`notebooks/01_EDA_and_Spatial.ipynb`).
-- 같은 설정 두 번 실행(각각 새 프로세스, 1시간, rl_prepositioned): 수요 지문·대기시간까지 동일 (`tools/check_determinism.py`).
+- 같은 설정 두 번 실행(각각 새 프로세스, 1시간, rl_prepositioned): 수요 지문·대기시간까지 동일 (`module4_dispatch/experiments/check_determinism.py`).
 
 ## 4. 이 데이터로 다시 학습한 결과
 | 항목 | 예전(가정 수요, H3 res 7, 셀 3개, 8일) | 1차 실측 보정(전체 실측량, 2022 시간대) | **지금**(카카오 몫 0.77, 2025 시간대, 실측 날씨) |
@@ -61,7 +61,7 @@ WAPE가 23.0% → 26.4%로 오른 것은 모델이 나빠져서가 아니다. �
 
 카테고리별 예측(RL 입력)도 같은 로그로 다시 학습했다:
 ```bash
-python scripts/generate_demand_logs.py                                   # 8주 로그 (날씨 파일 필요)
+python data/loaders/generate_demand_logs.py                                   # 8주 로그 (날씨 파일 필요)
 python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"
 python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"   # --logs 빼면 시뮬레이션 로그로 학습됨
 python notebooks/build_notebooks.py

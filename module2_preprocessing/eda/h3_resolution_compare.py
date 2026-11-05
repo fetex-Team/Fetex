@@ -6,11 +6,11 @@ H3 resolution 비교 EDA (역할 3번 — 할 일 2).
   - lag-1 자기상관(셀 평균) — 이전 칸으로 다음 칸을 얼마나 맞출 수 있나
 를 비교하고, 셀×시간 히트맵을 나란히 그린다.
 
-사용: python eda/h3_resolution_compare.py [로그CSV]   (생략 시 최신 로그)
+사용: python module2_preprocessing/eda/h3_resolution_compare.py [로그CSV]   (생략 시 최신 로그)
 출력: data/eda/h3_resolution_summary.csv, data/eda/h3_resolution_compare.png
 """
 import os, sys
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 import warnings; warnings.filterwarnings('ignore', category=RuntimeWarning)
 import numpy as np, pandas as pd, h3

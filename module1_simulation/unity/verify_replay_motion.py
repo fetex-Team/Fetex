@@ -4,15 +4,15 @@ Unity 재생 파일의 차량 궤적 품질 검사 (도로 이탈률 + 실제 �
 1) 도로 이탈률 (모든 재생 파일, v1/v2 공통)
    두 프레임 사이를 Unity와 같은 방식으로 복원한 점들이 도로 위(차선 폭 안 또는 교차로 면 안)에 있는지 본다.
    - v1 파일: 직선 보간 (예전 Unity 방식)
-   - v2 파일: 차선 경로 보간 (ReplayMotion.cs와 같은 tools/replay_motion.py 알고리즘)
+   - v2 파일: 차선 경로 보간 (ReplayMotion.cs와 같은 module1_simulation/unity/replay_motion.py 알고리즘)
 
 2) 실제 궤적 대비 오차 (--truth: stride 1로 기록한 v2 파일)
    매초 기록을 N초 간격으로 솎아낸 뒤(지나온 차선 목록은 다시 합침) 사이 시점을 복원해서,
    실제로 기록된 그 시점의 차 중심 위치와의 거리(m)를 잰다. --strides 2 5 10 처럼 여러 간격을 비교.
 
 사용
-    python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json
-    python tools/verify_replay_motion.py --map results/unity_replay/map.json --truth results/motion_eval/truth_stride1.json --strides 1 2 5 10
+    python module1_simulation/unity/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json
+    python module1_simulation/unity/verify_replay_motion.py --map results/unity_replay/map.json --truth results/motion_eval/truth_stride1.json --strides 1 2 5 10
     (예전 파일 비교) --map 옛_map.json --replay 옛_patrol.json --legacy-linear
 
 결과는 표로 출력하고, --out으로 JSON 저장.

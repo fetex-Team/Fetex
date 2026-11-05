@@ -20,7 +20,7 @@
 | 순위 | 항목 | 상태 |
 |---|---|---|
 | 1 | `requirements.txt`에 `pyproj`, `rtree` 추가 | **완료** (rtree는 기존, pyproj·holidays 추가) |
-| 2 | 프리셋 없는 지역 → 홍대 대체 제거 (A-1) | **완료** — 지역을 바꾸지 않고 `region_unresolved` 표시, `build_env.py`가 지도 생성을 중단. `tools/verify_region_fallback.py` 11/11 통과 |
+| 2 | 프리셋 없는 지역 → 홍대 대체 제거 (A-1) | **완료** — 지역을 바꾸지 않고 `region_unresolved` 표시, `build_env.py`가 지도 생성을 중단. `module1_simulation/checks/verify_region_fallback.py` 11/11 통과 |
 | 3 | POI 변환 전량 실패 시 경고 (D-3) | 3번 담당 파일 — 전달 유지 (pyproj 명시로 발생 가능성 자체는 제거) |
 | 4 | 좌표 캐시 2단계 조회 (A-4) | **완료** (`geo_lookup._cached_entries_for` / `_bbox_from_cached_center`) |
 | 5 | timeout 10초 → 3초, 실패 지역 프로세스 캐시 (A-3) | **완료** (`geo_lookup.API_TIMEOUT_SEC = 3`, `_FAILED_IN_PROCESS`, 날씨 5초 → 3초) |
@@ -41,7 +41,7 @@ netconvert 경고(회전 금지 무시·비보호 좌회전 속도)는 둘 다 *
 
 ### 0-5. 회전 금지 무시 원인 재확인 (2026-11) — "지도 범위" 문제가 아니다
 9/12에는 "지도를 영역 크기로 잘라 받아서 규칙이 참조하는 도로가 범위 밖"이라고 봤다. 지도를 넓게 받는 기능을 만들기 전에
-`tools/analyze_turn_restrictions.py`로 다시 확인했다.
+`module1_simulation/checks/analyze_turn_restrictions.py`로 다시 확인했다.
 
 | 확인 | 결과 |
 |---|---|
@@ -75,7 +75,7 @@ netconvert 경고(회전 금지 무시·비보호 좌회전 속도)는 둘 다 *
 `load_config()` 결과를 비교했다. 네트워크 상태와 무관하게 같은 결과가 나온다.
 
 ```
-python tools/verify_region_fallback.py
+python module1_simulation/checks/verify_region_fallback.py
 ```
 
 ### 결과 — 폴백 자체는 정상
@@ -194,7 +194,7 @@ Nominatim은 초당 1회 정책이고 코드에도 `time.sleep(1.0)`이 들어 �
 대상은 `module1_simulation/sumo_config/region.osm.xml` (강남역, 3.4MB).
 
 ```
-python tools/analyze_netconvert_warnings.py nc_stderr.txt
+python module1_simulation/checks/analyze_netconvert_warnings.py nc_stderr.txt
 ```
 
 netconvert는 같은 유형을 5회까지만 출력하고 마지막에 총계를 알려주므로,
@@ -352,7 +352,7 @@ POI 786개 × edge 404개 규모에서는 체감되지 않지만, 지도를 넓�
 
 ```bash
 # 좌표/날씨 폴백 검증 (네트워크 불필요)
-python tools/verify_region_fallback.py
+python module1_simulation/checks/verify_region_fallback.py
 
 # netconvert 경고 분류
 cd module1_simulation/sumo_config
@@ -362,7 +362,7 @@ netconvert --osm-files region_filtered.osm.xml -o grid.net.xml \
   --keep-edges.by-vclass passenger --no-internal-links false \
   --tls.guess true --tls.join true  2> nc_stderr.txt
 cd ../..
-python tools/analyze_netconvert_warnings.py module1_simulation/sumo_config/nc_stderr.txt
+python module1_simulation/checks/analyze_netconvert_warnings.py module1_simulation/sumo_config/nc_stderr.txt
 ```
 
 검증 환경: Eclipse SUMO netconvert 1.27.1 / Python 3.11 / sumolib 1.27.x

@@ -1,10 +1,10 @@
 """
 궤적 정확도 평가용 "정답" 재생 파일 만들기: 매초(stride 1) 기록, 짧은 구간만.
 
-    python tools/record_motion_truth.py --hours 2 --strategy patrol
+    python module1_simulation/unity/record_motion_truth.py --hours 2 --strategy patrol
     -> results/motion_eval/truth_stride1.json, results/motion_eval/map.json
 그다음
-    python tools/verify_replay_motion.py --map results/motion_eval/map.json \
+    python module1_simulation/unity/verify_replay_motion.py --map results/motion_eval/map.json \
         --truth results/motion_eval/truth_stride1.json --strides 2 5 10
 
 현재 runtime_meta.json을 복사해 종료 시각만 줄인 임시 meta로 돌리므로 원래 설정은 바뀌지 않는다.
@@ -15,10 +15,10 @@ import os
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from tools.export_unity_replay import ReplayRecorder, export_map  # noqa: E402
+from module1_simulation.unity.export_unity_replay import ReplayRecorder, export_map  # noqa: E402
 from measure_wait_time import META_PATH, run_and_measure    # noqa: E402
 
 

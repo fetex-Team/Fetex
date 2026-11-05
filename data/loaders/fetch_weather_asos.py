@@ -1,12 +1,12 @@
 """
 기상청 지상(종관, ASOS) 시간자료(공공데이터포털)에서 서울(108) 시간별 관측을 받아 저장한다.
 
-    인증키: 환경변수 DATA_GO_KR_KEY 또는 secrets/data_go_kr_key.txt (tools/fetch_signal_plans.py와 같은 키)
-    python tools/fetch_weather_asos.py 2026-07-01 2026-10-27
+    인증키: 환경변수 DATA_GO_KR_KEY 또는 secrets/data_go_kr_key.txt (data/loaders/fetch_signal_plans.py와 같은 키)
+    python data/loaders/fetch_weather_asos.py 2026-07-01 2026-10-27
     -> data/external/asos/asos108_<시작>_<끝>.csv  (time, temperature, precipitation, wind_speed[km/h])
 
 용도: 시뮬레이션 날씨(Open-Meteo, 재분석 격자값)가 기상청 실측과 얼마나 맞는지 검증한다
-(tools/compare_weather_sources.py). 시뮬레이션이 읽는 data/external/weather_*.csv와 폴더를 분리해,
+(module1_simulation/checks/compare_weather_sources.py). 시뮬레이션이 읽는 data/external/weather_*.csv와 폴더를 분리해,
 받기만 해서는 시뮬레이션 결과가 바뀌지 않게 했다.
 풍속은 Open-Meteo와 단위를 맞추려고 m/s -> km/h(×3.6)로 바꿔 저장한다. 강수 없음(빈 값)은 0.
 """
@@ -19,7 +19,7 @@ import time
 import urllib.parse
 import urllib.request
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 URL = "https://apis.data.go.kr/1360000/AsosHourlyInfoService/getWthrDataList"
 OUT_DIR = os.path.join(ROOT, "data", "external", "asos")
 
@@ -67,7 +67,7 @@ def fetch_chunk(key, stn, d0, d1):
 
 def main():
     if len(sys.argv) < 3:
-        sys.exit("사용: python tools/fetch_weather_asos.py 시작일 종료일 [지점번호=108]")
+        sys.exit("사용: python data/loaders/fetch_weather_asos.py 시작일 종료일 [지점번호=108]")
     d0, d1 = dt.date.fromisoformat(sys.argv[1]), dt.date.fromisoformat(sys.argv[2])
     stn = sys.argv[3] if len(sys.argv) > 3 else "108"
     key = load_key()

@@ -5,7 +5,7 @@
 
     python main.py play                         지도 생성 → SUMO GUI 시뮬레이션 (results/simulation/metrics.json)
     python main.py train                        지도 생성 → (로그 생성) → 수요 예측(demand_v2·CNN-LSTM) → 카테고리 모델 → RL
-    python main.py compare '<조합 JSON>' [--model 카테고리모델.pkl]   A/B 병렬 비교 (scripts/multi_factor_compare.py)
+    python main.py compare '<조합 JSON>' [--model 카테고리모델.pkl]   A/B 병렬 비교 (module4_dispatch/experiments/multi_factor_compare.py)
     python main.py unity [--strategies ... --algorithm ... --stride N --unity-dir 경로]   Unity 재생 파일
     python main.py analyze --logs <로그 CSV ...>   수요 로그 리포트 (tools/analyze_demand_logs.py)
     python main.py analyzer                     수요 로그 분석기(브라우저) 서버
@@ -219,9 +219,9 @@ def _passthrough(script, text, env_extra=None):
 COMMANDS = {
     "play": cmd_play,
     "train": cmd_train,
-    "compare": _passthrough(os.path.join("scripts", "multi_factor_compare.py"), "A/B 비교 실행 중",
+    "compare": _passthrough(os.path.join("module4_dispatch", "experiments", "multi_factor_compare.py"), "A/B 비교 실행 중",
                             env_extra=lambda a: {"AI_CATEGORY_MODEL_PATH": a.model} if a.model else {}),
-    "unity": _passthrough(os.path.join("tools", "export_unity_replay.py"), "Unity 재생 파일 생성 중"),
+    "unity": _passthrough(os.path.join("module1_simulation", "unity", "export_unity_replay.py"), "Unity 재생 파일 생성 중"),
     "analyze": _passthrough(os.path.join("tools", "analyze_demand_logs.py"), "수요 로그 리포트 생성 중"),
     "analyzer": _passthrough(os.path.join("tools", "analyzer_server.py"), "수요 로그 분석기(브라우저) 실행 중 — 끝내려면 이 창을 닫기"),
 }

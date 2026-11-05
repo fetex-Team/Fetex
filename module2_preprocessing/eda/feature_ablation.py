@@ -5,8 +5,8 @@
 Data Spec 3장 피처 34개(기준) 위에 9/17 강화분(휴일 4, 날씨 파생 3, 어제 동일칸 2)을 그룹 단위로 누적 추가하며
 시간순 분할(뒤 20% test)에서 6개 타깃(y_h1~y_h6)의 MAE·RMSE를 잰다. 나이브(직전 칸 값 유지)와 계절 나이브(지난주 동일칸)도 같이 둔다.
 
-    python scripts/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"   # 실측 보정 로그 + data/external 날씨 파일
-    python scripts/feature_ablation.py "data/sim_logs/demand_log_*.csv"           # 시뮬레이션 로그
+    python module2_preprocessing/eda/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"   # 실측 보정 로그 + data/external 날씨 파일
+    python module2_preprocessing/eda/feature_ablation.py "data/sim_logs/demand_log_*.csv"           # 시뮬레이션 로그
     옵션: --test-size 0.2  --model auto|xgb|hgb  --out data/eda/feature_ablation.md
 
 모델: xgboost가 있으면 운영 모델과 같은 XGBRegressor(config 값), 없으면 sklearn HistGradientBoostingRegressor(같은 계열).
@@ -19,7 +19,7 @@ import argparse
 import numpy as np
 import pandas as pd
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from config_loader import CFG  # noqa: E402
 from module2_preprocessing.pipeline import build_feature_table  # noqa: E402

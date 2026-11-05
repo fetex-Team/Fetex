@@ -1,6 +1,6 @@
 # 02. 평가 방법
 
-전략 비교가 "운"이 아니라 "실력" 차이인지 판단하기 위한 규칙. 도구: `tools/repeat_experiments.py`, `tools/check_determinism.py`.
+전략 비교가 "운"이 아니라 "실력" 차이인지 판단하기 위한 규칙. 도구: `module4_dispatch/experiments/repeat_experiments.py`, `module4_dispatch/experiments/check_determinism.py`.
 
 ---
 
@@ -18,7 +18,7 @@
 |---|---|
 | 문제 | 같은 전략·같은 손님으로 다시 돌려도 타임아웃이 298명 vs 324명처럼 달랐다. 원인은 파이썬 집합(set) 순회 순서가 실행마다 바뀌어 배차 동률 처리가 달라지는 것 |
 | 결정 | 모든 실행을 `PYTHONHASHSEED=0`으로 고정 (`reproducibility.ensure_fixed_hash_seed`, 고정 안 돼 있으면 스스로 다시 실행) |
-| 검증 | `tools/check_determinism.py`: 고정 시 두 번 실행 결과가 대기시간까지 동일, 고정 해제 시 다름. 재생 파일 생성 결과와 반복 실험의 같은 날짜 결과도 숫자까지 동일 |
+| 검증 | `module4_dispatch/experiments/check_determinism.py`: 고정 시 두 번 실행 결과가 대기시간까지 동일, 고정 해제 시 다름. 재생 파일 생성 결과와 반복 실험의 같은 날짜 결과도 숫자까지 동일 |
 
 ## 2-3. 평가 날짜 7일
 
@@ -62,8 +62,8 @@
 ## 재현
 
 ```bash
-python tools/repeat_experiments.py --jobs 2 --scenario network_dispatch --strategies patrol prepositioned rl_prepositioned forecast
-python tools/repeat_experiments.py --jobs 2 --scenario network_dispatch_full --strategies patrol prepositioned rl_prepositioned forecast
-python tools/check_determinism.py --hours 1 --strategy forecast
+python module4_dispatch/experiments/repeat_experiments.py --jobs 2 --scenario network_dispatch --strategies patrol prepositioned rl_prepositioned forecast
+python module4_dispatch/experiments/repeat_experiments.py --jobs 2 --scenario network_dispatch_full --strategies patrol prepositioned rl_prepositioned forecast
+python module4_dispatch/experiments/check_determinism.py --hours 1 --strategy forecast
 ```
 중간에 멈춰도 다시 실행하면 끝난 실행(`results/repeat/<이름>/runs/*.json`)은 건너뛴다.

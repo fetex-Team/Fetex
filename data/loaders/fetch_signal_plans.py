@@ -4,8 +4,8 @@
     1) 공공데이터포털 마이페이지의 일반 인증키를 아래 중 한 곳에 둔다 (저장소에 올라가지 않음)
        - 환경변수 DATA_GO_KR_KEY
        - 파일 secrets/data_go_kr_key.txt  (한 줄, Encoding/Decoding 어느 쪽이든 됨)
-    2) python tools/fetch_signal_plans.py                  # 서울(L01) 전체 4종 계획
-       python tools/fetch_signal_plans.py --name 강남       # 교차로명 검색만
+    2) python data/loaders/fetch_signal_plans.py                  # 서울(L01) 전체 4종 계획
+       python data/loaders/fetch_signal_plans.py --name 강남       # 교차로명 검색만
     -> data/external/signal_plans/<기능>.json, summary.txt
 
 받는 정보 (경찰청 기술문서 기준)
@@ -23,7 +23,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 BASE = "https://apis.data.go.kr/1320000/PlanCrossRoadInfoService"
 OPS = {"getPlanCROPInfo": "운영계획", "getPlanCRWDInfo": "요일계획",
        "getPlanCRHDInfo": "특수일계획", "getPlanCRRSInfo": "예약계획"}

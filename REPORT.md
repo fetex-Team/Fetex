@@ -10,7 +10,7 @@
 |---|---|
 | 수요 데이터 | 국토교통부 TIMS 2025 500m 격자 승차 실측 + 서울시 2025 시간대·강남구 월별 통계 + 실측 시간별 날씨. 영역(1km²) 실측 하루 약 9,000건 중 **카카오 T 몫 77%** |
 | 공정 비교 | 하루 호출 목록을 시작 전에 시드로 생성(외생 수요) → 같은 날짜면 세 전략의 수요 지문 **동일**. 7일 모두 확인 |
-| 재현성 | 같은 설정 두 번 실행 시 대기시간까지 동일 (`tools/check_determinism.py`) |
+| 재현성 | 같은 설정 두 번 실행 시 대기시간까지 동일 (`module4_dispatch/experiments/check_determinism.py`) |
 | 수요 예측 | H3 res 8 · 10분 칸 · t+1~t+6 XGBoost, 시험 WAPE **26.4%** (포아송 잡음 하한 24.8%, 나이브 36.2%, 1시간 이동평균 30.5%) |
 | 전략 비교 (7일, 택시 50대, 카카오 몫, 직선 거리 배차) | 서비스율 순찰 99.2% · 시간표 선배치 99.3% · RL 99.4%. 타임아웃 하루 27.3 → 25.0 → 22.7명(통계적으로 확실하지 않음), 평균 대기 81 → 86 → 91초(**7일 모두 순찰이 짧음, 확실**) |
 | 택시 부족 조건 (7일, 손님 100%, 직선 거리 배차) | 서비스율 세 전략 모두 95.0~95.1%(수요가 많은 9/10은 84% 안팎). 타임아웃 차이 없음, RL 평균 대기 +9.4초(**7일 모두 길다**) → **이 환경에서는 순찰 + 헝가리안이 가장 낫다** |
@@ -28,7 +28,7 @@
 - 재현성: 같은 범위의 OSM 원본이 있으면 재사용(`FETEX_REFRESH_OSM=1`일 때만 갱신).
 - netconvert 경고 271건 중 90건(33%)이 실제 영향(회전 금지 무시 66, 비보호 좌회전 속도 24) → 통행 시간이 실제보다 짧게 나온다.
   **대기시간 절대값을 현실과 비교하지 않고, 같은 조건의 전략 간 상대 비교로만 쓴다.**
-- 회전 금지 무시 원인 재확인(`tools/analyze_turn_restrictions.py`): OSM 규칙 44개 중 21개는 OSM 원본에 도로가 빠져 있고,
+- 회전 금지 무시 원인 재확인(`module1_simulation/checks/analyze_turn_restrictions.py`): OSM 규칙 44개 중 21개는 OSM 원본에 도로가 빠져 있고,
   도로가 다 있는 규칙도 17개가 무시된다. 지도를 넓게 받아도 영역 안 규칙 27개 중 25개가 그대로 무시 → **지도 범위 문제가 아니라 원본 품질 문제**라 범위 확장은 적용하지 않았다. (`docs/module1_map_verification.md` 0-5)
 
 ## 2. 수요 데이터 — 실측 보정 (`docs/real_data_calibration.md`, `data/external/README.md`)
@@ -97,7 +97,7 @@ RL 상태: 구역별 대기 손님·빈 택시·예측 수요 + 시각(19개). �
 | 학습 수요 | 위 2장 수요(2025 통계, 카카오 몫, 실측 날씨) + 재학습한 카테고리 예측 |
 | 예전 정책 | `rl_model_backups/`에 백업 |
 
-### 5.3 7일 반복 실험 (`tools/repeat_experiments.py`, 결과 `results/repeat/base/`)
+### 5.3 7일 반복 실험 (`module4_dispatch/experiments/repeat_experiments.py`, 결과 `results/repeat/base/`)
 - 날짜: 학습 기간 이후, 공휴일 제외, 월~일 하루씩 — 9/7 월, 10/13 화(비 2.6mm), 10/14 수, 9/10 목, 9/18 금, 10/24 토(비 4.9mm), 10/18 일(비 27.5mm).
 - 조건: 9~23시, 택시 50대, 대기 한도 500초, 날짜마다 세 전략이 같은 손님 목록(수요 지문 동일 확인).
 - 통계: 날짜를 짝지어 순찰 대비 차이의 평균·95% 신뢰구간(t분포)·부호 검정.
@@ -191,7 +191,7 @@ v1은 손님 100%의 바쁜 날 손해(9/10 놓친 손님 973 → 1,392)가 있�
 
 ### 5.7 민감도: 밖으로 나간 택시의 복귀 지연 (`taxi_external_away`)
 기본 가정은 "밖으로 나간 택시만큼 빈 택시가 다시 들어온다"이다. 반대 극단으로 강남구 하차/승차 비율(0.918)만큼만 대체되고
-나머지는 운행시간의 2배 뒤에 돌아오게 하는 시나리오를 넣었다(`module1_simulation/external_trip_model.py`, `tools/repeat_experiments.py --scenario external_away`).
+나머지는 운행시간의 2배 뒤에 돌아오게 하는 시나리오를 넣었다(`module1_simulation/external_trip_model.py`, `module4_dispatch/experiments/repeat_experiments.py --scenario external_away`).
 1.5시간 시험 실행에서 28대가 밖으로 나갔다가 돌아왔고 서비스율 97.1%였다. 7일 반복은 후속 과제로 남긴다.
 
 ## 6. Unity 디지털 트윈 재생 (`docs/replay_motion.md`)
@@ -213,19 +213,19 @@ v1은 손님 100%의 바쁜 날 손해(9/10 놓친 손님 973 → 1,392)가 있�
 
 ## 재현
 ```bash
-python scripts/fetch_weather_history.py 2026-07-01 2026-10-27          # 네트워크 필요 (Open-Meteo)
+python data/loaders/fetch_weather_history.py 2026-07-01 2026-10-27          # 네트워크 필요 (Open-Meteo)
 python module1_simulation/build_env.py
-python scripts/generate_demand_logs.py
+python data/loaders/generate_demand_logs.py
 python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"
 python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"
 python module4_dispatch/rl_train.py                                     # 약 3시간
-python tools/repeat_experiments.py --jobs 2                             # 7일 x 3전략 (중간에 멈춰도 이어 함)
-python tools/repeat_experiments.py --jobs 2 --scenario full_demand
-python tools/repeat_experiments.py --jobs 2 --scenario network_dispatch        # 도로 기준 배차
-python tools/repeat_experiments.py --jobs 2 --scenario network_dispatch_full
-python tools/check_determinism.py --hours 1 --strategy rl_prepositioned
-python tools/export_unity_replay.py --stride 5
-python tools/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz
+python module4_dispatch/experiments/repeat_experiments.py --jobs 2                             # 7일 x 3전략 (중간에 멈춰도 이어 함)
+python module4_dispatch/experiments/repeat_experiments.py --jobs 2 --scenario full_demand
+python module4_dispatch/experiments/repeat_experiments.py --jobs 2 --scenario network_dispatch        # 도로 기준 배차
+python module4_dispatch/experiments/repeat_experiments.py --jobs 2 --scenario network_dispatch_full
+python module4_dispatch/experiments/check_determinism.py --hours 1 --strategy rl_prepositioned
+python module1_simulation/unity/export_unity_replay.py --stride 5
+python module1_simulation/unity/verify_replay_motion.py --map results/unity_replay/map.json --replay results/unity_replay/patrol.json.gz
 python notebooks/build_notebooks.py
 python tests/test_demand_model.py && python tests/test_weather_history.py && python tests/test_replay_motion.py && python tests/test_module2.py
 ```
@@ -238,7 +238,7 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 ## 부록 A. 시공간 데이터 특성 분석(EDA)·전처리 상세 — Module 2 (담당 윤세빈)
 
 > 그림·수치는 `notebooks/03_EDA_8weeks.ipynb`(실행 결과 포함)와 `data/eda/8w/`, ablation은 `data/eda/feature_ablation_8w_synthetic.md`.
-> 재실행: `python eda/eda_8w.py`, `python scripts/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"` — 2026-11-06부터 합성(목업) 생성기를 삭제해 **실측 보정 로그**로 계산된다. 아래 A.1~A.8 수치는 예전 합성 데이터(5분, 8주) 결과라 다시 실행하면 달라진다.
+> 재실행: `python module2_preprocessing/eda/eda_8w.py`, `python module2_preprocessing/eda/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"` — 2026-11-06부터 합성(목업) 생성기를 삭제해 **실측 보정 로그**로 계산된다. 아래 A.1~A.8 수치는 예전 합성 데이터(5분, 8주) 결과라 다시 실행하면 달라진다.
 > 1일치 예비 분석(2026-09-10)은 `notebooks/01_EDA_and_Spatial.ipynb`에 남겨 두었고, 아래는 8주 데이터로 확정한 결과다.
 
 ### A.1 데이터
@@ -257,7 +257,7 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 - 대용량 처리: 좌표 고유값 캐시 + chunk. 10만 행(중복 없는 최악 조건) H3+Geohash 변환 0.42초, 행 단위 apply 대비 2.3배.
 
 ### A.4 POI zone 검증
-- `eda/poi_zone_map.py`: 학교 5·주택 42·회사 66·음식점 218 구역을 지도에 겹쳐 확인(`data/eda/poi_zone_map.png`). 매핑 반경은 결과에 영향 없음(40~200m 동일). 주택 POI가 큰길로 매핑되는 문제 → Module 1 공유.
+- `module2_preprocessing/eda/poi_zone_map.py`: 학교 5·주택 42·회사 66·음식점 218 구역을 지도에 겹쳐 확인(`data/eda/poi_zone_map.png`). 매핑 반경은 결과에 영향 없음(40~200m 동일). 주택 POI가 큰길로 매핑되는 문제 → Module 1 공유.
 
 ### A.5 정상성·자기상관 (`08_stationarity.png`, `09_acf.png`)
 **정상성(ADF, 전체 셀 합 5분 계열)**: 원계열 통계량 −18.6, 1차 차분 −24.9 (1% 임계값 −3.43) → 둘 다 단위근 없음.

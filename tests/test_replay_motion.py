@@ -1,5 +1,5 @@
 """
-Unity 재생 차량 위치 복원(tools/replay_motion.py = Assets/Fetex/Scripts/ReplayMotion.cs) 테스트.
+Unity 재생 차량 위치 복원(module1_simulation/unity/replay_motion.py = Assets/Fetex/Scripts/ReplayMotion.cs) 테스트.
 
 실행: python tests/test_replay_motion.py   (pytest로도 실행 가능)
 가짜 교차로: 남→북 직선 차선 A(0,-50→0,-5), 교차로 내부 곡선 차선 J(우회전), 서→동 차선 B(5,0→55,0).
@@ -9,7 +9,7 @@ import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "tools"))
+sys.path.insert(0, os.path.join(ROOT, "module1_simulation", "unity"))
 
 from replay_motion import Lane, interpolate, lerp_angle  # noqa: E402
 

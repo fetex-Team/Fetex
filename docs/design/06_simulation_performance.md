@@ -1,6 +1,6 @@
 # 06. 시뮬레이션 속도: TraCI 구독
 
-파일: `module1_simulation/vehicle_subscriptions.py`, `module1_simulation/taxi_manager.py`, `module1_simulation/passenger_manager.py`, `tools/export_unity_replay.py`
+파일: `module1_simulation/vehicle_subscriptions.py`, `module1_simulation/taxi_manager.py`, `module1_simulation/passenger_manager.py`, `module1_simulation/unity/export_unity_replay.py`
 
 ---
 

@@ -3,7 +3,7 @@
 [재생 포맷 v2 — 차량이 도로를 따라 움직이게]
 v1은 10초마다 차의 "앞범퍼" 좌표만 저장하고 Unity가 그 사이를 직선으로 이었다.
 그래서 교차로에서 좌·우회전하면 차가 모서리를 가로질러(포물선처럼) 도로 밖으로 나갔다
-(회전 구간의 약 47%가 5m 이상 이탈, tools/verify_replay_motion.py로 측정).
+(회전 구간의 약 47%가 5m 이상 이탈, module1_simulation/unity/verify_replay_motion.py로 측정).
 
 v2는 다음을 함께 저장한다.
 - map.json `lanes`: 교차로 안쪽 연결 차선(SUMO internal lane)까지 포함한 모든 차선의 중심선
@@ -21,7 +21,7 @@ import os
 import sys
 
 # tools/에서 직접 실행해도 프로젝트 모듈(measure_wait_time, module1_simulation 등)을 찾도록 루트 등록
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import json
 import math
 import shutil

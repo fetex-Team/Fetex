@@ -1,7 +1,7 @@
 """
 외부 공공데이터 한 번에 받기 (경찰청 교차로 신호 계획 + 기상청 ASOS + 날씨 비교).
 
-    python tools/fetch_all_external.py
+    python data/loaders/fetch_all_external.py
 
 인증키 찾는 순서
   1) 환경변수 DATA_GO_KR_KEY
@@ -16,7 +16,7 @@ import re
 import subprocess
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 KEY_PATH = os.path.join(ROOT, "secrets", "data_go_kr_key.txt")
 KEY_RE = re.compile(r"[A-Za-z0-9%+/=]{40,}")
 
@@ -64,10 +64,10 @@ def run(args):
 
 def main():
     os.environ["DATA_GO_KR_KEY"] = get_key()
-    codes = [run(["tools/fetch_signal_plans.py"]),
-             run(["tools/fetch_weather_asos.py", "2026-07-01", "2026-10-27"])]
+    codes = [run(["data/loaders/fetch_signal_plans.py"]),
+             run(["data/loaders/fetch_weather_asos.py", "2026-07-01", "2026-10-27"])]
     if codes[1] == 0:
-        run(["tools/compare_weather_sources.py"])
+        run(["module1_simulation/checks/compare_weather_sources.py"])
     print("\n[완료] 결과: data/external/signal_plans/, data/external/asos/")
 
 

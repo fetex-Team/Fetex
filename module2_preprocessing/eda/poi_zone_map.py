@@ -8,11 +8,11 @@ poi_extractor.py가 뽑은 카테고리별 zone(edge 목록)이 실제 지도와
   4) 지도 출력: (a) 브라우저용 Leaflet HTML — 카테고리 레이어 켜고 끄며 실제 지도 위에서 확인
                (b) PNG 2장 — 카테고리별 edge, 겹침 수별 edge
 
-사용: python eda/poi_zone_map.py
+사용: python module2_preprocessing/eda/poi_zone_map.py
 출력: data/eda/poi_zone_map.html, poi_zone_map.png, poi_zone_summary.csv
 """
 import os, sys, json
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 import warnings; warnings.filterwarnings("ignore")
 import numpy as np, pandas as pd

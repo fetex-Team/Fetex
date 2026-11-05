@@ -11,7 +11,7 @@
 바꿔가며 load_config() 결과를 비교하므로, 인터넷이 끊겨 있어도 항상 같은 결과가 나온다.
 
 실행:
-    python tools/verify_region_fallback.py
+    python module1_simulation/checks/verify_region_fallback.py
 종료 코드 0 = 전부 통과, 1 = 실패 항목 있음
 """
 import contextlib
@@ -21,7 +21,7 @@ import os
 import sys
 import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 import config_loader          # noqa: E402

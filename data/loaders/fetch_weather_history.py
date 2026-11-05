@@ -1,7 +1,7 @@
 """
 [Module 2 / T4] 과거 시간별 날씨 수집 — Open-Meteo Archive API (무료, 키 불필요).
 
-사용: python scripts/fetch_weather_history.py [시작일 YYYY-MM-DD] [종료일]   (지역은 config.json의 region)
+사용: python data/loaders/fetch_weather_history.py [시작일 YYYY-MM-DD] [종료일]   (지역은 config.json의 region)
   생략 시: config.json의 region 중심 좌표, sim_date 기준 앞뒤 7일.
 출력: data/external/weather_<지역>_<시작>_<종료>.csv  (time, temperature, precipitation, wind_speed)
 
@@ -10,7 +10,7 @@
 import os, sys, json, csv, urllib.request, urllib.parse
 from datetime import datetime, timedelta
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 from config_loader import CFG
 

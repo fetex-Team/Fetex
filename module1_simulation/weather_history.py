@@ -1,7 +1,7 @@
 """
 과거 시간별 날씨(실측) 조회.
 
-scripts/fetch_weather_history.py가 Open-Meteo Archive에서 받아 둔
+data/loaders/fetch_weather_history.py가 Open-Meteo Archive에서 받아 둔
 data/external/weather_<지역>_<시작>_<종료>.csv (time, temperature, precipitation, wind_speed)를 읽어
 특정 날짜의 0~23시 값을 돌려준다. 파일이 없거나 그날 자료가 부족하면 None
 (그때는 기존 '날씨적용' 방식 — 실행 시점 실시간 날씨 — 으로 대체된다).

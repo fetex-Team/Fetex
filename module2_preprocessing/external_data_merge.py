@@ -214,7 +214,7 @@ def merge_external_data(df: pd.DataFrame, weather: pd.DataFrame = None, weather_
     if weather is None or weather.empty:
         # 3) 폴백: 상수 채움. 학습에 쓰면 날씨 피처는 정보량 0 — 반드시 경고.
         warnings.warn("날씨 파일이 없어 config 현재 기온으로 상수 채움 (weather_source='fallback'). "
-                      "scripts/fetch_weather_history.py 로 실데이터를 받으세요.")
+                      "data/loaders/fetch_weather_history.py 로 실데이터를 받으세요.")
         df["temperature"] = float(CFG.get("current_temperature", (CFG.get("temp_min", 15) + CFG.get("temp_max", 25)) / 2))
         df["precipitation"] = float(CFG.get("current_precipitation", 0.0))
         df["wind_speed"] = np.nan

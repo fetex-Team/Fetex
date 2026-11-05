@@ -6,7 +6,7 @@
 
 1) 예측: 지금까지 관측된 호출(지난 7일 + 오늘)만으로 피처를 만들어 칸별 다음 30분 호출 수 λ_c를 예측한다.
    예측 자체는 Module 3의 module3_prediction/h3_predictor.H3DemandPredictor가 하고, 여기서는 관측 호출을 넘겨준다.
-   - 지난 7일: 학습 로그와 같은 생성기(demand_model, scripts/generate_demand_logs.py와 같은 시드)로 만든 과거 호출
+   - 지난 7일: 학습 로그와 같은 생성기(demand_model, data/loaders/generate_demand_logs.py와 같은 시드)로 만든 과거 호출
    - 오늘: 시작 시각 이전 호출 + 시뮬레이션에서 지금까지 실제로 나온 호출. 미래 호출은 보지 않는다.
    - 날씨: 실측 시간별 날씨(학습과 같은 merge_external_data). 학습·서빙 피처가 같다.
 2) 목표 배치: 빈 택시 N대를 칸별 λ_c^α 비율로 나눈다 (α = forecast_alloc_power, 기본 2/3).

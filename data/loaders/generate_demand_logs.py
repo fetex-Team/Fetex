@@ -17,8 +17,8 @@
     data/real_demand_logs/generation_summary.json                (날짜별 총량·격자 비율 요약)
 
 사용
-    python scripts/generate_demand_logs.py                 # 8주
-    python scripts/generate_demand_logs.py --days 28 --end 2026-09-06
+    python data/loaders/generate_demand_logs.py                 # 8주
+    python data/loaders/generate_demand_logs.py --days 28 --end 2026-09-06
 이후
     python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"
 """
@@ -30,7 +30,7 @@ import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, ROOT)
 
 from config_loader import CFG                     # noqa: E402

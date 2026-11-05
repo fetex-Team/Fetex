@@ -9,7 +9,7 @@ config_gui.py의 "🧪 A/B 비교하기" 다이얼로그에서 사용자가 고�
 4) 모든 결과 JSON이 도착할 때까지 대기 후 순위표로 비교 출력
 
 사용법:
-    python scripts/multi_factor_compare.py '[{"taxi_strategy":"patrol","taxi_dispatch_algorithm":"greedy"}, ...]'
+    python module4_dispatch/experiments/multi_factor_compare.py '[{"taxi_strategy":"patrol","taxi_dispatch_algorithm":"greedy"}, ...]'
 
 config.json은 바뀌지 않는다. combos[0] 값은 results/run_configs/ab_<시각>.json에 저장되고,
 build_env와 워커는 MOBILITY_CONFIG로 그 파일을 읽는다.
@@ -23,7 +23,7 @@ import shutil
 import subprocess
 import xml.etree.ElementTree as ET
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # 프로젝트 루트 (이 파일은 하위 폴더에 있음)
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))  # 프로젝트 루트 (이 파일은 모듈의 하위 폴더에 있음)
 sys.path.insert(0, ROOT)
 
 MODULE1 = os.path.join(ROOT, "module1_simulation")
@@ -133,7 +133,7 @@ def patch_combo(idx, combo, run_date=None):
 
 def launch_workers(combos: list) -> list:
     """조합마다 parallel_dispatch_worker.py를 새 콘솔에서 동시에 실행."""
-    worker_path = os.path.join(ROOT, "scripts", "parallel_dispatch_worker.py")
+    worker_path = os.path.join(ROOT, "module4_dispatch", "experiments", "parallel_dispatch_worker.py")
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
