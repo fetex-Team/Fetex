@@ -3,7 +3,7 @@
 [Module 2 / T5] 8주 수요 EDA (실측 보정 호출 로그) — 시간·공간·날씨·휴일 패턴, 정상성, 자기상관 그림과 수치를 한 번에 만든다.
 
     python module2_preprocessing/eda/eda_8w.py                                   # data/real_demand_logs/demand_log_*.csv + data/external 실측 날씨
-    python module2_preprocessing/eda/eda_8w.py --logs "<로그 글롭>" --out data/eda/8w
+    python module2_preprocessing/eda/eda_8w.py --logs "<로그 글롭>" --out results/eda/8w
 
 산출물 (out 폴더): 01_daily.png 02_hour_dow_heatmap.png 03_cell_profiles.png 04_weekday_holiday.png
                   05_weather_rain.png 06_weather_temp.png 07_rain_day.png 08_stationarity.png 09_acf.png
@@ -267,6 +267,6 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--logs", default=os.path.join(ROOT, "data", "real_demand_logs", "demand_log_*.csv"))
     ap.add_argument("--weather", default=None, help="시간별 날씨 CSV (기본: data/external의 실측 파일)")
-    ap.add_argument("--out", default=os.path.join(ROOT, "data", "eda", "8w"))
+    ap.add_argument("--out", default=os.path.join(ROOT, "results", "eda", "8w"))
     a = ap.parse_args()
     main(a.logs, a.weather, a.out)

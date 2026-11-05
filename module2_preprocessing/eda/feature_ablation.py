@@ -7,7 +7,7 @@ Data Spec 3장 피처 34개(기준) 위에 9/17 강화분(휴일 4, 날씨 파�
 
     python module2_preprocessing/eda/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"   # 실측 보정 로그 + data/external 날씨 파일
     python module2_preprocessing/eda/feature_ablation.py "data/sim_logs/demand_log_*.csv"           # 시뮬레이션 로그
-    옵션: --test-size 0.2  --model auto|xgb|hgb  --out data/eda/feature_ablation.md
+    옵션: --test-size 0.2  --model auto|xgb|hgb  --out results/eda/feature_ablation.md
 
 모델: xgboost가 있으면 운영 모델과 같은 XGBRegressor(config 값), 없으면 sklearn HistGradientBoostingRegressor(같은 계열).
 결과 표는 markdown으로 저장하고 REPORT 2.5절 "피처 유효성"에 그대로 붙인다.
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     ap.add_argument("--weather", default=None, help="시간별 날씨 CSV 직접 지정")
     ap.add_argument("--test-size", type=float, default=0.2)
     ap.add_argument("--model", default="auto", choices=["auto", "xgb", "hgb"])
-    ap.add_argument("--out", default=os.path.join(ROOT, "data", "eda", "feature_ablation.md"))
+    ap.add_argument("--out", default=os.path.join(ROOT, "results", "eda", "feature_ablation.md"))
     a = ap.parse_args()
     logs = []
     for p in a.logs:

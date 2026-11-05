@@ -7,12 +7,12 @@
 - Geohash도 함께 출력한다 (명세가 "Geohash 또는 H3"라 둘 다 제공, 문자열 prefix로 상위 격자 조회가 쉬움).
 
 [2026-11 갱신] 현재 기준은 res 8 (config.json h3_resolution). 실측 보정 수요 14일로 다시 비교한 결과
-(data/eda/h3_resolution_summary.csv, notebooks/01_EDA_and_Spatial.ipynb 4절):
+(results/eda/h3_resolution_summary.csv, notebooks/01_EDA_and_Spatial.ipynb 4절):
 - res 7: 셀 3개, 한 칸 85% → 너무 거침 / res 9: 0인 칸 44%, 자기상관 0.21 → 10분 예측에 노이즈
 - res 8: 셀 8개, 0인 칸 27%, 자기상관 0.39. 실측 원천(TIMS)이 500m 격자라 그보다 작은 칸의 차이는 실측이 아님 → res 8 채택
 아래는 예전(가정 수요 1일치) 비교 기록이다.
 
-(예전) resolution 9를 쓰는 근거 (data/eda/h3_resolution_summary.csv, 강남역 로그 7~10 비교)
+(예전) resolution 9를 쓰는 근거 (results/eda/h3_resolution_summary.csv, 강남역 로그 7~10 비교)
 - res 8: 셀 7개, 최다 셀에 수요 35% 집중, 학습 행 42 → 공간 정보 부족 (too coarse)
 - res 10: 셀 70개, 수요 0인 칸 37%, 중앙값 1건/10분, lag-1 자기상관 0.17 → 노이즈 (too fine)
 - res 9: 셀 22개(변 201m), 0인 칸 20%, 출근 핫스팟 5~6셀 식별 → 채택

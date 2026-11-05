@@ -9,7 +9,7 @@ poi_extractor.py가 뽑은 카테고리별 zone(edge 목록)이 실제 지도와
                (b) PNG 2장 — 카테고리별 edge, 겹침 수별 edge
 
 사용: python module2_preprocessing/eda/poi_zone_map.py
-출력: data/eda/poi_zone_map.html, poi_zone_map.png, poi_zone_summary.csv
+출력: results/eda/poi_zone_map.html, poi_zone_map.png, poi_zone_summary.csv
 """
 import os, sys, json
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -30,7 +30,7 @@ plt.rcParams["axes.unicode_minus"] = False
 
 CFG_DIR = os.path.join(ROOT, "module1_simulation", "sumo_config")
 NET = os.path.join(CFG_DIR, "grid.net.xml"); OSM = os.path.join(CFG_DIR, "region.osm.xml")
-META = os.path.join(CFG_DIR, "runtime_meta.json"); OUT = os.path.join(ROOT, "data", "eda")
+META = os.path.join(CFG_DIR, "runtime_meta.json"); OUT = os.path.join(ROOT, "results", "eda")
 os.makedirs(OUT, exist_ok=True)
 KO = {"school": "학교", "residential": "주택", "company": "회사", "restaurant": "음식점",
       "subway_entrance": "지하철입구", "bus_stop": "버스정류장"}

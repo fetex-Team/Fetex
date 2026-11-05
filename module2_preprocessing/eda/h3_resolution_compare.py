@@ -7,7 +7,7 @@ H3 resolution 비교 EDA (역할 3번 — 할 일 2).
 를 비교하고, 셀×시간 히트맵을 나란히 그린다.
 
 사용: python module2_preprocessing/eda/h3_resolution_compare.py [로그CSV]   (생략 시 최신 로그)
-출력: data/eda/h3_resolution_summary.csv, data/eda/h3_resolution_compare.png
+출력: results/eda/h3_resolution_summary.csv, results/eda/h3_resolution_compare.png
 """
 import os, sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -63,8 +63,8 @@ for res in RESOLUTIONS:
     })
 
 summary = pd.DataFrame(rows)
-os.makedirs(os.path.join(ROOT, "data", "eda"), exist_ok=True)
-summary.to_csv(os.path.join(ROOT, "data", "eda", "h3_resolution_summary.csv"), index=False, encoding="utf-8-sig")
+os.makedirs(os.path.join(ROOT, "results", "eda"), exist_ok=True)
+summary.to_csv(os.path.join(ROOT, "results", "eda", "h3_resolution_summary.csv"), index=False, encoding="utf-8-sig")
 print(summary.to_string(index=False))
 
 # ---- 그림: 셀×시간 히트맵 4장 (단일 색상 sequential) ----
@@ -89,6 +89,6 @@ for ax, res in zip(axes, RESOLUTIONS):
 fig.suptitle(f"H3 resolution별 셀×시간 수요 분포 (색: 10분당 호출 수, 패널별 스케일) — {os.path.basename(log_path)}",
              x=0.01, ha="left", fontsize=12, color=ink)
 fig.tight_layout(rect=(0, 0, 1, 0.95))
-out = os.path.join(ROOT, "data", "eda", "h3_resolution_compare.png")
+out = os.path.join(ROOT, "results", "eda", "h3_resolution_compare.png")
 fig.savefig(out, dpi=130, bbox_inches="tight", facecolor="white")
 print(f"\n[저장] {out}")

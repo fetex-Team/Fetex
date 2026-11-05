@@ -237,7 +237,7 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 
 ## 부록 A. 시공간 데이터 특성 분석(EDA)·전처리 상세 — Module 2 (담당 윤세빈)
 
-> 그림·수치는 `notebooks/03_EDA_8weeks.ipynb`(실행 결과 포함)와 `data/eda/8w/`, ablation은 `data/eda/feature_ablation_8w_synthetic.md`.
+> 그림·수치는 `notebooks/03_EDA_8weeks.ipynb`(실행 결과 포함)와 `results/eda/8w/`, ablation은 `results/eda/feature_ablation_8w_synthetic.md`.
 > 재실행: `python module2_preprocessing/eda/eda_8w.py`, `python module2_preprocessing/eda/feature_ablation.py "data/real_demand_logs/demand_log_*.csv"` — 2026-11-06부터 합성(목업) 생성기를 삭제해 **실측 보정 로그**로 계산된다. 아래 A.1~A.8 수치는 예전 합성 데이터(5분, 8주) 결과라 다시 실행하면 달라진다.
 > 1일치 예비 분석(2026-09-10)은 `notebooks/01_EDA_and_Spatial.ipynb`에 남겨 두었고, 아래는 8주 데이터로 확정한 결과다.
 
@@ -253,11 +253,11 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 
 ### A.3 공간 격자 — H3 resolution 8 (팀 기준) (`03_cell_profiles.png`)
 - 셀 8개의 총량은 11.7~13.8%로 고르지만 **피크 시각이 셀마다 다르다**: 4개 셀 8시, 3개 셀 18~19시, 1개 셀 12시(음식점). 격자별로 따로 학습해야 하는 이유이고, 모든 시계열 피처를 셀별 groupby 안에서 계산하는 이유.
-- 해상도 판단(1일치 EDA, `data/eda/h3_resolution_compare.png`): res 8은 셀 7개에 최다 셀 35%(too coarse), res 10은 0인 칸 37%·lag-1 r 0.17(too fine), **res 9가 EDA상 적정**. 그러나 시뮬레이션 도로–격자 매핑과 저장 모델의 셀 목록이 같은 해상도여야 해서 develop 통합 시 **팀 기준 res 8로 통일**했다(`config.json h3_resolution`). 해상도 변경 시 모델 재학습 필요.
+- 해상도 판단(1일치 EDA, `results/eda/h3_resolution_compare.png`): res 8은 셀 7개에 최다 셀 35%(too coarse), res 10은 0인 칸 37%·lag-1 r 0.17(too fine), **res 9가 EDA상 적정**. 그러나 시뮬레이션 도로–격자 매핑과 저장 모델의 셀 목록이 같은 해상도여야 해서 develop 통합 시 **팀 기준 res 8로 통일**했다(`config.json h3_resolution`). 해상도 변경 시 모델 재학습 필요.
 - 대용량 처리: 좌표 고유값 캐시 + chunk. 10만 행(중복 없는 최악 조건) H3+Geohash 변환 0.42초, 행 단위 apply 대비 2.3배.
 
 ### A.4 POI zone 검증
-- `module2_preprocessing/eda/poi_zone_map.py`: 학교 5·주택 42·회사 66·음식점 218 구역을 지도에 겹쳐 확인(`data/eda/poi_zone_map.png`). 매핑 반경은 결과에 영향 없음(40~200m 동일). 주택 POI가 큰길로 매핑되는 문제 → Module 1 공유.
+- `module2_preprocessing/eda/poi_zone_map.py`: 학교 5·주택 42·회사 66·음식점 218 구역을 지도에 겹쳐 확인(`results/eda/poi_zone_map.png`). 매핑 반경은 결과에 영향 없음(40~200m 동일). 주택 POI가 큰길로 매핑되는 문제 → Module 1 공유.
 
 ### A.5 정상성·자기상관 (`08_stationarity.png`, `09_acf.png`)
 **정상성(ADF, 전체 셀 합 5분 계열)**: 원계열 통계량 −18.6, 1차 차분 −24.9 (1% 임계값 −3.43) → 둘 다 단위근 없음.

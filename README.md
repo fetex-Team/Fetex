@@ -121,12 +121,12 @@ data/                       ① 데이터 + 데이터 로드 스크립트
   loaders/                    generate_demand_logs(실측 통계 → 호출 로그), fetch_weather_history(Open-Meteo),
                               fetch_weather_asos·fetch_signal_plans·fetch_all_external(공공데이터포털)
   external/                   실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
-  real_demand_logs/           학습용 8주 호출 로그   sim_logs/ 시뮬레이션 로그   eda/ EDA 결과   features/ 전처리 저장본(git 제외)
+  real_demand_logs/           학습용 8주 호출 로그   sim_logs/ 시뮬레이션 로그   features/ 전처리 저장본(git 제외)
 module1_simulation/         ② 디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model), 지도·날씨·공휴일
   unity/                      Unity 재생 파일 내보내기·궤적 복원·궤적 검사
   checks/                     지도 변환 경고·회전 금지·지역 좌표 폴백·날씨 출처 검증
 module2_preprocessing/      ③ 전처리: H3 인덱싱, 시계열 피처(43개), 외부 데이터 병합, 전처리 저장본, POI, 학습 로그 선택
-  eda/                        8주 EDA, H3 해상도 비교, POI 구역 지도, 피처 효과 비교(ablation)
+  eda/                        8주 EDA, H3 해상도 비교, POI 구역 지도, 피처 효과 비교(ablation) 코드 → 결과는 results/eda/
 module3_prediction/         ④ 예측: 학습 train.py(XGBoost vs CNN-LSTM → demand_v2)·train_category_demand.py, 평가 evaluate.py,
                               실시간 예측 h3_predictor.py(H3 격자, forecast 재배치용)·category_predictor.py(장소 종류별, RL용)
 module4_dispatch/           ⑤ 배차: 헝가리안·커스텀 배차, 예측 재배치(forecast), RL 선배치, 할증
@@ -137,7 +137,7 @@ tools/                      여러 모듈에 걸친 도구: 수요 로그 분석
 tests/                      단위·통합 테스트
 presets/                    팀 프리셋(default/, 기본.json = 팀 기본값)·개인 프리셋(user/)   config.json 내 설정(git 제외)
 saved_models/               demand_v2.joblib · cnn_lstm_demand.pt · category_demand_*.pkl (Module 3)
-results/                    repeat/(반복 실험), unity_replay/, module3/, fleet_sizing/, motion_eval/, ab_results/, runtime_validation/
+results/                    eda/(Module 2 EDA 그림·표), repeat/(반복 실험), unity_replay/, module3/, fleet_sizing/, motion_eval/, ab_results/, runtime_validation/
 ```
 
 ## 역할

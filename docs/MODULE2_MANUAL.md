@@ -54,7 +54,7 @@
 ## T1. 공간 인덱싱 (R1, Q1, Q4)
 
 **해야 할 것**
-1. H3 resolution 결정 근거 문서화 (완료: `data/eda/h3_resolution_summary.csv`, res 9)
+1. H3 resolution 결정 근거 문서화 (완료: `results/eda/h3_resolution_summary.csv`, res 9)
 2. Geohash 병행 출력 (명세가 "Geohash 또는 H3"라 둘 다 제공, 비교 가능하게)
 3. 대용량 효율화: 행 단위 `df.apply` → **중복 좌표 캐시 + 리스트 컴프리헨션** (같은 좌표 반복 계산 제거)
 4. 벤치마크: 10만 행 기준 변환 시간 측정 함수 제공 → 인터뷰 Q1/Q4 답변 숫자
