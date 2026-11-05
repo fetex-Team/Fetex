@@ -51,6 +51,7 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | 실측 날씨 받기(네트워크 필요) | `python scripts/fetch_weather_history.py 2026-07-01 2026-10-27` |
 | 학습용 8주 호출 생성(SUMO 불필요, 약 10초) | `python scripts/generate_demand_logs.py` |
 | 예측 모델 학습 | `python scripts/train_dispatch_model.py "data/real_demand_logs/demand_log_*.csv"` |
+| Module 3 비교(XGBoost vs CNN-LSTM, t+1~t+6) | `python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"` → `results/module3/<freq>/`(지표·그래프). 5분 단위: `--freq 5min`, 비교표: `python module3_prediction/evaluate.py --compare-freq 5min 10min` |
 | RL용 카테고리 예측 | `python scripts/convert_v2_to_category.py` · `python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` |
 | RL 재배치 정책 학습(약 3시간) | `python module4_dispatch/rl_train.py` |
 | 7일 x 3전략 반복 실험 + 통계 | `python tools/repeat_experiments.py --jobs 2` (`--scenario full_demand` / `network_dispatch` / `network_dispatch_full` / `external_away`) |
@@ -120,7 +121,7 @@ measure_wait_time.py                    공용 실행·측정 루프 (여러 도
 module1_simulation/    디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model),
                        지도·날씨·공휴일(geo_lookup, real_map_fetch, weather_*, holiday_utils), 재현성·TraCI 구독 도우미
 module2_preprocessing/ 전처리: H3 인덱싱, 시계열 피처(43개), 외부 데이터 병합, POI 추출, 학습 로그 선택
-module3_prediction/    예측 모델: train.py·evaluate.py(XGBoost vs CNN-LSTM), 카테고리 수요 모델 학습
+module3_prediction/    예측 모델: train.py(XGBoost vs CNN-LSTM, t+1~t+6, 조기 종료)·evaluate.py(지표·기준 모델·그래프), 카테고리 수요 모델 학습
 module4_dispatch/      배차: 헝가리안·커스텀 배차, 예측 재배치(forecast), RL 선배치, 할증
 scripts/               데이터 생성·학습·A/B 비교(multi_factor_compare + parallel_dispatch_worker)
 tools/                 실험·검증·Unity 내보내기·수요 로그 분석기·지역 검색 위젯

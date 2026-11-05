@@ -23,9 +23,9 @@ class CNNLSTMModel(nn.Module):
         if kernel_size < 1 or kernel_size % 2 == 0:
             raise ValueError("CNN kernel_size는 양의 홀수여야 합니다.")
 
-        # kernel_size가 1보다 크면 padding을 줘서 시퀀스 길이가 줄지 않게 함
-        # (주의: 지금 구조가 seq_len=1 스냅샷이면 kernel_size>1의 효과가 제한적입니다.
-        #  진짜 시퀀스(N, seq_len>1, features) 구조로 바꾸면 이 값이 실제로 의미를 가짐)
+        # kernel_size가 1보다 크면 padding을 줘서 시퀀스 길이가 줄지 않게 함.
+        # 입력은 (N, cnn_seq_len, features): 같은 셀의 직전 cnn_seq_len 칸 (train.build_sequences).
+        # output_dim = 예측 시점 수(t+1~t+6 → 6).
         padding = kernel_size // 2
 
         # 1D Conv Layer: 지역적 패턴 extraction

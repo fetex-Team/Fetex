@@ -27,8 +27,8 @@ HungarianDispatcher를 매 스텝 maintain()해서 실제 배차를 수행함 (S
 run_and_measure()가 호출될 때마다(단독 실행 / parallel_dispatch_worker.py /
 multi_factor_compare.py의 병렬 워커 전부 포함, run_simulation.py의 GUI 실행은 미포함),
 새로 등장하는 승객의 "등장 시각 + 위경도"를 data/raw/simulation_demand_log.csv에
-append합니다. train.py의 prepare_real_sequence_dataset()이 이 CSV를 읽어 실제
-시뮬레이션 기반 수요로 학습하도록 연결되어 있습니다.
+append합니다. (Module 3 학습은 data/sim_logs/demand_log_*.csv 또는 --logs로 지정한 로그를 쓰고,
+이 레거시 CSV는 읽지 않습니다.)
 
 날짜는 실행마다 과거 90일 내에서 랜덤 배정되어, 여러 번 돌릴수록 dayofweek/is_weekend
 같은 캘린더 피처에 실제 분산이 생기도록 했습니다.

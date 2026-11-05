@@ -56,5 +56,9 @@ desktop.ini
 results/run_configs/
 results/run_status/
 
+# Module 3 결과: 지표·그래프는 올리고, 큰 예측값 파일과 비교 실험 모델은 제외
+results/module3/**/predictions.csv.gz
+results/module3/**/models/
+
 # 개인 설정 (팀 기본값은 presets/default/기본.json). 개인 프리셋 presets/user/는 지금은 git에 올림
 config.json
