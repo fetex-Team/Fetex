@@ -8,8 +8,8 @@
    (`demand_source: synthetic`이면 예전 카테고리 가정 모델)
 3. `scripts/generate_demand_logs.py`: 같은 규칙·시드로 SUMO 없이 학습용 8주(24시간) 호출 로그 생성 → `data/real_demand_logs/`.
 4. `module2_preprocessing/`: 위경도→H3 칸, 10분 칸 집계(0 수요 보존), 날씨·달력 결합, lag/이동평균/지난주 같은 칸 피처, t+1~t+6 타깃.
-5. `scripts/train_dispatch_model.py`: 시간순 분할 → MultiOutput XGBoost(`saved_models/demand_v2.joblib`).
-   `scripts/convert_v2_to_category.py` → RL용 카테고리 예측, `module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` → `category_demand_models.pkl`.
+5. `module3_prediction/train.py`: 시간순 분할(학습/검증/시험) → MultiOutput XGBoost(`saved_models/demand_v2.joblib`) + CNN-LSTM 비교, 평가는 `results/module3/`.
+   `module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` → `category_demand_models.pkl`.
    `module4_dispatch/rl_train.py` → PPO 재배치 정책(학습 날짜 `rl_train_start`~`rl_train_end`, 이전 정책은 `rl_model_backups/`에 백업).
 6. `measure_wait_time.py` (`run_and_measure`): SUMO 실행 → 호출 생성 → 헝가리안 배차(현재 호출) → 전략별 빈 택시 운영
    (`patrol` 순찰 / `prepositioned` 시간표 기반 선배치 / `rl_prepositioned` PPO 재배치 + 카테고리 수요 예측) →

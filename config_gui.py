@@ -601,7 +601,6 @@ class ConfigGUI:
         sm = os.path.join(ROOT, "saved_models")
         active = os.path.join(sm, "category_demand_models.pkl")
         others = [
-            ("v2 변환본", os.path.join(sm, "category_demand_from_v2.pkl")),
             ("학습 중간본(_new)", os.path.join(sm, "category_demand_models_new.pkl")),
         ]
         bdir = os.path.join(ROOT, "saved_models_backups")
@@ -834,13 +833,13 @@ class ConfigGUI:
         win.title("학습만 실행")
         win.geometry("700x560")
         ttk.Label(win, text="이 창에서 정한 대로 학습이 시작됩니다.\n"
-                            "순서: 맵 재생성 → (시뮬레이션으로 로그 생성) → 예측모델 학습 → 강화학습",
+                            "순서: 맵 재생성 → (시뮬레이션으로 로그 생성) → 수요 예측(demand_v2·CNN-LSTM) → 카테고리 모델 → 강화학습\n"
+                            "기존 모델은 saved_models_backups/에 백업됩니다.",
                   padding=10, justify="left").pack(anchor="w")
 
         opt = ttk.LabelFrame(win, text="학습 전 옵션", padding=8)
         opt.pack(fill="x", padx=12, pady=4)
         sim_var = self.bool_vars["run_sim_before_training"]
-        v2_var = self.bool_vars["force_regenerate_demand_v2"]
         # 사용자가 기존 로그를 골라 둔 경우, 그 선택만으로 학습하는 것이 안전한 기본값이다.
         # 추가 시뮬레이션은 선택 로그를 보완하는 것이 아니라 새 로그를 학습 목록에 섞는다.
         import module2_preprocessing.log_selection as _training_log_selection
@@ -849,7 +848,6 @@ class ConfigGUI:
             ttk.Label(opt, text="선택된 로그만 학습하도록 '3회 추가 생성'을 자동 해제했습니다.",
                       foreground="#b45309").pack(anchor="w")
         ttk.Checkbutton(opt, text="시뮬레이션 3회 먼저 돌려 새 로그도 학습에 추가 (선택 로그만 쓰려면 해제)", variable=sim_var).pack(anchor="w")
-        ttk.Checkbutton(opt, text="demand_v2.joblib이 있어도 다시 생성 (기존 파일은 demand_v2_backups/에 백업)", variable=v2_var).pack(anchor="w")
 
         box = ttk.LabelFrame(win, text="학습에 쓸 로그  (새로 만든 로그는 선택 목록에 자동으로 추가됩니다)", padding=8)
         box.pack(fill="both", expand=True, padx=12, pady=6)

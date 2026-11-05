@@ -216,8 +216,7 @@ v1은 손님 100%의 바쁜 날 손해(9/10 놓친 손님 973 → 1,392)가 있�
 python scripts/fetch_weather_history.py 2026-07-01 2026-10-27          # 네트워크 필요 (Open-Meteo)
 python module1_simulation/build_env.py
 python scripts/generate_demand_logs.py
-python scripts/train_dispatch_model.py "data/real_demand_logs/demand_log_*.csv"
-python scripts/convert_v2_to_category.py
+python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"
 python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"
 python module4_dispatch/rl_train.py                                     # 약 3시간
 python tools/repeat_experiments.py --jobs 2                             # 7일 x 3전략 (중간에 멈춰도 이어 함)
@@ -304,7 +303,7 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 ## 부록 B. 단기 수요 예측 모델 비교(XGBoost·CNN-LSTM) — Module 3 (담당 전우영)
 
 > 관련 코드: `module3_prediction/train.py`, `module3_prediction/evaluate.py`, `module3_prediction/models.py`, `module3_prediction/train.py`, `module3_prediction/evaluate.py`.  
-> 가중치 저장소: `saved_models/xgboost_demand.pkl`, `saved_models/cnn_lstm_demand.pt`.  
+> 가중치 저장소: `saved_models/demand_v2.joblib`, `saved_models/cnn_lstm_demand.pt`.  
 > 모델 평가 실행: `python module3_prediction/evaluate.py` (또는 `python module3_prediction/evaluate.py`).
 
 ### B.1 모델 설계 및 타깃 정의
@@ -336,5 +335,5 @@ python tests/test_demand_model.py && python tests/test_weather_history.py && pyt
 2. **평가지표 선정 근거 (동료 평가/인터뷰 대비)**:
    - 0 분모 문제를 방지하기 위해 Epsilon을 적용한 MAPE를 산출하였으며, 비정상 스파이크 및 극단치 오차를 엄격하게 검증하기 위해 **RMSE와 MAE를 최종 모델 선정을 위한 핵심 지표로 채택**했습니다.
 3. **최종 모델 확정 및 후속 연동**:
-   - 예측 오차와 추론 속도 면에서 가장 뛰어난 **XGBoost 모델을 최종 서빙 모델로 확정**하여 `saved_models/xgboost_demand.pkl`로 저장 완료.
+   - 예측 오차와 추론 속도 면에서 가장 뛰어난 **XGBoost 모델을 최종 서빙 모델로 확정**하여 `saved_models/demand_v2.joblib`로 저장 완료.
    - 본 예측치는 배차 모듈(`forecast_dispatcher.py`) 및 강화학습 환경(`rl_env.py`)의 `demand_predictor`로 주입되어, 빈 택시를 승객 발생 예상 지역으로 사전 이동(Prepositioned)시키는 핵심 정보로 작동합니다.

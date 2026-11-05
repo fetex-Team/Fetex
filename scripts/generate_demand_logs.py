@@ -20,7 +20,7 @@
     python scripts/generate_demand_logs.py                 # 8주
     python scripts/generate_demand_logs.py --days 28 --end 2026-09-06
 이후
-    python scripts/train_dispatch_model.py "data/real_demand_logs/demand_log_*.csv"
+    python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"
 """
 import argparse
 import csv

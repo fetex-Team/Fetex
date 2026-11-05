@@ -62,8 +62,7 @@ WAPE가 23.0% → 26.4%로 오른 것은 모델이 나빠져서가 아니다. �
 카테고리별 예측(RL 입력)도 같은 로그로 다시 학습했다:
 ```bash
 python scripts/generate_demand_logs.py                                   # 8주 로그 (날씨 파일 필요)
-python scripts/train_dispatch_model.py "data/real_demand_logs/demand_log_*.csv"
-python scripts/convert_v2_to_category.py
+python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"
 python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"   # --logs 빼면 시뮬레이션 로그로 학습됨
 python notebooks/build_notebooks.py
 ```

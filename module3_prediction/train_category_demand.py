@@ -7,7 +7,7 @@ H3 기준 train.py와 나란히 두는 "카테고리 기준" 버전.
 
 train.py와 다른 점은 spatial_col='category' 하나뿐 — TimeSeriesPreprocessor.aggregate_demands /
 create_features가 원래 spatial_col을 인자로 받게 설계돼 있어서 h3_index용 로직을 그대로 재사용함.
-(H3용 saved_models/xgboost_demand.pkl, cnn_lstm_demand.pt는 이 스크립트가 손대지 않음 — 완전 별도 파일)
+(H3 셀용 saved_models/demand_v2.joblib, cnn_lstm_demand.pt는 train.py가 만든다 — 이 스크립트는 손대지 않음)
 
 실행: python module3_prediction/train_category_demand.py
 출력: saved_models/category_demand_models.pkl

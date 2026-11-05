@@ -59,5 +59,5 @@
 ## 4. 다른 파트에 영향
 
 - **forecast_dispatcher.py (2번·4번)**: 이력 창이 `max(max_lag, buckets_1h)+3 = 15칸(75분)`이라 서빙에서 `same_time_last_week`·`same_time_yesterday`가 항상 0이 된다(학습에서는 79%·96%가 실제 값). 한 줄 수정 권장: `self.history_buckets = self.prep.required_history_buckets`. 호출 이력은 시뮬레이션이 이미 갖고 있어 비용은 5분마다 2,016칸×8셀 집계 정도.
-- **train_dispatch_model.py (1번)**: `build_feature_table`이 날씨 결측률 5% 초과 시 ValueError를 내므로, 시뮬 로그(sim_logs)로 학습할 때는 그 기간을 덮는 날씨 파일이 `data/external/`에 있어야 한다. 합성 external.csv 경로는 5분 관측이 그대로 쓰여 이전(정시 관측만)과 피처 값이 달라진다 → 재학습 필요.
+- **train_dispatch_model.py (1번, 지금은 module3_prediction/train.py로 합쳐짐)**: `build_feature_table`이 날씨 결측률 5% 초과 시 ValueError를 내므로, 시뮬 로그(sim_logs)로 학습할 때는 그 기간을 덮는 날씨 파일이 `data/external/`에 있어야 한다. 합성 external.csv 경로는 5분 관측이 그대로 쓰여 이전(정시 관측만)과 피처 값이 달라진다 → 재학습 필요.
 - **Data Spec (5번)**: 3장 피처 34 → 43, weather_missing 문구, 5장 날씨 결측 "5% 초과 시 ValueError"로 갱신.

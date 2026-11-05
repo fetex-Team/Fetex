@@ -4,7 +4,7 @@
 터미널에서도 같은 명령으로 실행할 수 있다.
 
     python main.py play                         지도 생성 → SUMO GUI 시뮬레이션 (results/simulation/metrics.json)
-    python main.py train                        지도 생성 → (로그 생성) → 수요예측·카테고리 모델 → demand_v2 변환 → RL
+    python main.py train                        지도 생성 → (로그 생성) → 수요 예측(demand_v2·CNN-LSTM) → 카테고리 모델 → RL
     python main.py compare '<조합 JSON>' [--model 카테고리모델.pkl]   A/B 병렬 비교 (scripts/multi_factor_compare.py)
     python main.py unity [--strategies ... --algorithm ... --stride N --unity-dir 경로]   Unity 재생 파일
     python main.py analyze --logs <로그 CSV ...>   수요 로그 리포트 (tools/analyze_demand_logs.py)
@@ -106,76 +106,31 @@ def cmd_play(status, args, extra):
 
 
 # ---------------------------------------------------------------- train
-def backup_saved_models(rl_total_timesteps, skip_v2=False):
-    """train.py가 saved_models/를 덮어쓰기 전에 날짜·시각 폴더로 통째로 백업 (짧은 테스트 실행이면 생략)."""
-    if rl_total_timesteps < 10000:
-        return f"백업 생략 (rl_total_timesteps={rl_total_timesteps} < 10000, 테스트성 실행)"
+def backup_saved_models():
+    """학습이 saved_models/를 덮어쓰기 전에 날짜·시각 폴더로 통째로 백업 (시뮬레이션이 쓰는 demand_v2 포함)."""
     if not os.path.isdir(SAVED) or not os.listdir(SAVED):
         return "백업 생략 (기존 모델 없음)"
     dst = os.path.join(ROOT, "saved_models_backups", datetime.now().strftime("%Y%m%d_%H%M%S"))
     os.makedirs(os.path.dirname(dst), exist_ok=True)
-    # skip_v2: 새 학습 라인이 demand_v2.joblib을 쓰는 중이면 반쪽짜리 파일을 복사하지 않도록 제외
-    shutil.copytree(SAVED, dst, ignore=shutil.ignore_patterns("demand_v2.joblib") if skip_v2 else None)
+    shutil.copytree(SAVED, dst)
     return f"기존 모델을 {os.path.relpath(dst, ROOT)}에 백업"
 
 
-def start_v2_line(force=False):
-    """[새 학습 라인] demand_v2.joblib이 없으면(또는 force) scripts/train_dispatch_model.py를 백그라운드로 시작.
-    반환: (Popen 또는 None, 'skip' | 'started' | 'no_data' | 'error:...')"""
-    v2 = os.path.join(SAVED, "demand_v2.joblib")
-    if os.path.exists(v2) and not force:
-        return None, "skip"
-    calls = os.path.join("data", "generated", "calls.csv")
-    ext = os.path.join("data", "generated", "external.csv")
-    if not (os.path.exists(os.path.join(ROOT, calls)) and os.path.exists(os.path.join(ROOT, ext))):
-        return None, "no_data"
-    try:
-        if os.path.exists(v2):  # 강제 재생성: 덮어쓰기 전에 기존 파일 보존
-            bak = os.path.join(ROOT, "demand_v2_backups", f"demand_v2_{datetime.now().strftime('%Y%m%d_%H%M%S')}.joblib")
-            os.makedirs(os.path.dirname(bak), exist_ok=True)
-            shutil.copy2(v2, bak)
-            print(f"[새 학습 라인] 강제 재생성: 기존 demand_v2.joblib을 {os.path.relpath(bak, ROOT)} 에 백업했습니다.")
-        os.makedirs(os.path.join(ROOT, "logs"), exist_ok=True)
-        with open(os.path.join(ROOT, "logs", "train_v2.log"), "w", encoding="utf-8") as logf:
-            proc = subprocess.Popen(
-                [sys.executable, os.path.join(ROOT, "scripts", "train_dispatch_model.py"), calls, "--external", ext],
-                cwd=ROOT, stdout=logf, stderr=subprocess.STDOUT,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
-            )
-    except Exception as e:
-        return None, f"error:{e}"
-    return proc, "started"
-
-
 def v2_cell_warning():
-    """demand_v2.joblib의 H3 셀과 방금 만든 지도(runtime_meta.json)의 셀이 다르면 경고 문구, 아니면 None."""
+    """demand_v2.joblib의 H3 셀과 지금 지도(runtime_meta.json)의 셀이 다르면 경고 문구, 같거나 비교 불가면 None.
+    forecast 재배치는 셀이 다른 모델을 거부하므로 학습 직후에 알려 준다."""
     try:
-        r = subprocess.run([sys.executable, os.path.join(ROOT, "scripts", "convert_v2_to_category.py"), "--check-cells"],
-                           cwd=ROOT, capture_output=True, text=True, encoding="utf-8")
+        import joblib
+        cells = sorted(joblib.load(os.path.join(SAVED, "demand_v2.joblib")).get("cells", []))
+        with open(os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json"), encoding="utf-8") as f:
+            map_cells = sorted(set(json.load(f)["edge_cells"].values()))
     except Exception:
         return None
-    return r.stdout.strip() if r.returncode == 3 and r.stdout.strip() else None
-
-
-def finish_v2_line(proc, state):
-    """새 라인이 만든 demand_v2.joblib을 category_demand_from_v2.pkl로 변환. 반환: 결과 문구."""
-    if state == "no_data":
-        return "변환 생략 - demand_v2.joblib도, 학습 데이터(data/generated/calls.csv, external.csv)도 없음"
-    if state.startswith("error"):
-        return f"변환 생략 - 새 라인 시작 실패 ({state})"
-    if state == "started":
-        rc = proc.wait()
-        if rc != 0 or not os.path.exists(os.path.join(SAVED, "demand_v2.joblib")):
-            return f"변환 생략 - 새 학습 라인 실패 (종료코드 {rc}), logs/train_v2.log 확인"
-    cell_warn = v2_cell_warning()
-    if not run_script(os.path.join("scripts", "convert_v2_to_category.py"), check=False):
-        return "변환 실패 (콘솔 출력 참고)"
-    msg = "saved_models/category_demand_from_v2.pkl 생성"
-    if state == "skip":
-        msg += " (demand_v2.joblib이 이미 있어 새 학습은 SKIP)"
-    if cell_warn:
-        msg += f"\n   [경고] {cell_warn}"
-    return msg
+    if cells == map_cells:
+        return None
+    return (f"demand_v2.joblib의 H3 셀 {len(cells)}개가 지금 지도의 셀 {len(map_cells)}개와 다릅니다 "
+            f"(공통 {len(set(cells) & set(map_cells))}개) — forecast 전략은 이 모델을 쓰지 못합니다. "
+            f"같은 지역·범위의 로그로 다시 학습하세요.")
 
 
 def backup_rl_model():
@@ -196,57 +151,38 @@ def backup_rl_model():
 
 
 def cmd_train(status, args, extra):
+    """지도 → (로그 생성) → 수요 예측(demand_v2 + CNN-LSTM) → 카테고리 수요 모델 → RL → 승격.
+    학습 로그는 '학습 로그 선택'(data/sim_logs)이고, train.py·train_category_demand.py가 같은 로그를 쓴다."""
     c = load_run_config()
+    status.step("0/3", "지도·SUMO 설정 생성 중 (build_env.py)")
+    run_script(os.path.join("module1_simulation", "build_env.py"))
 
-    # [새 학습 라인] 기존 라인을 기다리지 않고 지금 바로 동시에 시작
-    v2_proc, v2_state = start_v2_line(bool(c.get("force_regenerate_demand_v2", False)))
-    print({
-        "skip": "[새 학습 라인] demand_v2.joblib이 이미 있어 SKIP합니다.",
-        "no_data": "[새 학습 라인] data/generated/calls.csv 또는 external.csv가 없어 시작하지 못했습니다.",
-        "started": "[새 학습 라인] 백그라운드로 시작했습니다. 진행 상황은 logs/train_v2.log 에서 확인하세요.",
-    }.get(v2_state, f"[새 학습 라인] 시작 실패: {v2_state}"))
+    if c.get("run_sim_before_training", True):
+        from module2_preprocessing import log_selection
+        t0 = time.time()
+        n_runs = 3
+        for i in range(n_runs):
+            status.step("0/3", f"시뮬레이션으로 학습 로그 생성 중 ({i + 1}/{n_runs})")
+            run_script("measure_wait_time.py")
+        added = log_selection.add_new_logs_to_selection(t0)
+        if added:
+            print(f"[로그 선택] 방금 만든 로그 {len(added)}개를 학습 선택 목록에 추가했습니다: {', '.join(added)}")
+    else:
+        print("[안내] 학습 전 시뮬레이션 생략 (기존 로그로 학습)")
 
-    try:
-        status.step("0/4", "지도·SUMO 설정 생성 중 (build_env.py)")
-        run_script(os.path.join("module1_simulation", "build_env.py"))
-        if v2_state == "skip":   # v2를 SKIP했으면 방금 만든 지도와 셀이 맞는지 바로 알림
-            warn = v2_cell_warning()
-            if warn:
-                print("[경고] demand_v2.joblib 학습을 SKIP했지만 " + warn)
+    status.step("1/3", "기존 모델 백업 후 수요 예측 학습 중 (train.py: demand_v2 + CNN-LSTM)")
+    print(backup_saved_models())
+    train_ok = run_script(os.path.join("module3_prediction", "train.py"), check=False)
+    cell_warn = v2_cell_warning() if train_ok else None
+    if cell_warn:
+        print("[경고] " + cell_warn)
 
-        if c.get("run_sim_before_training", True):
-            from module2_preprocessing import log_selection
-            t0 = time.time()
-            n_runs = 3
-            for i in range(n_runs):
-                status.step("0.5/4", f"시뮬레이션으로 학습 로그 생성 중 ({i + 1}/{n_runs})")
-                run_script("measure_wait_time.py")
-            added = log_selection.add_new_logs_to_selection(t0)
-            if added:
-                print(f"[로그 선택] 방금 만든 로그 {len(added)}개를 학습 선택 목록에 추가했습니다: {', '.join(added)}")
-        else:
-            print("[안내] 학습 전 시뮬레이션 생략 (기존 로그로 학습)")
+    # 기존 category_demand_models.pkl은 보존하고, 이번 학습 결과는 별도 파일로 저장한다.
+    category_new = os.path.join(SAVED, "category_demand_models_new.pkl")
+    status.step("2/3", "카테고리 수요 모델 학습 중 (train_category_demand.py)")
+    run_script(os.path.join("module3_prediction", "train_category_demand.py"), ("--out", category_new))
 
-        status.step("1/4", "기존 모델 백업 후 수요예측 모델 학습 중 (train.py)")
-        print(backup_saved_models(int(c.get("rl_total_timesteps", 20000)),
-                                  skip_v2=(v2_proc is not None and v2_proc.poll() is None)))
-        train_ok = run_script(os.path.join("module3_prediction", "train.py"), check=False)
-
-        # 기존 category_demand_models.pkl은 보존하고, 이번 학습 결과는 별도 파일로 저장한다.
-        category_new = os.path.join(SAVED, "category_demand_models_new.pkl")
-        status.step("2/4", "카테고리 수요 모델 학습 중 (train_category_demand.py)")
-        run_script(os.path.join("module3_prediction", "train_category_demand.py"), ("--out", category_new))
-
-        # demand_v2 변환을 RL 앞에 둔다 (변환이 RL 학습보다 먼저 끝나야 함)
-        status.step("3/4", "새 학습 라인(demand_v2) 완료 대기 + 카테고리 모델로 변환 중")
-        v2_msg = finish_v2_line(v2_proc, v2_state)
-    except BaseException:
-        if v2_proc is not None and v2_proc.poll() is None:
-            v2_proc.terminate()   # 중간에 멈추면 백그라운드 학습도 같이 정리
-        raise
-
-    # RL은 v2 변환본이 아니라 카테고리별로 정상 학습된 모델(train_category_demand.py 결과)을 참고한다.
-    status.step("4/4", "강화학습 실행 중 (rl_train.py)")
+    status.step("3/3", "강화학습 실행 중 (rl_train.py)")
     rl_ok = run_script(os.path.join("module4_dispatch", "rl_train.py"), check=False,
                        env_extra={"AI_CATEGORY_MODEL_PATH": category_new})
     rl_backup = backup_rl_model() if rl_ok else "백업 생략 - RL 학습이 정상 종료되지 않음"
@@ -260,14 +196,15 @@ def cmd_train(status, args, extra):
         promote = "승격 생략 - RL 학습이 정상 종료되지 않음 (기존 category_demand_models.pkl 유지)"
 
     status.done(
-        "생성/갱신 파일 (saved_models/):\n"
-        "• category_demand_models.pkl (활성)\n"
-        "• category_demand_models_new.pkl / category_demand_from_v2.pkl (이번 라운드 원본)\n"
-        "• rl_reposition_model.zip (module4_dispatch/)\n\n"
-        + ("" if train_ok else "[경고] train.py(Module 3 평가용 모델) 학습 실패 — 콘솔 출력 확인\n")
+        "생성/갱신 파일 (saved_models/, 이전 파일은 saved_models_backups/):\n"
+        "• demand_v2.joblib (forecast 재배치용 수요 예측) · cnn_lstm_demand.pt (비교용)\n"
+        "• category_demand_models.pkl (활성) · category_demand_models_new.pkl (이번 라운드 원본)\n"
+        "• rl_reposition_model.zip (module4_dispatch/)\n"
+        "• 평가 지표·그래프: results/module3/\n\n"
+        + ("" if train_ok else "[경고] train.py(수요 예측) 학습 실패 — 콘솔 출력 확인. demand_v2는 이전 것 그대로\n")
+        + (f"[경고] {cell_warn}\n" if cell_warn else "")
         + f"[승격] {promote}\n"
-        f"[RL 백업] {rl_backup}\n"
-        f"[demand_v2 변환] {v2_msg}")
+        f"[RL 백업] {rl_backup}")
 
 
 # ---------------------------------------------------------------- 나머지 (스크립트 그대로 실행)

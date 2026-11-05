@@ -223,11 +223,11 @@ def evaluate_saved_models(log_path=None, model_dir=None):
     from module3_prediction.train import SAVED_MODELS, build_sequences, load_feature_table, split_by_time
 
     model_dir = model_dir or SAVED_MODELS
-    xgb_art = joblib.load(os.path.join(model_dir, "xgboost_demand.pkl"))
+    xgb_art = joblib.load(os.path.join(model_dir, "demand_v2.joblib"))
     dl_art = torch.load(os.path.join(model_dir, "cnn_lstm_demand.pt"), weights_only=False)
     freq = xgb_art.get("freq")
-    if not freq or "target_cols" not in xgb_art:
-        print("[오류] 예전 형식(t+1 하나만 예측)의 모델입니다. python module3_prediction/train.py로 다시 학습하세요.")
+    if not freq or "seq_len" not in dl_art:
+        print("[오류] 예전 형식의 모델입니다. python module3_prediction/train.py로 다시 학습하세요.")
         return None
     feature_df, feature_cols, target_cols = load_feature_table(log_path, freq=freq)
     if feature_cols != xgb_art["feature_cols"] or feature_cols != dl_art["feature_cols"]:

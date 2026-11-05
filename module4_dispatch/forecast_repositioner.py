@@ -55,7 +55,7 @@ class ForecastRepositioner:
                  demand_model, schedule, seed, travel_time=None, model_path: str = MODEL_PATH):
         art = joblib.load(model_path)
         if art.get("version") != 2 or len(art.get("target_cols", [])) != 6:
-            raise ValueError("scripts/train_dispatch_model.py로 만든 demand_v2(t+1~t+6) 모델이 필요합니다.")
+            raise ValueError("module3_prediction/train.py로 만든 demand_v2(t+1~t+6) 모델이 필요합니다.")
         self.edge_cells = meta["edge_cells"]
         self.cells = sorted(set(self.edge_cells.values()))
         if art["cells"] != self.cells:

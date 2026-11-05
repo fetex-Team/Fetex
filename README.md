@@ -23,7 +23,7 @@ export_unity_replay ─▶ map.json + 전략별 재생 파일(v2, .json.gz) ─�
 | 수요 데이터 | **TIMS 2025 격자별 승차 실측 + 서울시 2025 시간대·강남구 월별 통계 + 실측 시간별 날씨, 카카오 T 몫 0.77**(가정값 모드도 유지) | `module1_simulation/demand_model.py`, `module1_simulation/weather_history.py`, `data/external/` |
 | 공간 인덱싱 | H3 res 8(실측 500m 해상도와 일치) + Geohash | `module2_preprocessing/spatial_indexing.py` |
 | 시계열 전처리·외부 데이터 | 10분 칸, lag/이동평균/지난주 동일 칸, 날씨·공휴일 병합, 누수 방지 | `module2_preprocessing/` |
-| 수요 예측 | MultiOutput XGBoost(t+1~t+6), 기준선 대비 평가 | `scripts/train_dispatch_model.py`, `notebooks/02_Model_Experiments.ipynb` |
+| 수요 예측 | MultiOutput XGBoost(t+1~t+6, 시뮬레이션용 demand_v2) vs CNN-LSTM, 기준선 대비 평가 | `module3_prediction/train.py`, `notebooks/02_Model_Experiments.ipynb` |
 | 동적 배차 | 헝가리안 매칭(비용 = 다익스트라 도로 이동시간) + 시간표 선배치/RL 재배치 + 할증 계산 | `module4_dispatch/`, `module4_dispatch/network_cost.py` |
 | 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `tools/repeat_experiments.py`, `tools/check_determinism.py`, `tools/export_unity_replay.py` |
 | 시각화 | Unity 3D 재생(차선 경로 보간), 대시보드 | Unity 브랜치 `KJS-UNITY` |
@@ -50,9 +50,8 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | 택시 대수 산정 | `python tools/fleet_sizing.py --taxis 50 70 --strategy prepositioned` |
 | 실측 날씨 받기(네트워크 필요) | `python scripts/fetch_weather_history.py 2026-07-01 2026-10-27` |
 | 학습용 8주 호출 생성(SUMO 불필요, 약 10초) | `python scripts/generate_demand_logs.py` |
-| 예측 모델 학습 | `python scripts/train_dispatch_model.py "data/real_demand_logs/demand_log_*.csv"` |
-| Module 3 비교(XGBoost vs CNN-LSTM, t+1~t+6) | `python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"` → `results/module3/<freq>/`(지표·그래프). 5분 단위: `--freq 5min`, 비교표: `python module3_prediction/evaluate.py --compare-freq 5min 10min` |
-| RL용 카테고리 예측 | `python scripts/convert_v2_to_category.py` · `python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` |
+| 수요 예측 학습(demand_v2 + CNN-LSTM 비교) | `python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"` → `saved_models/demand_v2.joblib`(시뮬레이션용), `results/module3/<freq>/`(지표·그래프). 5분 단위: `--freq 5min`, 비교표: `python module3_prediction/evaluate.py --compare-freq 5min 10min` |
+| RL용 카테고리 예측 | `python module3_prediction/train_category_demand.py --logs "data/real_demand_logs/demand_log_*.csv"` |
 | RL 재배치 정책 학습(약 3시간) | `python module4_dispatch/rl_train.py` |
 | 7일 x 3전략 반복 실험 + 통계 | `python tools/repeat_experiments.py --jobs 2` (`--scenario full_demand` / `network_dispatch` / `network_dispatch_full` / `external_away`) |
 | 결과 재현성 검사 | `python tools/check_determinism.py --hours 1` |

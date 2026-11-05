@@ -154,6 +154,5 @@
   "department_window_start": 11.0,
   "department_window_end": 21.0,
   "department_taxi_probability": 0.1,
-  "department_stay_sec": 5400,
-  "force_regenerate_demand_v2": true
+  "department_stay_sec": 5400
 }

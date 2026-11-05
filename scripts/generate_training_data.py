@@ -1,12 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-[통합] 현재 맵(runtime_meta.json) 기준 학습용 합성 호출/외부 데이터 재생성.
+[EDA 재현 전용] 예전 합성 호출/외부 데이터(data/generated/calls.csv, external.csv) 생성.
 
-배경
-- build_env.py로 지도를 다시 만들면 도로·H3 셀 구성이 바뀐다.
-- 예측 모델(saved_models/demand_v2.joblib)은 학습 당시의 셀 목록을 기억하고,
-  forecast_repositioner는 셀이 다르면 실행을 거부한다(잘못된 예측 방지).
-- 그래서 지도를 새로 만들면: 이 스크립트로 데이터 재생성 → train_dispatch_model.py로 재학습.
+REPORT 부록 A(Module 2 EDA, eda/eda_8w.py)와 scripts/feature_ablation.py가 이 데이터로 만들어져 재현용으로만 남겨 둔다.
+**모델 학습에는 쓰지 않는다.** 학습 데이터는 실측 보정 로그(scripts/generate_demand_logs.py →
+data/real_demand_logs/)나 시뮬레이션 로그(data/sim_logs/)이고, 학습은 module3_prediction/train.py.
 
 생성 범위: sim_date 전날까지 days일치 (기본 8일 — 지난주 동일 시간대 피처가 실제 값을 갖도록).
 날짜별 독립 시드라 시뮬레이션(replay)과 겹치는 날짜의 호출은 완전히 같다.
@@ -14,8 +12,9 @@
 사용
     python scripts/generate_training_data.py           # 기본 8일치
     python scripts/generate_training_data.py --days 14
-이후
-    python scripts/train_dispatch_model.py data/generated/calls.csv --external data/generated/external.csv
+이후 (EDA·ablation 재현)
+    python eda/eda_8w.py
+    python scripts/feature_ablation.py data/generated/calls.csv --external data/generated/external.csv
 """
 import argparse
 import json

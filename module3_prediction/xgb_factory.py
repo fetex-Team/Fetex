@@ -1,6 +1,6 @@
 """XGBoost 회귀 모델 생성 (PyTorch 없이 import 가능 — models.py는 torch를 항상 불러오므로 분리).
 
-학습 스크립트(train.py, train_category_demand.py, scripts/train_dispatch_model.py, scripts/feature_ablation.py)가
+학습 스크립트(train.py, train_category_demand.py, scripts/feature_ablation.py)가
 모두 이 함수로 모델을 만들어 같은 설정(config의 xgb_* 값, 시드)을 쓴다.
 """
 import os

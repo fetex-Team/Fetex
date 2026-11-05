@@ -64,7 +64,7 @@ DEMAND_LOG_PATH = os.path.join(ROOT, "data", "raw", "simulation_demand_log.csv")
 RL_MODEL_PATH = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")  # 추가
 # RLRepositionMaintainer가 RL 정책과 "실행 시점"에 짝지어 쓸 수요예측 파일.
 # 기본값은 기존 카테고리 모델이며, AI_CATEGORY_MODEL_PATH 환경변수로 다른 pkl
-# (예: saved_models/category_demand_from_v2.pkl)을 골라 바로 조합해 쓸 수 있다.
+# (예: saved_models_backups/<시각>/category_demand_models.pkl)을 골라 바로 조합해 쓸 수 있다.
 # rl_reposition_model.zip 자체는 그대로, 여기서 붙이는 수요예측만 갈아끼우는 방식(재학습 불필요).
 CATEGORY_MODEL_PATH = os.environ.get(
     "AI_CATEGORY_MODEL_PATH",

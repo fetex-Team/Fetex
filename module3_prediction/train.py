@@ -3,10 +3,16 @@
 흐름
 1. Module 2 파이프라인(build_feature_table)으로 (H3 셀 × 시간 칸) 피처 테이블과 타깃 y_h1..y_h6 생성
 2. 시간 순서 분할: 학습 → 검증(val_size) → 시험(test_size). 같은 시각의 다른 셀이 학습·시험에 섞이지 않는다.
-3. XGBoost: t+1 기준 GridSearch(TimeSeriesSplit)로 하이퍼파라미터를 고르고, 같은 값으로 6개 시점을 학습(MultiOutput)
+3. XGBoost: 학습 구간에서 t+1 기준 GridSearch(TimeSeriesSplit)로 하이퍼파라미터를 고르고,
+   같은 값으로 학습+검증 구간에 6개 시점을 학습(MultiOutput). 이 모델이 시뮬레이션 재배치용 demand_v2.joblib이 된다.
 4. CNN-LSTM(PyTorch): 셀마다 직전 cnn_seq_len 칸의 피처를 시퀀스로 넣어 6개 시점을 한 번에 출력.
    검증 손실이 cnn_patience 번 연속 나아지지 않으면 멈추고 가장 좋았던 가중치로 되돌린다(조기 종료).
 5. 시험 구간 평가 → results/module3/<freq>/ 에 지표(metrics.json), 예측값(predictions.csv.gz), 그래프 저장
+6. 저장 (설정 freq와 같을 때 saved_models/):
+   demand_v2.joblib    XGBoost — forecast 재배치(module4_dispatch/forecast_repositioner.py)가 읽는 형식
+                       {version 2, model, feature_cols, target_cols, cells, data_until, freq, max_lag, rolling_*, metrics, ...}
+   cnn_lstm_demand.pt  CNN-LSTM — 비교·보고서용 (시뮬레이션은 쓰지 않음)
+   (예전 scripts/train_dispatch_model.py가 하던 demand_v2 학습을 여기로 합쳤다)
 
 사용
     python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"
@@ -103,8 +109,9 @@ def build_sequences(feature_df, values, seq_len, freq):
 
 
 # ---------------------------------------------------------------- XGBoost
-def train_xgboost(X_train, Y_train, quick=False):
-    """t+1 기준 GridSearch(시간 순 교차검증)로 하이퍼파라미터를 고른 뒤, 같은 값으로 6개 시점 모델을 학습."""
+def train_xgboost(X_train, Y_train, X_fit=None, Y_fit=None, quick=False):
+    """X_train에서 t+1 기준 GridSearch(시간 순 교차검증)로 하이퍼파라미터를 고른 뒤,
+    같은 값으로 X_fit(기본: X_train)에 6개 시점 모델을 학습. 반환: (model, best_params)"""
     from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
     from sklearn.multioutput import MultiOutputRegressor
     base_n, base_d, base_lr = CFG["xgb_n_estimators"], CFG["xgb_max_depth"], CFG["xgb_learning_rate"]
@@ -122,7 +129,7 @@ def train_xgboost(X_train, Y_train, quick=False):
     best = gs.best_params_
     print(f"[XGBoost] 최적 파라미터: {best} (교차검증 RMSE {-gs.best_score_:.4f}, {time.time() - t0:.0f}초)")
     model = MultiOutputRegressor(build_xgboost_model(**best))
-    model.fit(X_train, Y_train)
+    model.fit(X_train if X_fit is None else X_fit, Y_train if Y_fit is None else Y_fit)
     return model, best
 
 
@@ -203,8 +210,9 @@ def run(log_path=None, freq=None, out_dir=None, report_dir=None, quick=False):
     X = lambda d: d[feature_cols].fillna(0).values
     Y = lambda d: d[target_cols].fillna(0).values.astype(float)
 
-    # 1) XGBoost — 학습 구간으로 튜닝·학습 (검증 구간은 CNN 조기 종료용, 두 모델 모두 시험 구간은 보지 않음)
-    xgb_model, xgb_params = train_xgboost(X(train_df), Y(train_df), quick=quick)
+    # 1) XGBoost — 학습 구간으로 튜닝, 학습+검증 구간으로 최종 학습 (시험 구간은 두 모델 모두 보지 않음)
+    fit_df = pd.concat([train_df, val_df])
+    xgb_model, xgb_params = train_xgboost(X(train_df), Y(train_df), X(fit_df), Y(fit_df), quick=quick)
     pred_xgb = np.maximum(0, xgb_model.predict(X(test_df)))
 
     # 2) CNN-LSTM — 학습 구간 기준 표준화, 셀별 직전 seq_len 칸 시퀀스
@@ -230,7 +238,13 @@ def run(log_path=None, freq=None, out_dir=None, report_dir=None, quick=False):
     out_dir = out_dir or (SAVED_MODELS if freq == CFG["freq"] and not quick else os.path.join(report_dir, "models"))
     os.makedirs(out_dir, exist_ok=True)
     meta = {"feature_cols": feature_cols, "target_cols": target_cols, "freq": freq, "data_until": str(feature_df.time_bucket.max())}
-    joblib.dump({"model": xgb_model, "params": xgb_params, **meta}, os.path.join(out_dir, "xgboost_demand.pkl"))
+    xm = metrics["models"]["XGBoost"]
+    joblib.dump({"version": 2, "model": xgb_model, **meta,
+                 "cells": sorted(feature_df["h3_index"].unique()),
+                 "max_lag": CFG["max_lag"], "rolling_short": CFG["rolling_short"], "rolling_long": CFG["rolling_long"],
+                 "params": xgb_params, "metrics": {"overall": xm["overall"], "per_horizon": xm["per_horizon"]},
+                 "source_logs": [log_path] if log_path else selected_log_paths(DEMAND_LOG_DIR)},
+                os.path.join(out_dir, "demand_v2.joblib"))
     import torch
     torch.save({"state_dict": cnn.state_dict(), "input_dim": len(feature_cols), "output_dim": len(target_cols),
                 "seq_len": seq_len, "scaler": scaler, **meta}, os.path.join(out_dir, "cnn_lstm_demand.pt"))

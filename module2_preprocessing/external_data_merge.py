@@ -44,7 +44,7 @@ EXTERNAL_DIR = os.path.join(ROOT, "data", "external")
 WEATHER_COLS = ["temperature", "precipitation", "wind_speed"]
 
 
-# 합성 외부 관측을 날씨 표로 바꾼 파일 (scripts/train_dispatch_model.py, scripts/feature_ablation.py가 씀).
+# 합성 외부 관측을 날씨 표로 바꾼 파일 (scripts/feature_ablation.py가 씀 — 예전 합성 데이터 EDA 재현용).
 # 실측 날씨가 아니라서 자동 선택에서는 제외하고, 쓸 때는 경로를 직접 넘긴다.
 SYNTHETIC_WEATHER_FILES = ("weather_from_external.csv", "weather_from_external_5min.csv")
 

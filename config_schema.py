@@ -122,7 +122,6 @@ BOOLS = [
     ("department_enabled", "백화점 승객 생성 (건물 위치는 build_env 때 OSM에서 찾음, 없으면 자동 꺼짐)"),
     ("run_sim_before_training", "학습만 실행 시 시뮬레이션 먼저 돌려서 로그 생성 (끄면 기존 로그로 바로 학습)"),
     ("rl_randomize_passenger_seed", "RL 학습: 매 에피소드마다 다른 승객 호출 패턴 사용"),
-    ("force_regenerate_demand_v2", "학습만 실행 시 demand_v2.joblib이 이미 있어도 새 라인으로 다시 생성 (기존 파일은 demand_v2_backups/에 백업)"),
 ]
 CHOICES = [
     ("taxi_strategy", "택시 전략", STRATEGIES),
@@ -204,7 +203,7 @@ DETAIL_SECTIONS = [
                           "xgb_random_state", "train_random_state"]),
     ("강화학습 (RL)", ["rl_max_decisions", "rl_total_timesteps", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
                    "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed"]),
-    ("학습 실행 옵션·테스트 데이터", ["run_sim_before_training", "force_regenerate_demand_v2", "mock_available_taxis_min",
+    ("학습 실행 옵션·테스트 데이터", ["run_sim_before_training", "mock_available_taxis_min",
                             "mock_available_taxis_max", "mock_taxi_count", "mock_passenger_count", "demo_data_rows",
                             "demo_data_minutes", "demo_data_start", "taxi_respawn_prefix"]),
 ]
@@ -338,7 +337,6 @@ TIPS = {
     "rl_gamma": "미래 보상 할인율(gamma).",
     "rl_randomize_passenger_seed": "RL 학습 때 에피소드마다 다른 승객 호출 패턴을 쓴다.",
     "run_sim_before_training": "'학습만 실행' 때 시뮬레이션을 먼저 돌려 학습 로그를 만든다. 끄면 기존 로그로 바로 학습.",
-    "force_regenerate_demand_v2": "'학습만 실행' 때 demand_v2.joblib이 있어도 다시 만든다 (기존 파일은 백업).",
     "mock_available_taxis_min": "배차 단위 테스트용 가용 택시 최소 수.",
     "mock_available_taxis_max": "배차 단위 테스트용 가용 택시 최대 수.",
     "mock_taxi_count": "배차 단위 테스트 택시 수.",
