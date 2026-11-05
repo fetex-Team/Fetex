@@ -72,10 +72,23 @@ class StepFailed(Exception):
     pass
 
 
-def run_script(script, args=(), env_extra=None, check=True):
-    """프로젝트 스크립트를 같은 콘솔에서 실행. check=True면 실패 시 StepFailed. 반환: 성공 여부."""
+def run_script(script, args=(), env_extra=None, check=True, child_handles_ctrl_c=False):
+    """프로젝트 스크립트를 같은 콘솔에서 실행. check=True면 실패 시 StepFailed. 반환: 성공 여부.
+    child_handles_ctrl_c=True: Ctrl+C를 자식이 직접 처리한다 (A/B 비교는 한 번은 무시, 두 번이면 정리 후 종료).
+    이때 main.py가 Ctrl+C로 자식을 강제 종료하면 워커·작업 폴더·대기표가 남으므로 여기서는 무시하고 기다린다."""
     env = {**os.environ, **{str(k): str(v) for k, v in (env_extra or {}).items()}}
-    rc = subprocess.run([sys.executable, os.path.join(ROOT, script), *args], cwd=ROOT, env=env).returncode
+    cmd = [sys.executable, os.path.join(ROOT, script), *args]
+    if child_handles_ctrl_c:
+        import signal
+        sigs = [getattr(signal, n) for n in ("SIGINT", "SIGBREAK") if hasattr(signal, n)]
+        old = {s: signal.signal(s, lambda *_: None) for s in sigs}
+        try:
+            rc = subprocess.run(cmd, cwd=ROOT, env=env).returncode
+        finally:
+            for s, h in old.items():
+                signal.signal(s, h)
+    else:
+        rc = subprocess.run(cmd, cwd=ROOT, env=env).returncode
     if rc != 0 and check:
         raise StepFailed(f"{script} 실패 (종료 코드 {rc})")
     return rc == 0
@@ -211,10 +224,11 @@ def cmd_train(status, args, extra):
 
 
 # ---------------------------------------------------------------- 나머지 (스크립트 그대로 실행)
-def _passthrough(script, text, env_extra=None):
+def _passthrough(script, text, env_extra=None, child_handles_ctrl_c=False):
     def run(status, args, extra):
         status.step("", text)
-        run_script(script, extra, env_extra=env_extra(args) if env_extra else None)
+        run_script(script, extra, env_extra=env_extra(args) if env_extra else None,
+                   child_handles_ctrl_c=child_handles_ctrl_c)
         status.done()
     return run
 
@@ -223,7 +237,8 @@ COMMANDS = {
     "play": cmd_play,
     "train": cmd_train,
     "compare": _passthrough(os.path.join("module4_dispatch", "experiments", "multi_factor_compare.py"), "A/B 비교 실행 중",
-                            env_extra=lambda a: {"AI_CATEGORY_MODEL_PATH": a.model} if a.model else {}),
+                            env_extra=lambda a: {"AI_CATEGORY_MODEL_PATH": a.model} if a.model else {},
+                            child_handles_ctrl_c=True),
     "unity": _passthrough(os.path.join("module1_simulation", "unity", "export_unity_replay.py"), "Unity 재생 파일 생성 중"),
     "analyze": _passthrough(os.path.join("tools", "analyze_demand_logs.py"), "수요 로그 리포트 생성 중"),
     "analyzer": _passthrough(os.path.join("tools", "analyzer_server.py"), "수요 로그 분석기(브라우저) 실행 중 — 끝내려면 이 창을 닫기"),

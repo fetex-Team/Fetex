@@ -57,6 +57,11 @@ desktop.ini
 results/run_configs/
 results/run_status/
 
+# A/B 비교: 대기표와 요청별 조합 결과 JSON (순위표 results/ab_results/ab_ranking_*.txt는 올림)
+# 요청별 SUMO 작업 폴더 module1_simulation/sumo_config_ab_<요청ID>_combo*/ 는 위 sumo_config*/ 규칙으로 제외
+results/ab_queue/
+results/ab_results/*/
+
 # 전처리 저장본 (로그·설정이 같으면 학습이 다시 씀, 언제든 지워도 됨)
 data/features/
 
