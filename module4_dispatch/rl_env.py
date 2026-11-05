@@ -21,6 +21,7 @@ from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
 from module1_simulation.holiday_utils import pick_run_date
 from module4_dispatch.custom_dispatchers import make_dispatcher
+from module4_dispatch.forecast_dispatcher import weighted_edge_order
 from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
 
 N_ZONES = len(ZONE_CATEGORIES)
@@ -98,6 +99,8 @@ class TaxiRepositionEnv(gym.Env):
         self.committed = {}          # [KJS] 재배치 명령을 받고 아직 이동 중인 택시 {taxi_id: 목표 edge}
         self._last_riding = set()    # [KJS] 직전 결정 시점의 탑승 승객 (매 스텝 중복 조회 방지)
         # 새 호출을 카테고리 수요로 셀 때의 기준 = 학습과 같은 '승차 위치 -> 가장 가까운 POI 구역'
+        self._edge_weights = {}       # 재배치 목표 도로 가중치 {도로: 과거 호출 수} (reset에서 채움)
+        self._picked_targets = set()  # 이번 결정에서 이미 택시를 보낸 도로
         self._request_category = {}
         if demand_predictor is not None and hasattr(demand_predictor, "record_new_requests"):
             from module3_prediction.category_predictor import edge_request_categories
@@ -186,13 +189,17 @@ class TaxiRepositionEnv(gym.Env):
         if self.demand_predictor is not None and hasattr(self.demand_predictor, "reset"):
             self.demand_predictor.reset(episode_date)
         # 시작 전 호출(지난 8일 + 오늘 시작 전)로 예측기의 lag·어제·지난주 피처를 학습 때처럼 채운다 (실측 수요 모드)
+        self._edge_weights = {}
         if (hasattr(self.demand_predictor, "set_past_requests")
                 and getattr(self.spawn_manager, "_real_model", None) is not None and self._request_category):
+            from collections import Counter
             from module3_prediction.category_predictor import build_past_requests
-            self.demand_predictor.set_past_requests(
-                build_past_requests(self.spawn_manager._real_model, episode_date, sim_start_hour,
-                                    passenger_seed, self._request_category),
-                sim_start_hour * 3600.0)
+            past = build_past_requests(self.spawn_manager._real_model, episode_date, sim_start_hour,
+                                       passenger_seed, self._request_category)
+            self.demand_predictor.set_past_requests(past, sim_start_hour * 3600.0)
+            # 재배치 목표 도로 가중치 = 그 도로의 과거 호출 수 (rl_weighted_targets)
+            if CFG.get("rl_weighted_targets", True):
+                self._edge_weights = Counter(r[2] for r in past)
 
         self._advance_sim(DECISION_INTERVAL_SEC)
         self._last_riding = self._riding_passenger_ids()
@@ -404,6 +411,7 @@ class TaxiRepositionEnv(gym.Env):
 
     def _apply_action(self, action):
         self._last_reposition_distance_m = 0.0
+        self._picked_targets = set()
         weights = np.asarray(action, dtype=np.int64).reshape(-1)
         if weights.size != N_ZONES or not np.any(weights):
             return
@@ -451,8 +459,8 @@ class TaxiRepositionEnv(gym.Env):
                     deficit -= 1
 
     def _move_taxi_to_zone(self, taxi_id: str, current_edge: str, target_edges: list) -> bool:
-        candidates = list(target_edges)
-        np.random.shuffle(candidates)
+        # 과거 호출이 많았던 도로일수록 먼저 시도 (기록이 없으면 예전처럼 균등 무작위)
+        candidates = weighted_edge_order(target_edges, self._edge_weights, self._picked_targets)
 
         for target_edge in candidates:
             if target_edge == current_edge or (current_edge, target_edge) in self._unreachable_edges:
@@ -464,6 +472,7 @@ class TaxiRepositionEnv(gym.Env):
                     continue
                 traci.vehicle.changeTarget(taxi_id, target_edge)
                 self.committed[taxi_id] = target_edge
+                self._picked_targets.add(target_edge)
                 self._last_reposition_distance_m += max(float(route.length), 0.0)
                 return True
             except traci.exceptions.TraCIException:

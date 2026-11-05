@@ -32,7 +32,7 @@ MODEL_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.
 
 def build_past_requests(demand_model, run_date, sim_start_hour: float, seed, request_category: dict,
                         days: int = 8):
-    """시뮬레이션 시작 전 호출 기록 [(시각, 카테고리), ...] — 지난 days일(하루 전체) + 오늘 0시~시작 시각.
+    """시뮬레이션 시작 전 호출 기록 [(시각, 카테고리, 승차 도로), ...] — 지난 days일(하루 전체) + 오늘 0시~시작 시각.
 
     실측 보정 수요 모델(RealDemandModel)로 학습 로그와 같은 규칙·시드로 만든다 (forecast 재배치와 같은 방식).
     예측기의 lag(시작 직후)와 '어제·지난주 같은 시각' 피처를 학습 때처럼 채우는 데 쓴다."""
@@ -51,7 +51,7 @@ def build_past_requests(demand_model, run_date, sim_start_hour: float, seed, req
         for c in calls:
             cat = request_category.get(c.origin)
             if cat is not None:
-                out.append((base + datetime.timedelta(seconds=float(c.t)), cat))
+                out.append((base + datetime.timedelta(seconds=float(c.t)), cat, c.origin))
 
     for k in range(days, 0, -1):
         d = run_date - datetime.timedelta(days=k)
@@ -142,18 +142,18 @@ class CategoryDemandPredictor:
         self._bucket_log[self._bucket_time(self._active_bucket)] = dict(self._bucket_counts)
 
     def set_past_requests(self, requests, start_seconds: float):
-        """시뮬레이션 시작 전 호출 [(datetime, 카테고리), ...]을 칸별로 모아 넣는다 (reset 뒤에 호출).
+        """시뮬레이션 시작 전 호출 [(datetime, 카테고리[, 도로]), ...]을 칸별로 모아 넣는다 (reset 뒤에 호출).
         - 어제·지난주 같은 칸 피처가 학습 때처럼 실제 값을 갖는다 (없으면 0 + has_*=0).
         - lag·이동평균 이력을 시작 직전 칸들로 채워, 시작 직후부터 학습 때와 같은 입력이 된다.
         start_seconds: 시뮬레이션 시작 시각(자정 기준 초). 그 전 칸들은 호출이 없으면 0으로 관측된 것으로 본다."""
         freq = pd.Timedelta(seconds=self._bucket_seconds)
         start = self._bucket_time(int(float(start_seconds) // self._bucket_seconds))
         if requests:
-            first = min(pd.Timestamp(t) for t, _ in requests).floor("D")
+            first = min(pd.Timestamp(r[0]) for r in requests).floor("D")
         else:
             first = start
         log = {ts: {c: 0.0 for c in self.category_list} for ts in pd.date_range(first, start - freq, freq=freq)}
-        for t, cat in requests:
+        for t, cat, *_ in requests:
             ts = pd.Timestamp(t).floor(freq)
             if ts in log and cat in log[ts]:
                 log[ts][cat] += 1.0

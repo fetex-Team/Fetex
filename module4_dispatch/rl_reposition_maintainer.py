@@ -67,7 +67,9 @@ from gymnasium import spaces
 from stable_baselines3 import PPO
 
 from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
+from config_loader import CFG
 from module3_prediction.category_predictor import CategoryDemandPredictor
+from module4_dispatch.forecast_dispatcher import weighted_edge_order
 
 DECISION_INTERVAL_SEC = 60.0
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -138,6 +140,8 @@ class RLRepositionMaintainer:
             for e in edges:
                 self._edge_to_zone[e] = cat
         # 새 호출을 카테고리 수요로 세는 기준 = 학습·rl_env와 같은 '승차 위치 -> 가장 가까운 POI 구역'
+        self._edge_weights = {}       # 재배치 목표 도로 가중치 {도로: 과거 호출 수} (set_run_date에서 채움)
+        self._picked_targets = set()
         self._request_category = {}
         if self.demand_predictor is not None:
             from module3_prediction.category_predictor import edge_request_categories
@@ -152,10 +156,13 @@ class RLRepositionMaintainer:
             self.demand_predictor.reset(run_date)
             if (demand_model is not None and sim_start_hour is not None and self._request_category
                     and hasattr(self.demand_predictor, "set_past_requests")):
+                from collections import Counter
                 from module3_prediction.category_predictor import build_past_requests
-                self.demand_predictor.set_past_requests(
-                    build_past_requests(demand_model, run_date, sim_start_hour, seed, self._request_category),
-                    sim_start_hour * 3600.0)
+                past = build_past_requests(demand_model, run_date, sim_start_hour, seed, self._request_category)
+                self.demand_predictor.set_past_requests(past, sim_start_hour * 3600.0)
+                # 재배치 목표 도로 가중치 = 그 도로의 과거 호출 수 (학습 환경 rl_env와 같은 방식)
+                if CFG.get("rl_weighted_targets", True):
+                    self._edge_weights = Counter(r[2] for r in past)
         self._seen_request_ids.clear()
         self._last_decision_time = 0.0
 
@@ -276,6 +283,7 @@ class RLRepositionMaintainer:
         # 목표 대수를 넘긴 구역의 택시만 이동 후보로 삼는다. 이 때문에 이미
         # 적정 위치에 있는 택시가 매분 다시 목적지를 받는 일이 없다.
         movable = []
+        self._picked_targets = set()
         np.random.shuffle(eligible_taxis)
         for taxi_id, edge, source in eligible_taxis:
             if source is not None:
@@ -334,8 +342,8 @@ class RLRepositionMaintainer:
 
     def _move_taxi(self, taxi_id: str, current_edge: str, target_edges: list, zone: str = None) -> bool:
         """도달 가능한 도로만 선택해 SUMO 재배치 충돌을 피한다."""
-        candidates = list(target_edges)
-        np.random.shuffle(candidates)
+        # 과거 호출이 많았던 도로일수록 먼저 시도 (학습 환경과 같은 방식, 기록이 없으면 균등 무작위)
+        candidates = weighted_edge_order(target_edges, self._edge_weights, self._picked_targets)
         for target_edge in candidates:
             if target_edge == current_edge or (current_edge, target_edge) in self._unreachable_edges:
                 continue
@@ -345,6 +353,7 @@ class RLRepositionMaintainer:
                     continue
                 traci.vehicle.changeTarget(taxi_id, target_edge)
                 self.committed[taxi_id] = target_edge
+                self._picked_targets.add(target_edge)
                 self.moves.append({'t': float(self._now), 'taxi': taxi_id, 'from': current_edge,
                                    'to': target_edge, 'zone': zone})
                 return True

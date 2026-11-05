@@ -117,6 +117,7 @@
   "rl_reward_mode": "default",
   "rl_train_day_type": "weekday",
   "rl_vecnormalize": true,
+  "rl_weighted_targets": true,
   "rl_training_seed_base": 1000,
   "dispatch_use_euclidean": true,
   "reposition_fraction": 0.3,
