@@ -24,7 +24,7 @@ HungarianDispatcher가 "maintain(now)"로 매 스텝 불리는 것과 동일한 
 test_matching_comparison.py / multi_factor_compare.py의 taxi_dispatch_algorithm 값에
 "rl_reposition"을 새 옵션으로 추가하면 기존 비교 스크립트 그대로 재사용 가능.
 
-예측수요는 module4_dispatch/category_demand_predictor.py의 CategoryDemandPredictor를 그대로 씀
+예측수요는 module3_prediction/category_predictor.py의 CategoryDemandPredictor(Module 3)를 그대로 씀
 (rl_env.py 학습 때와 동일한 피처 구성 - 모델 없으면 자동으로 0 대체, 에러 안 남).
 """
 import os
@@ -67,7 +67,7 @@ from gymnasium import spaces
 from stable_baselines3 import PPO
 
 from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
-from module4_dispatch.category_demand_predictor import CategoryDemandPredictor
+from module3_prediction.category_predictor import CategoryDemandPredictor
 
 DECISION_INTERVAL_SEC = 60.0
 CATEGORY_MODEL_PATH_DEFAULT = os.path.join(

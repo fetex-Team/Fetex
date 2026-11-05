@@ -120,8 +120,9 @@ measure_wait_time.py                    공용 실행·측정 루프 (여러 도
 module1_simulation/    디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model),
                        지도·날씨·공휴일(geo_lookup, real_map_fetch, weather_*, holiday_utils), 재현성·TraCI 구독 도우미
 module2_preprocessing/ 전처리: H3 인덱싱, 시계열 피처(43개), 외부 데이터 병합, POI 추출, 학습 로그 선택
-module3_prediction/    예측 모델: train.py(XGBoost vs CNN-LSTM, t+1~t+6, 조기 종료)·evaluate.py(지표·기준 모델·그래프), 카테고리 수요 모델 학습
-module4_dispatch/      배차: 헝가리안·커스텀 배차, 예측 재배치(forecast), RL 선배치, 할증
+module3_prediction/    예측 모델: 학습 train.py(XGBoost vs CNN-LSTM → demand_v2)·train_category_demand.py, 평가 evaluate.py,
+                       실시간 예측 h3_predictor.py(H3 격자, forecast 재배치용)·category_predictor.py(장소 종류별, RL용)
+module4_dispatch/      배차: 헝가리안·커스텀 배차, 예측 재배치(forecast — Module 3 예측기 사용), RL 선배치, 할증
 scripts/               데이터 생성·학습·A/B 비교(multi_factor_compare + parallel_dispatch_worker)
 tools/                 실험·검증·Unity 내보내기·수요 로그 분석기·지역 검색 위젯
 tests/   notebooks/   eda/   docs/

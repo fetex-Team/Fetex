@@ -27,7 +27,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
 
 from config_loader import CFG
 from module4_dispatch.rl_env import TaxiRepositionEnv
-from module4_dispatch.category_demand_predictor import CategoryDemandPredictor
+from module3_prediction.category_predictor import CategoryDemandPredictor
 
 SUMO_CFG = os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
 META_PATH = os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")

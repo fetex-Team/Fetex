@@ -5,6 +5,7 @@
 빈 택시는 평소에는 순찰(patrol)과 똑같이 움직이고, 5분마다 아래를 한 번 한다.
 
 1) 예측: 지금까지 관측된 호출(지난 7일 + 오늘)만으로 피처를 만들어 칸별 다음 30분 호출 수 λ_c를 예측한다.
+   예측 자체는 Module 3의 module3_prediction/h3_predictor.H3DemandPredictor가 하고, 여기서는 관측 호출을 넘겨준다.
    - 지난 7일: 학습 로그와 같은 생성기(demand_model, scripts/generate_demand_logs.py와 같은 시드)로 만든 과거 호출
    - 오늘: 시작 시각 이전 호출 + 시뮬레이션에서 지금까지 실제로 나온 호출. 미래 호출은 보지 않는다.
    - 날씨: 실측 시간별 날씨(학습과 같은 merge_external_data). 학습·서빙 피처가 같다.
@@ -23,23 +24,18 @@ forecast_max_move_sec(180), reposition_fraction(0.3)
 from __future__ import annotations
 
 import datetime as _dt
-import os
 import random
 from collections import Counter, defaultdict
 
-import joblib
 import numpy as np
 import pandas as pd
 import traci
 from scipy.optimize import linear_sum_assignment
 
-from config_loader import CFG, ROOT
-from module2_preprocessing.external_data_merge import find_weather_file, load_weather, merge_external_data
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
+from config_loader import CFG
+from module3_prediction.h3_predictor import MODEL_PATH, H3DemandPredictor
 from module4_dispatch.forecast_dispatcher import allocate_targets
 from module4_dispatch.network_cost import UNREACHABLE
-
-MODEL_PATH = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
 
 
 def target_allocation(predicted, n_idle: int, power: float) -> np.ndarray:
@@ -53,25 +49,12 @@ def target_allocation(predicted, n_idle: int, power: float) -> np.ndarray:
 class ForecastRepositioner:
     def __init__(self, meta: dict, run_date: _dt.date, is_holiday: bool, sim_start_hour: float,
                  demand_model, schedule, seed, travel_time=None, model_path: str = MODEL_PATH):
-        art = joblib.load(model_path)
-        if art.get("version") != 2 or len(art.get("target_cols", [])) != 6:
-            raise ValueError("module3_prediction/train.py로 만든 demand_v2(t+1~t+6) 모델이 필요합니다.")
         self.edge_cells = meta["edge_cells"]
         self.cells = sorted(set(self.edge_cells.values()))
-        if art["cells"] != self.cells:
-            raise ValueError("예측 모델의 H3 칸과 지금 지도의 칸이 다릅니다. 같은 지도로 다시 학습하세요.")
         self.start_dt = _dt.datetime.combine(run_date, _dt.time(0)) + _dt.timedelta(hours=sim_start_hour)
-        if pd.Timestamp(art["data_until"]) > pd.Timestamp(self.start_dt):
-            raise ValueError(f"예측 모델이 시뮬레이션 날짜({run_date}) 이후 데이터로 학습됐습니다 (누수).")
-        # 학습 때 전처리 설정이 지금과 달라도 피처 이름은 같아 조용히 틀린 입력이 들어가므로 여기서 막는다
-        diff = {k: (art[k], CFG[k]) for k in ("max_lag", "rolling_short", "rolling_long") if k in art and art[k] != CFG[k]}
-        if art.get("freq") and art["freq"] != CFG["freq"]:
-            diff["freq"] = (art["freq"], CFG["freq"])
-        if diff:
-            raise ValueError(f"예측 모델과 지금 전처리 설정이 다릅니다 (모델, 지금): {diff}. 같은 설정으로 다시 학습하세요.")
-        self.model, self.features = art["model"], art["feature_cols"]
-        self.prep = TimeSeriesPreprocessor()
-        self.bucket = pd.Timedelta(self.prep.freq)
+        # 예측기(Module 3): 모델 검사(셀·누수·전처리 설정)를 먼저 해서, 맞지 않으면 과거 호출을 만들기 전에 멈춘다
+        self.predictor = H3DemandPredictor(self.cells, self.start_dt, model_path)
+        self.bucket = self.predictor.bucket
         self.travel_time = travel_time
         self.tick_sec = float(CFG.get("forecast_tick_sec", 300))
         self.horizon = int(CFG.get("forecast_horizon_buckets", 3))
@@ -111,20 +94,16 @@ class ForecastRepositioner:
         add(_dt.datetime.combine(run_date, _dt.time(0)),
             demand_model.build_schedule(run_date, 0, sim_start_hour, seed, is_holiday=is_holiday,
                                         hourly_precip_mm=weather(run_date)), False)
-        self._hist = pd.DataFrame({"pickup_datetime": times, "h3_index": cells})
+        self.predictor.set_history(pd.DataFrame({"pickup_datetime": times, "h3_index": cells}))
         # 시뮬레이션 호출(외생 스케줄)은 시각순 — 지금까지 나온 것만 꺼내 쓴다
         self._sched = sorted(((float(c.t), self.edge_cells.get(c.origin)) for c in schedule), key=lambda x: x[0])
         self._sched_i = 0
-        self._live_t, self._live_c = [], []
         # 칸별 도착 도로 후보: 지난 8일 호출이 많았던 도로 (호출 수 = 가중치)
         self.cell_edges = defaultdict(list)
         for e, n in sorted(hist_edges.items()):
             if not e.startswith(":"):
                 self.cell_edges[self.edge_cells[e]].append((e, n))
 
-        wpath = find_weather_file()
-        self.weather = load_weather(wpath) if wpath and os.path.exists(wpath) else None
-        self.history_buckets = self.prep.buckets_1w + max(CFG["max_lag"], self.prep.buckets_1h) + 3
         self.last_tick = -1
         self.committed: dict[str, str] = {}   # 이동 중인 택시 -> 목표 칸 (Unity 표시용)
         self.records, self.moves = [], []
@@ -132,35 +111,17 @@ class ForecastRepositioner:
 
     # ---- 1) 예측 ----
     def _observe(self, now: float):
+        """시뮬레이션 호출 중 지금 시각까지 나온 것만 예측기에 넘긴다 (미래 호출은 보지 않음)."""
         while self._sched_i < len(self._sched) and self._sched[self._sched_i][0] <= now:
             t, cell = self._sched[self._sched_i]
             if cell is not None:
-                self._live_t.append(self.start_dt + _dt.timedelta(seconds=t))
-                self._live_c.append(cell)
+                self.predictor.add_call(self.start_dt + _dt.timedelta(seconds=t), cell)
             self._sched_i += 1
 
     def predict(self, now: float) -> np.ndarray:
-        """(칸 수, 6) 다음 10분 칸 6개 예측. 지금 시각 이전에 끝난 10분 칸까지만 관측으로 쓴다."""
+        """(칸 수, 6) 다음 6칸 예측 (Module 3 예측기)."""
         self._observe(now)
-        origin = pd.Timestamp(self.start_dt + _dt.timedelta(seconds=now)).floor(self.bucket)
-        last_bucket = origin - self.bucket
-        first = origin - self.bucket * self.history_buckets
-        calls = pd.concat([self._hist, pd.DataFrame({"pickup_datetime": self._live_t, "h3_index": self._live_c})],
-                          ignore_index=True)
-        calls = calls[(calls.pickup_datetime >= first) & (calls.pickup_datetime < origin)]
-        panel = self.prep.aggregate_demands(calls, start=first, end=last_bucket, all_cells=self.cells)
-        panel = merge_external_data(panel, weather=self.weather, time_col="time_bucket", verbose=False)
-        frame = self.prep.create_features(panel, dropna=False, add_targets=False, verbose=False)
-        cur = frame[frame.time_bucket == last_bucket].sort_values("h3_index")
-        missing = set(self.features) - set(cur.columns)
-        if missing or len(cur) != len(self.cells):
-            raise ValueError(f"예측 피처를 만들 수 없습니다: {sorted(missing)}")
-        # 수요 이력 피처(lag/rolling/diff)가 비면 관측 구간이 부족한 것 → 0으로 채워 예측하지 않고 멈춘다
-        # (날씨 NaN은 관측 공백이라 학습과 같이 0으로 채움)
-        hist_cols = [c for c in self.features if c.startswith(("lag_", "rolling_")) or c == "diff_1"]
-        if cur[hist_cols].isna().any().any():
-            raise ValueError("예측에 필요한 과거 호출 관측 구간이 부족합니다 (lag/rolling 결측).")
-        return np.maximum(0, np.asarray(self.model.predict(cur[self.features].fillna(0.0))))
+        return self.predictor.predict(self.start_dt + _dt.timedelta(seconds=now))
 
     # ---- 2), 3) 배치·이동 ----
     def _location(self, vid):

@@ -1,5 +1,5 @@
 """
-module4_dispatch/category_demand_predictor.py
+module3_prediction/category_predictor.py  (Module 3 — 카테고리별 실시간 수요 예측기)
 
 module3_prediction/train_category_demand.py로 학습한 카테고리별 모델을
 rl_env.py / rl_reposition_maintainer.py의 demand_predictor 슬롯에 그대로 꽂는 실시간 예측기.
