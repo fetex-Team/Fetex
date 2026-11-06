@@ -81,6 +81,8 @@ class TaxiRepositionEnv(gym.Env):
         self.fleet_manager = None
         self.pax_manager = None
         self.spawn_manager = None
+        self.signal_ctrl = None      # 평가(measure_wait_time.py)와 같은 도로 현실화: 실제 신호 계획
+        self.speed_ctrl = None       # 〃 시간대별 실측 속도 보정 (TOPIS)
         self._decision_count = 0
         self._sumo_started = False
         self._depart_time = {}
@@ -152,6 +154,21 @@ class TaxiRepositionEnv(gym.Env):
             sim_date=episode_date.isoformat(),
             meta=self.meta,
         )
+
+        # [디지털 트윈 일치] 학습 환경도 평가 환경과 같은 도로 현실화를 쓴다 (예전엔 신호·정체 보정 없이 학습 → 평가와 달랐음)
+        from module1_simulation.signal_plans import SignalPlanController
+        from module1_simulation.speed_profile import SpeedProfileController
+        from module4_dispatch.network_cost import TimeVaryingTravelTime, net_file_from_sumocfg
+        is_hol = bool(getattr(self.spawn_manager, "is_holiday", False))
+        net_file = net_file_from_sumocfg(self.sumo_cfg_path)
+        self.signal_ctrl = SignalPlanController.from_config(CFG, episode_date, sim_start_hour, is_hol)
+        shared_tt = None
+        if self.dispatcher is not None and getattr(self.dispatcher, "travel_time", None) is not None \
+                and CFG.get("speed_profile", "topis") == "topis":
+            shared_tt = TimeVaryingTravelTime(net_file)
+            self.dispatcher.travel_time = shared_tt
+        self.speed_ctrl = SpeedProfileController.from_config(CFG, net_file, episode_date, sim_start_hour, is_hol,
+                                                             travel_time=shared_tt)
 
         if self.demand_predictor is not None and hasattr(self.demand_predictor, "reset"):
             self.demand_predictor.reset(episode_date)
@@ -234,6 +251,10 @@ class TaxiRepositionEnv(gym.Env):
         ):
             traci.simulationStep()
             now = traci.simulation.getTime()
+            if self.signal_ctrl:
+                self.signal_ctrl.maintain(now)
+            if self.speed_ctrl:
+                self.speed_ctrl.maintain(now)
             current_pids = set(traci.person.getIDList())
 
             if int(now) % THROTTLE_SEC == 0:
