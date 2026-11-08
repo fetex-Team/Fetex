@@ -1,116 +1,410 @@
 {
   "generator": "demand_model.RealDemandModel",
   "seed": 42,
-  "start": "2025-10-11",
-  "end": "2025-10-24",
-  "scale": 1.0,
+  "start": "2025-09-03",
+  "end": "2025-10-28",
+  "scale": 0.7,
   "days": [
+    {
+      "date": "2025-09-03",
+      "weekday": "Wed",
+      "holiday": false,
+      "calls": 7126,
+      "expected": 7060.0
+    },
+    {
+      "date": "2025-09-04",
+      "weekday": "Thu",
+      "holiday": false,
+      "calls": 7128,
+      "expected": 7220.9
+    },
+    {
+      "date": "2025-09-05",
+      "weekday": "Fri",
+      "holiday": false,
+      "calls": 7856,
+      "expected": 7994.4
+    },
+    {
+      "date": "2025-09-06",
+      "weekday": "Sat",
+      "holiday": true,
+      "calls": 6457,
+      "expected": 6558.3
+    },
+    {
+      "date": "2025-09-07",
+      "weekday": "Sun",
+      "holiday": true,
+      "calls": 5255,
+      "expected": 5277.3
+    },
+    {
+      "date": "2025-09-08",
+      "weekday": "Mon",
+      "holiday": false,
+      "calls": 6565,
+      "expected": 6414.9
+    },
+    {
+      "date": "2025-09-09",
+      "weekday": "Tue",
+      "holiday": false,
+      "calls": 6692,
+      "expected": 6790.2
+    },
+    {
+      "date": "2025-09-10",
+      "weekday": "Wed",
+      "holiday": false,
+      "calls": 7134,
+      "expected": 7060.0
+    },
+    {
+      "date": "2025-09-11",
+      "weekday": "Thu",
+      "holiday": false,
+      "calls": 7166,
+      "expected": 7220.9
+    },
+    {
+      "date": "2025-09-12",
+      "weekday": "Fri",
+      "holiday": false,
+      "calls": 8042,
+      "expected": 7994.4
+    },
+    {
+      "date": "2025-09-13",
+      "weekday": "Sat",
+      "holiday": true,
+      "calls": 6567,
+      "expected": 6558.3
+    },
+    {
+      "date": "2025-09-14",
+      "weekday": "Sun",
+      "holiday": true,
+      "calls": 5272,
+      "expected": 5277.3
+    },
+    {
+      "date": "2025-09-15",
+      "weekday": "Mon",
+      "holiday": false,
+      "calls": 6356,
+      "expected": 6414.9
+    },
+    {
+      "date": "2025-09-16",
+      "weekday": "Tue",
+      "holiday": false,
+      "calls": 6774,
+      "expected": 6790.2
+    },
+    {
+      "date": "2025-09-17",
+      "weekday": "Wed",
+      "holiday": false,
+      "calls": 7092,
+      "expected": 7060.0
+    },
+    {
+      "date": "2025-09-18",
+      "weekday": "Thu",
+      "holiday": false,
+      "calls": 7248,
+      "expected": 7220.9
+    },
+    {
+      "date": "2025-09-19",
+      "weekday": "Fri",
+      "holiday": false,
+      "calls": 7981,
+      "expected": 7994.4
+    },
+    {
+      "date": "2025-09-20",
+      "weekday": "Sat",
+      "holiday": true,
+      "calls": 6645,
+      "expected": 6558.3
+    },
+    {
+      "date": "2025-09-21",
+      "weekday": "Sun",
+      "holiday": true,
+      "calls": 5325,
+      "expected": 5277.3
+    },
+    {
+      "date": "2025-09-22",
+      "weekday": "Mon",
+      "holiday": false,
+      "calls": 6461,
+      "expected": 6414.9
+    },
+    {
+      "date": "2025-09-23",
+      "weekday": "Tue",
+      "holiday": false,
+      "calls": 6807,
+      "expected": 6790.2
+    },
+    {
+      "date": "2025-09-24",
+      "weekday": "Wed",
+      "holiday": false,
+      "calls": 7125,
+      "expected": 7060.0
+    },
+    {
+      "date": "2025-09-25",
+      "weekday": "Thu",
+      "holiday": false,
+      "calls": 7207,
+      "expected": 7220.9
+    },
+    {
+      "date": "2025-09-26",
+      "weekday": "Fri",
+      "holiday": false,
+      "calls": 8020,
+      "expected": 7994.4
+    },
+    {
+      "date": "2025-09-27",
+      "weekday": "Sat",
+      "holiday": true,
+      "calls": 6603,
+      "expected": 6558.3
+    },
+    {
+      "date": "2025-09-28",
+      "weekday": "Sun",
+      "holiday": true,
+      "calls": 5221,
+      "expected": 5277.3
+    },
+    {
+      "date": "2025-09-29",
+      "weekday": "Mon",
+      "holiday": false,
+      "calls": 6455,
+      "expected": 6414.9
+    },
+    {
+      "date": "2025-09-30",
+      "weekday": "Tue",
+      "holiday": false,
+      "calls": 6649,
+      "expected": 6790.2
+    },
+    {
+      "date": "2025-10-01",
+      "weekday": "Wed",
+      "holiday": false,
+      "calls": 6473,
+      "expected": 6520.7
+    },
+    {
+      "date": "2025-10-02",
+      "weekday": "Thu",
+      "holiday": false,
+      "calls": 6719,
+      "expected": 6669.3
+    },
+    {
+      "date": "2025-10-03",
+      "weekday": "Fri",
+      "holiday": true,
+      "calls": 5106,
+      "expected": 5092.5
+    },
+    {
+      "date": "2025-10-04",
+      "weekday": "Sat",
+      "holiday": true,
+      "calls": 6476,
+      "expected": 6328.6
+    },
+    {
+      "date": "2025-10-05",
+      "weekday": "Sun",
+      "holiday": true,
+      "calls": 5140,
+      "expected": 5092.5
+    },
+    {
+      "date": "2025-10-06",
+      "weekday": "Mon",
+      "holiday": true,
+      "calls": 5121,
+      "expected": 5092.5
+    },
+    {
+      "date": "2025-10-07",
+      "weekday": "Tue",
+      "holiday": true,
+      "calls": 5170,
+      "expected": 5092.5
+    },
+    {
+      "date": "2025-10-08",
+      "weekday": "Wed",
+      "holiday": true,
+      "calls": 5180,
+      "expected": 5092.5
+    },
+    {
+      "date": "2025-10-09",
+      "weekday": "Thu",
+      "holiday": true,
+      "calls": 5140,
+      "expected": 5092.5
+    },
+    {
+      "date": "2025-10-10",
+      "weekday": "Fri",
+      "holiday": false,
+      "calls": 7535,
+      "expected": 7383.8
+    },
     {
       "date": "2025-10-11",
       "weekday": "Sat",
       "holiday": true,
-      "calls": 9777,
-      "expected": 9664.8
+      "calls": 6461,
+      "expected": 6328.6
     },
     {
       "date": "2025-10-12",
       "weekday": "Sun",
       "holiday": true,
-      "calls": 7692,
-      "expected": 7777.0
+      "calls": 5051,
+      "expected": 5092.5
     },
     {
       "date": "2025-10-13",
       "weekday": "Mon",
       "holiday": false,
-      "calls": 8298,
-      "expected": 8302.8
+      "calls": 5872,
+      "expected": 5924.9
     },
     {
       "date": "2025-10-14",
       "weekday": "Tue",
       "holiday": false,
-      "calls": 8664,
-      "expected": 8788.6
+      "calls": 6191,
+      "expected": 6271.6
     },
     {
       "date": "2025-10-15",
       "weekday": "Wed",
       "holiday": false,
-      "calls": 9102,
-      "expected": 9137.7
+      "calls": 6494,
+      "expected": 6520.7
     },
     {
       "date": "2025-10-16",
       "weekday": "Thu",
       "holiday": false,
-      "calls": 9364,
-      "expected": 9346.0
+      "calls": 6708,
+      "expected": 6669.3
     },
     {
       "date": "2025-10-17",
       "weekday": "Fri",
       "holiday": false,
-      "calls": 10279,
-      "expected": 10347.2
+      "calls": 7364,
+      "expected": 7383.8
     },
     {
       "date": "2025-10-18",
       "weekday": "Sat",
       "holiday": true,
-      "calls": 9694,
-      "expected": 9664.8
+      "calls": 6365,
+      "expected": 6328.6
     },
     {
       "date": "2025-10-19",
       "weekday": "Sun",
       "holiday": true,
-      "calls": 7768,
-      "expected": 7777.0
+      "calls": 5125,
+      "expected": 5092.5
     },
     {
       "date": "2025-10-20",
       "weekday": "Mon",
       "holiday": false,
-      "calls": 8329,
-      "expected": 8302.8
+      "calls": 5777,
+      "expected": 5924.9
     },
     {
       "date": "2025-10-21",
       "weekday": "Tue",
       "holiday": false,
-      "calls": 8896,
-      "expected": 8788.6
+      "calls": 6277,
+      "expected": 6271.6
     },
     {
       "date": "2025-10-22",
       "weekday": "Wed",
       "holiday": false,
-      "calls": 9047,
-      "expected": 9137.7
+      "calls": 6447,
+      "expected": 6520.7
     },
     {
       "date": "2025-10-23",
       "weekday": "Thu",
       "holiday": false,
-      "calls": 9204,
-      "expected": 9346.0
+      "calls": 6539,
+      "expected": 6669.3
     },
     {
       "date": "2025-10-24",
       "weekday": "Fri",
       "holiday": false,
-      "calls": 10382,
-      "expected": 10347.2
+      "calls": 7414,
+      "expected": 7383.8
+    },
+    {
+      "date": "2025-10-25",
+      "weekday": "Sat",
+      "holiday": true,
+      "calls": 6238,
+      "expected": 6328.6
+    },
+    {
+      "date": "2025-10-26",
+      "weekday": "Sun",
+      "holiday": true,
+      "calls": 5084,
+      "expected": 5092.5
+    },
+    {
+      "date": "2025-10-27",
+      "weekday": "Mon",
+      "holiday": false,
+      "calls": 5945,
+      "expected": 5924.9
+    },
+    {
+      "date": "2025-10-28",
+      "weekday": "Tue",
+      "holiday": false,
+      "calls": 6189,
+      "expected": 6271.6
     }
   ],
-  "total_calls": 126496,
+  "total_calls": 358830,
   "model": {
-    "date": "2025-10-24",
+    "date": "2025-10-28",
     "is_holiday": false,
-    "area_daily_calls_real": 10347.2,
-    "scale": 1.0,
-    "expected_calls_in_window": 10347.2,
+    "area_daily_calls_real": 8959.4,
+    "scale": 0.7,
+    "expected_calls_in_window": 6271.6,
     "cells": {
       "다사115088": {
         "overlap": 0.474,

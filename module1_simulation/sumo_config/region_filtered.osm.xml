@@ -1,5 +1,5 @@
 <?xml version='1.0' encoding='utf-8'?>
-<osm version="0.6" generator="openstreetmap-cgimap 2.1.0 (2537952 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
+<osm version="0.6" generator="openstreetmap-cgimap 2.1.1 (1625864 spike-08.openstreetmap.org)" copyright="OpenStreetMap and contributors" attribution="http://www.openstreetmap.org/copyright" license="http://opendatacommons.org/licenses/odbl/1-0/">
  <bounds minlat="37.4954430" minlon="127.0213060" maxlat="37.5044260" maxlon="127.0326290" />
  <node id="286490183" visible="true" version="3" changeset="35203064" timestamp="2015-11-09T21:42:01Z" user="panhoong" uid="624466" lat="37.5039457" lon="127.0259991" />
  <node id="287525731" visible="true" version="23" changeset="115122718" timestamp="2021-12-19T11:39:36Z" user="user_5239402" uid="5239402" lat="37.5091066" lon="127.0642476">
@@ -677,7 +677,7 @@
  <node id="1906756317" visible="true" version="1" changeset="13043786" timestamp="2012-09-09T12:24:47Z" user="Stleamist" uid="751501" lat="37.4659637" lon="127.0389213" />
  <node id="1906756332" visible="true" version="1" changeset="13043786" timestamp="2012-09-09T12:24:48Z" user="Stleamist" uid="751501" lat="37.4662201" lon="127.0388128" />
  <node id="1906756396" visible="true" version="11" changeset="129424991" timestamp="2022-11-27T07:56:17Z" user="ljc_jlyb" uid="14280033" lat="37.4975028" lon="127.0259134" />
- <node id="1906756417" visible="true" version="17" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4701433" lon="127.0383592">
+ <node id="1906756417" visible="true" version="18" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.4701433" lon="127.0383592">
   <tag k="name" v="양재시민의숲" />
   <tag k="name:en" v="Yangjae Citizen's Forest" />
   <tag k="name:ja" v="ヤンジェシミネスプ(良才市民の森)" />
@@ -690,7 +690,6 @@
   <tag k="operator:wikidata" v="Q13709959" />
   <tag k="public_transport" v="stop_position" />
   <tag k="railway" v="stop" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
   <tag k="wikidata" v="Q492402" />
  </node>
@@ -1144,7 +1143,7 @@
  <node id="3087681522" visible="true" version="1" changeset="25561562" timestamp="2014-09-20T15:19:46Z" user="C-in-Berlin" uid="1620749" lat="37.4825850" lon="127.0359704" />
  <node id="3087681523" visible="true" version="1" changeset="25561562" timestamp="2014-09-20T15:19:46Z" user="C-in-Berlin" uid="1620749" lat="37.4825167" lon="127.0360491" />
  <node id="3087681526" visible="true" version="1" changeset="25561562" timestamp="2014-09-20T15:19:46Z" user="C-in-Berlin" uid="1620749" lat="37.4835275" lon="127.0349954" />
- <node id="3087681529" visible="true" version="19" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4838155" lon="127.0346881">
+ <node id="3087681529" visible="true" version="20" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.4838155" lon="127.0346881">
   <tag k="alt_name" v="양재역" />
   <tag k="alt_name:en" v="Yangjae Station" />
   <tag k="alt_name:ko" v="양재역" />
@@ -1161,7 +1160,6 @@
   <tag k="public_transport" v="stop_position" />
   <tag k="railway" v="stop" />
   <tag k="ref" v="D08" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
   <tag k="wikidata" v="Q100852" />
  </node>
@@ -5289,7 +5287,7 @@
  <node id="5813735757" visible="true" version="1" changeset="61419740" timestamp="2018-08-07T02:32:19Z" user="Sgrinter" uid="8632886" lat="37.4977430" lon="127.0325193" />
  <node id="5813735758" visible="true" version="1" changeset="61419740" timestamp="2018-08-07T02:32:19Z" user="Sgrinter" uid="8632886" lat="37.4977132" lon="127.0325300" />
  <node id="5813735759" visible="true" version="1" changeset="61419740" timestamp="2018-08-07T02:32:19Z" user="Sgrinter" uid="8632886" lat="37.4977515" lon="127.0326668" />
- <node id="5817783181" visible="true" version="15" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4971249" lon="127.0279931">
+ <node id="5817783181" visible="true" version="16" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.4971249" lon="127.0279931">
   <tag k="name" v="강남" />
   <tag k="name:en" v="Gangnam" />
   <tag k="name:ja" v="カンナム(江南)" />
@@ -5305,7 +5303,6 @@
   <tag k="public_transport" v="stop_position" />
   <tag k="railway" v="stop" />
   <tag k="ref" v="D07" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
  <node id="5842737515" visible="true" version="2" changeset="68894390" timestamp="2019-04-04T18:21:16Z" user="hsseoul" uid="6058094" lat="37.5047017" lon="127.0253895" />
@@ -5948,7 +5945,7 @@
   <tag k="amenity" v="restaurant" />
   <tag k="name" v="unbong eden sidang,Tradition Korean" />
  </node>
- <node id="7287842392" visible="true" version="8" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5106168" lon="127.0215956">
+ <node id="7287842392" visible="true" version="9" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.5106168" lon="127.0215956">
   <tag k="name" v="논현" />
   <tag k="name:en" v="Nonhyeon" />
   <tag k="name:ko" v="논현" />
@@ -5961,7 +5958,6 @@
   <tag k="railway" v="stop" />
   <tag k="ref" v="D05" />
   <tag k="start_date" v="2022-05-28" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
  <node id="7483939049" visible="true" version="1" changeset="84664858" timestamp="2020-05-05T05:35:04Z" user="Dreamwalker(JAICHANGPARK)" uid="11123625" lat="37.5068956" lon="127.0568618" />
@@ -7986,7 +7982,7 @@
   <tag k="tactile_paving" v="yes" />
  </node>
  <node id="8793714500" visible="true" version="2" changeset="119252996" timestamp="2022-04-03T05:18:29Z" user="ljc_jlyb" uid="14280033" lat="37.5043397" lon="127.0248796" />
- <node id="8808822187" visible="true" version="5" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4971120" lon="127.0279352">
+ <node id="8808822187" visible="true" version="6" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.4971120" lon="127.0279352">
   <tag k="name" v="강남" />
   <tag k="name:en" v="Gangnam" />
   <tag k="name:ja" v="カンナム(江南)" />
@@ -8002,7 +7998,6 @@
   <tag k="public_transport" v="stop_position" />
   <tag k="railway" v="stop" />
   <tag k="ref" v="D07" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
  <node id="8808822188" visible="true" version="2" changeset="121500277" timestamp="2022-05-26T04:43:34Z" user="rhtb0" uid="15977403" lat="37.4996401" lon="127.0267164" />
@@ -8010,7 +8005,7 @@
  <node id="8808822191" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.5050077" lon="127.0241637" />
  <node id="8808822193" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.5131566" lon="127.0203145" />
  <node id="8808822194" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.5146000" lon="127.0198982" />
- <node id="8808822195" visible="true" version="5" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.5157279" lon="127.0195885">
+ <node id="8808822195" visible="true" version="6" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.5157279" lon="127.0195885">
   <tag k="name" v="신사" />
   <tag k="name:en" v="Sinsa" />
   <tag k="name:ko" v="신사" />
@@ -8018,7 +8013,6 @@
   <tag k="railway" v="stop" />
   <tag k="ref" v="D04" />
   <tag k="start_date" v="2022-05-28" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
  <node id="8808844593" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.4499544" lon="127.0529784" />
@@ -8036,7 +8030,7 @@
  <node id="8808844608" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.4710343" lon="127.0381537" />
  <node id="8808844609" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.4730960" lon="127.0379496" />
  <node id="8808844610" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.4740073" lon="127.0380261" />
- <node id="8808844611" visible="true" version="5" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4701280" lon="127.0382719">
+ <node id="8808844611" visible="true" version="6" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.4701280" lon="127.0382719">
   <tag k="name" v="양재시민의숲" />
   <tag k="name:en" v="Yangjae Citizen's Forest" />
   <tag k="name:ja" v="ヤンジェシミネスプ(良才市民の森)" />
@@ -8049,7 +8043,6 @@
   <tag k="operator:wikidata" v="Q13709959" />
   <tag k="public_transport" v="stop_position" />
   <tag k="railway" v="stop" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
   <tag k="wikidata" v="Q492402" />
  </node>
@@ -8062,7 +8055,7 @@
  <node id="8808844618" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.4843780" lon="127.0340424" />
  <node id="8808844619" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.4846879" lon="127.0338192" />
  <node id="8808844620" visible="true" version="1" changeset="105914894" timestamp="2021-06-06T12:25:39Z" user="user_5239402" uid="5239402" lat="37.4858628" lon="127.0332656" />
- <node id="8808844621" visible="true" version="4" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.4837582" lon="127.0346389">
+ <node id="8808844621" visible="true" version="5" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.4837582" lon="127.0346389">
   <tag k="alt_name" v="양재역" />
   <tag k="alt_name:en" v="Yangjae Station" />
   <tag k="alt_name:ko" v="양재역" />
@@ -8079,7 +8072,6 @@
   <tag k="public_transport" v="stop_position" />
   <tag k="railway" v="stop" />
   <tag k="ref" v="D08" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
   <tag k="wikidata" v="Q100852" />
  </node>
@@ -9230,7 +9222,7 @@
  <node id="9771129896" visible="true" version="1" changeset="121500277" timestamp="2022-05-26T04:43:34Z" user="rhtb0" uid="15977403" lat="37.4943949" lon="127.0291932" />
  <node id="9771129897" visible="true" version="1" changeset="121500277" timestamp="2022-05-26T04:43:34Z" user="rhtb0" uid="15977403" lat="37.4995193" lon="127.0267746" />
  <node id="9776192969" visible="true" version="1" changeset="121598127" timestamp="2022-05-28T01:54:23Z" user="rhtb0" uid="15977403" lat="37.4998122" lon="127.0266345" />
- <node id="9776192970" visible="true" version="5" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.5035711" lon="127.0249157">
+ <node id="9776192970" visible="true" version="6" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.5035711" lon="127.0249157">
   <tag k="name" v="신논현" />
   <tag k="name:en" v="Sinnonhyeon" />
   <tag k="name:ja" v="シンノンヒョン(新論峴)" />
@@ -9244,10 +9236,9 @@
   <tag k="railway" v="stop" />
   <tag k="ref" v="D06" />
   <tag k="start_date" v="2022-05-28" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
- <node id="9776192971" visible="true" version="6" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5035542" lon="127.0248726">
+ <node id="9776192971" visible="true" version="7" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.5035542" lon="127.0248726">
   <tag k="name" v="신논현" />
   <tag k="name:en" v="Sinnonhyeon" />
   <tag k="name:ja" v="シンノンヒョン(新論峴)" />
@@ -9261,10 +9252,9 @@
   <tag k="railway" v="stop" />
   <tag k="ref" v="D06" />
   <tag k="start_date" v="2022-05-28" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
- <node id="9776192972" visible="true" version="6" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5105973" lon="127.0215146">
+ <node id="9776192972" visible="true" version="7" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.5105973" lon="127.0215146">
   <tag k="name" v="논현" />
   <tag k="name:en" v="Nonhyeon" />
   <tag k="name:ko" v="논현" />
@@ -9277,10 +9267,9 @@
   <tag k="railway" v="stop" />
   <tag k="ref" v="D05" />
   <tag k="start_date" v="2022-05-28" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
- <node id="9776192973" visible="true" version="4" changeset="185254691" timestamp="2026-07-07T09:43:51Z" user="Bovi887" uid="17440526" lat="37.5157525" lon="127.0196599">
+ <node id="9776192973" visible="true" version="5" changeset="191443704" timestamp="2026-11-04T03:29:14Z" user="aaei924" uid="10626814" lat="37.5157525" lon="127.0196599">
   <tag k="name" v="신사" />
   <tag k="name:en" v="Sinsa" />
   <tag k="name:ko" v="신사" />
@@ -9288,7 +9277,6 @@
   <tag k="railway" v="stop" />
   <tag k="ref" v="D04" />
   <tag k="start_date" v="2022-05-28" />
-  <tag k="subway" v="yes" />
   <tag k="train" v="yes" />
  </node>
  <node id="9776373036" visible="true" version="2" changeset="169990993" timestamp="2025-08-05T08:40:57Z" user="Wolframite74" uid="20102979" lat="37.5010855" lon="127.0270820">
@@ -19720,13 +19708,15 @@
  <node id="14320176873" visible="true" version="1" changeset="191035855" timestamp="2026-10-26T02:58:35Z" user="Nqye" uid="24581138" lat="37.4969848" lon="127.0311121" />
  <node id="14320176874" visible="true" version="1" changeset="191035855" timestamp="2026-10-26T02:58:35Z" user="Nqye" uid="24581138" lat="37.4970588" lon="127.0310752" />
  <node id="14320176875" visible="true" version="1" changeset="191035855" timestamp="2026-10-26T02:58:35Z" user="Nqye" uid="24581138" lat="37.4970870" lon="127.0310953" />
- <node id="14332451401" visible="true" version="1" changeset="191218830" timestamp="2026-10-30T02:20:17Z" user="Ventrix" uid="24143958" lat="37.4964396" lon="127.0278073">
+ <node id="14332451401" visible="true" version="2" changeset="191467702" timestamp="2026-11-04T14:07:46Z" user="Ventrix" uid="24143958" lat="37.4964396" lon="127.0278073">
   <tag k="addr:city" v="서울특별시" />
   <tag k="addr:district" v="서초구" />
   <tag k="addr:housenumber" v="375" />
   <tag k="addr:postcode" v="06620" />
   <tag k="addr:street" v="강남대로" />
   <tag k="amenity" v="clinic" />
+  <tag k="description:en" v="Dermatology clinic on the 6th floor of Seocho Hyundai Tower, a 1-minute walk from Gangnam Station Exits 6 and 7. Online booking is available in English and Chinese. Treatments include Ultherapy Prime, Thermage FLX and Rejuran." />
+  <tag k="description:zh-Hans" v="首尔江南站的韩国皮肤科，位于瑞草现代大厦6层，江南站6、7号出口步行1分钟。可在线预约（支持中文），主要项目有超声刀Ultherapy Prime、热玛吉FLX和丽珠兰Rejuran。" />
   <tag k="healthcare" v="clinic" />
   <tag k="healthcare:speciality" v="dermatology" />
   <tag k="language:en" v="yes" />
@@ -19740,8 +19730,9 @@
   <tag k="opening_hours" v="Mo-Fr 10:00-20:00; Sa,Su 10:00-16:00" />
   <tag k="phone" v="+82 2-6949-2428" />
   <tag k="website" v="https://www.goatgangnam.com/en" />
+  <tag k="website:zh" v="https://www.goatgangnam.com/cn" />
  </node>
- <node id="14342995837" visible="true" version="1" changeset="191391507" timestamp="2026-11-02T22:59:43Z" user="aaei924" uid="10626814" lat="37.5039435" lon="127.0247147">
+ <node id="14342995837" visible="true" version="2" changeset="191411962" timestamp="2026-11-03T11:41:32Z" user="aaei924" uid="10626814" lat="37.5039435" lon="127.0247147">
   <tag k="name" v="신논현" />
   <tag k="name:en" v="Sinnonhyeon" />
   <tag k="name:ja" v="シンノンヒョン(新論峴)" />
@@ -19759,8 +19750,8 @@
   <tag k="payment:climate_card" v="no" />
   <tag k="public_transport" v="station" />
   <tag k="railway" v="station" />
-  <tag k="station" v="subway" />
-  <tag k="subway" v="yes" />
+  <tag k="station" v="train" />
+  <tag k="train" v="yes" />
   <tag k="wheelchair" v="yes" />
   <tag k="wikidata" v="Q53000" />
  </node>
@@ -48886,7 +48877,7 @@
   <tag k="route_master" v="bus" />
   <tag k="type" v="route_master" />
  </relation>
- <relation id="7625892" visible="true" version="22" changeset="182506907" timestamp="2026-05-11T11:29:55Z" user="KozaK69" uid="12820340">
+ <relation id="7625892" visible="true" version="23" changeset="191545606" timestamp="2026-11-06T07:51:05Z" user="Hung159" uid="22065819">
   <member type="relation" ref="2404374" role="" />
   <member type="relation" ref="4729409" role="" />
   <member type="relation" ref="4729405" role="" />
@@ -48895,7 +48886,7 @@
   <member type="relation" ref="4729407" role="" />
   <member type="relation" ref="10722439" role="" />
   <member type="relation" ref="16421903" role="" />
-  <tag k="colour" v="#00A23F" />
+  <tag k="colour" v="#00A84D" />
   <tag k="name" v="서울 지하철 2호선" />
   <tag k="name:en" v="Seoul Metropolitan Subway Line 2" />
   <tag k="name:es" v="Línea 2 del metro de Seúl" />
@@ -49457,12 +49448,12 @@
   <tag k="subway" v="yes" />
   <tag k="type" v="public_transport" />
  </relation>
- <relation id="7883317" visible="true" version="11" changeset="178753961" timestamp="2026-02-19T05:41:52Z" user="Sebasawk" uid="12511136">
+ <relation id="7883317" visible="true" version="12" changeset="191545606" timestamp="2026-11-06T07:51:05Z" user="Hung159" uid="22065819">
   <member type="relation" ref="4784126" role="" />
   <member type="relation" ref="7883314" role="" />
   <member type="relation" ref="2718888" role="" />
   <member type="relation" ref="9079536" role="" />
-  <tag k="colour" v="#A49D87" />
+  <tag k="colour" v="#BDB092" />
   <tag k="name" v="서울 지하철 9호선" />
   <tag k="name:en" v="Seoul Subway Line 9" />
   <tag k="name:es" v="Línea 9 del metro de Seúl" />

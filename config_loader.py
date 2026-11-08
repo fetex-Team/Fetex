@@ -19,6 +19,24 @@ DEFAULT_CONFIG = {
     # build_env.py가 CFG['passenger_mode']로 직접 인덱싱하므로(.get() 아님) 기본값 필수 —
     # config.json에 이 키가 없으면 KeyError로 죽는 문제 방지.
     "passenger_mode": "replay",
+    # 수요 출처: "real" = TIMS 500m 격자 실측(2025) + 서울시 시간대별 택시 통계로 보정한 외생 수요(기본)
+    #            "synthetic" = 예전 카테고리 가정 모델(학교/회사/음식점 흡수->재스폰)
+    "demand_source": "real",
+    # 실측 호출량 중 카카오 T 플랫폼이 배차하는 비율 = 앱 호출 비율 약 80%(서울시, 2024 시민만족도 조사)
+    #   x 카카오 일반호출 점유율 96%(공정위, 2022) = 0.77. 영역 전체 택시 수요를 보려면 1.0.
+    "real_demand_scale": 0.77,
+    "real_internal_trip_km": 1.0,    # 이 거리보다 짧은 운행은 영역 안에서 하차 (나머지는 경계 도로로 나감)
+    # 그날의 실측 시간별 날씨(data/external/weather_<지역>_*.csv)가 있으면 수요에 반영 (없으면 실시간 '날씨적용')
+    "use_historical_weather": True,
+    "weather_precip_coef_per_mm": 0.0199,   # 강수 1mm당 호출 +1.99% (docs/weather_coefficient.md)
+    "weather_precip_cap_mm": 30.0,
+    # [시나리오] 영역 밖으로 나간 택시 복귀 지연 (external_trip_model.py). 기본 꺼짐.
+    "taxi_external_away": False,
+    "external_replacement_ratio": 0.918,   # 강남구 2025 하차/승차 = 85,218/92,858
+    "external_return_factor": 2.0,         # 운행시간(TIMS 격자 평균) x 2 = 갔다 오는 시간
+    # RL 학습 에피소드 날짜 범위 (평가 날짜와 겹치지 않게; 수요예측 학습 8주와 동일)
+    "rl_train_start": "2026-07-13",
+    "rl_train_end": "2026-09-06",
     # 수요 출처: "real" = TIMS 500m 격자 실측(2025) + 서울시 시간대별 택시 통계로 보정한 외생 수요
     #            "synthetic" = 예전 카테고리 가정 모델(학교/회사/음식점 흡수→재스폰)(기본)
     "demand_source": "real",
@@ -33,6 +51,8 @@ DEFAULT_CONFIG = {
     "taxi_fail_threshold": 5,
     "taxi_respawn_prefix": "taxi_respawn",
     "taxi_dispatch_algorithm": "greedy",
+    # 헝가리안 비용: "network" = 도로망 최단 이동시간(다익스트라, 권장·config.json 기본) / "euclidean" = 예전 직선 거리
+    "dispatch_cost": "euclidean",
     "taxi_idle_algorithm": "randomCircling",
     "suppress_sumo_warnings": False,
     # "학습만 실행" 시 data/sim_logs/demand_log_*.csv를 새로 채우기 위해
@@ -109,6 +129,14 @@ DEFAULT_CONFIG = {
     # forecast_dispatcher.py가 CFG['reposition_fraction']로 직접 인덱싱 — 유휴택시 중 몇 %를
     # 예측 핫스팟으로 재배치할지. 기본값이 없으면 forecast 전략 실행 시 KeyError로 죽음.
     "reposition_fraction": 0.3,
+    # taxi_strategy="forecast" (module4_dispatch/forecast_repositioner.py): 예측 주기, 예측 구간(10분 칸 수),
+    # 칸별 목표 = 예측^power 비율(2/3: 가장 가까운 빈 택시까지 평균 거리 최소), 한 번 이동 최대 시간(초)
+    "forecast_tick_sec": 300,
+    "forecast_horizon_buckets": 3,
+    "forecast_alloc_power": 0.6667,
+    "forecast_max_move_sec": 180,
+    # 빈 택시가 전체의 30%보다 적으면(택시 부족) 재배치 중단. 검증 날짜(9/8, 9/17, 손님 100%)에서 0/0.2/0.3/0.4 비교 후 선택
+    "forecast_min_idle_ratio": 0.3,
     "synthetic_rate": 1.5,
     "mock_available_taxis_min": 1, "mock_available_taxis_max": 20,
     "mock_taxi_count": 20, "mock_passenger_count": 20,

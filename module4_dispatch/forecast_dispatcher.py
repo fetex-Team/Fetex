@@ -67,8 +67,11 @@ class ForecastDispatcher:
             raise ValueError('재배치에는 t+1~t+6 6개 타겟 모델이 필요합니다 (scripts/train_dispatch_model.py).')
         self.model, self.features = artifact['model'], artifact['feature_cols']
         self.meta, self.calls, self.start = meta, calls, start
-        # 합성 외부 관측이 오면 시간별 날씨 표로 바꿔 학습과 같은 병합 경로를 태운다.
         self.weather = _external_to_weather(external)
+        if self.weather is None:
+            from module2_preprocessing.external_data_merge import find_weather_file, load_weather
+            path = find_weather_file()
+            self.weather = load_weather(path) if path and os.path.exists(path) else None
         self.prep = TimeSeriesPreprocessor()
         self.engine = SurgePricingEngine()
         # 피처 계산에 필요한 과거 구간: 1시간 이동평균(12칸) > lag(max_lag) > diff(2칸)

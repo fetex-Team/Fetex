@@ -10,16 +10,18 @@
 이 모듈은 공개 실데이터 두 가지로 수요를 맞춘다.
 1) 국토교통부 TIMS 「택시운영현황_격자별 영업통계」(2025년, 500m 격자, 월별)
    -> 시뮬레이션 영역 안의 하루 승차 건수, 격자(500m 칸)별 비율, 월별 계절성, 평균 운행거리/요금
-2) 서울시 「서울 교통이용 통계보고서」(2022년 1월, 택시 시간대별·요일별 이용건수)
-   -> 시간대별 비율(평일/주말 따로), 요일별 배율
+2) 서울시 「2025년 서울 교통이용 통계보고서」(택시 위치정보 기반, 2025.1.1~12.31)
+   -> 시간대별 비율(평일/주말 따로, p.18~20), 강남구 월별 평일·주말 승차(p.81~83)
+   (요일 안의 세부 차이(월~금, 토/일)는 2025년판에 없어 2022년 1월판 p.2의 비율을 쓴다)
 
 그리고 호출 목록(스케줄)을 시뮬레이션 시작 전에 시드로 한 번에 만든다.
 배차 전략이 무엇이든 같은 날짜·같은 시드면 손님 목록이 완전히 같다 -> 공정한 A/B 비교.
 
 데이터 파일 (data/external, 자세한 출처는 data/external/README.md)
 - tims/tims_500m_grid_2025_dasa.csv : grid, ym, trips, revenue, dist_m, time_s
-- seoul_taxi_hourly_2022_01.csv      : hour, weekday_share, weekend_share, ...
-- seoul_taxi_dow_2022_01.csv         : dow, trips, factor
+- seoul_taxi_hourly_2025.csv         : hour, weekday_trips, weekend_trips, ...
+- gangnam_taxi_pickups_2025.csv      : month, all_daily, weekday_daily, weekend_daily
+- seoul_taxi_dow_2022_01.csv         : dow, trips (평일 안 / 주말 안 상대 비율만 사용)
 
 외부 라이브러리 없이(pyproj 불필요) 동작하도록 UTM-K 좌표 변환을 직접 구현했다.
 """
@@ -35,7 +37,8 @@ from dataclasses import dataclass, field
 ROOT = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(ROOT, "data", "external")
 TIMS_PATH = os.path.join(DATA_DIR, "tims", "tims_500m_grid_2025_dasa.csv")
-HOURLY_PATH = os.path.join(DATA_DIR, "seoul_taxi_hourly_2022_01.csv")
+HOURLY_PATH = os.path.join(DATA_DIR, "seoul_taxi_hourly_2025.csv")
+GANGNAM_PATH = os.path.join(DATA_DIR, "gangnam_taxi_pickups_2025.csv")
 DOW_PATH = os.path.join(DATA_DIR, "seoul_taxi_dow_2022_01.csv")
 
 DOW_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
@@ -160,12 +163,26 @@ def load_hourly_profile(path: str = HOURLY_PATH) -> dict[str, list[float]]:
 
 
 def load_dow_factors(path: str = DOW_PATH) -> dict[str, float]:
+    """요일 배율을 '평일끼리'(월~금 평균 = 1), '주말끼리'(토·일 평균 = 1)로 정규화해 돌려준다.
+    평일·주말 사이의 큰 차이는 강남구 2025 실측(load_gangnam_ratios)이 정하고, 이 값은 그 안의 세부 차이만 준다."""
     rows = {r["dow"]: float(r["trips"]) for r in _read_csv(path)}
     missing = [k for k in DOW_KEYS if k not in rows]
     if missing:
         raise ValueError(f"{path}: 요일 {missing} 행이 없습니다")
-    mean = sum(rows[k] for k in DOW_KEYS) / 7
-    return {k: rows[k] / mean for k in DOW_KEYS}
+    wd = sum(rows[k] for k in DOW_KEYS[:5]) / 5
+    we = sum(rows[k] for k in DOW_KEYS[5:]) / 2
+    return {k: rows[k] / (wd if i < 5 else we) for i, k in enumerate(DOW_KEYS)}
+
+
+def load_gangnam_ratios(path: str = GANGNAM_PATH) -> dict[int, tuple[float, float]]:
+    """월 -> (평일 배율, 주말 배율). 강남구 2025 일평균 승차(평일/주말) ÷ 전체 일평균."""
+    out = {}
+    for r in _read_csv(path):
+        a = float(r["all_daily"])
+        out[int(r["month"])] = (float(r["weekday_daily"]) / a, float(r["weekend_daily"]) / a)
+    if len(out) != 12:
+        raise ValueError(f"{path}: 1~12월 12행이 필요합니다 (현재 {len(out)}행)")
+    return out
 
 
 @dataclass
@@ -234,7 +251,7 @@ class RealDemandModel:
     """
 
     def __init__(self, meta: dict, cfg: dict | None = None, tims_path: str = TIMS_PATH,
-                 hourly_path: str = HOURLY_PATH, dow_path: str = DOW_PATH):
+                 hourly_path: str = HOURLY_PATH, dow_path: str = DOW_PATH, gangnam_path: str = GANGNAM_PATH):
         cfg = dict(cfg or {})
         mcfg = meta.get("config", {})
         self.scale = float(cfg.get("real_demand_scale", 1.0))
@@ -242,6 +259,10 @@ class RealDemandModel:
         self.poi_weights = {**DEFAULT_POI_WEIGHTS, **(cfg.get("real_poi_weights") or {})}
         self.hourly = load_hourly_profile(hourly_path)
         self.dow = load_dow_factors(dow_path)
+        self.weekpart = load_gangnam_ratios(gangnam_path)
+        # 시간별 강수량 1mm당 호출 증가율 (docs/weather_coefficient.md 실측 추정, 상한 cap mm)
+        self.precip_coef = float(cfg.get("weather_precip_coef_per_mm", 0.0199))
+        self.precip_cap = float(cfg.get("weather_precip_cap_mm", 30.0))
 
         self.edges = list(meta["edges"])
         self.edge_latlng = meta["edge_latlng"]
@@ -305,8 +326,10 @@ class RealDemandModel:
     def area_daily_calls(self, date: _dt.date, is_holiday: bool | None = None) -> float:
         """해당 날짜의 영역 안 하루 호출 수 (24시간, real_demand_scale 적용 전).
 
-        월 평균(TIMS, 그 달의 계절성) x 요일 배율(서울시 2022.1). 공휴일은 일요일 배율.
-        도로가 없는 칸의 수요는 제외한다(dropped_cells로 보고).
+        월 평균(TIMS 2025, 그 달의 계절성)
+          x 평일/주말 배율(강남구 2025 같은 달 실측: 예 9월 평일 1.046, 주말 0.873)
+          x 평일 안·주말 안 요일 차이(서울시 2022.1).
+        평일 공휴일은 주말 배율 + 일요일 차이. 도로가 없는 칸의 수요는 제외한다(dropped_cells로 보고).
         """
         month = date.month
         base = 0.0
@@ -315,15 +338,27 @@ class RealDemandModel:
             if daily is None:
                 daily = sum(s.daily_by_month.values()) / len(s.daily_by_month)
             base += s.overlap * daily
-        key = "sun" if is_holiday and date.weekday() < 5 else DOW_KEYS[date.weekday()]
-        return base * self.dow[key]
+        holiday_weekday = bool(is_holiday) and date.weekday() < 5
+        weekend = holiday_weekday or date.weekday() >= 5
+        wd_ratio, we_ratio = self.weekpart[month]
+        key = "sun" if holiday_weekday else DOW_KEYS[date.weekday()]
+        return base * (we_ratio if weekend else wd_ratio) * self.dow[key]
 
-    def hourly_calls(self, date: _dt.date, is_holiday: bool = False, weather_factor: float = 1.0) -> list[float]:
-        """0~23시 각 시간의 기대 호출 수 (scale·날씨 배율 적용)."""
+    def weather_factors(self, hourly_precip_mm) -> list[float]:
+        """시간별 강수량(mm, 24개) -> 시간별 호출 배율 1 + coef x min(강수, cap)."""
+        if not hourly_precip_mm:
+            return [1.0] * 24
+        return [1.0 + self.precip_coef * min(max(float(p or 0.0), 0.0), self.precip_cap) for p in hourly_precip_mm]
+
+    def hourly_calls(self, date: _dt.date, is_holiday: bool = False, weather_factor: float = 1.0,
+                     hourly_precip_mm=None) -> list[float]:
+        """0~23시 각 시간의 기대 호출 수.
+        scale x (실측 날씨가 있으면 시간별 강수 배율, 없으면 기존 '날씨적용' 단일 배율 weather_factor)."""
         weekend = is_holiday or date.weekday() >= 5
         prof = self.hourly["weekend" if weekend else "weekday"]
-        total = self.area_daily_calls(date, is_holiday) * self.scale * weather_factor
-        return [total * p for p in prof]
+        total = self.area_daily_calls(date, is_holiday) * self.scale
+        hourly_f = self.weather_factors(hourly_precip_mm) if hourly_precip_mm else [weather_factor] * 24
+        return [total * p * f for p, f in zip(prof, hourly_f)]
 
     def cell_shares(self, date: _dt.date) -> dict[str, float]:
         w = {c: s.overlap * s.daily_by_month.get(date.month, s.area_daily / max(s.overlap, 1e-9))
@@ -349,10 +384,10 @@ class RealDemandModel:
 
     # ----- 스케줄 -----
     def build_schedule(self, date: _dt.date, start_hour: float, end_hour: float, seed,
-                       is_holiday: bool = False, weather_factor: float = 1.0) -> list[Call]:
-        """[start_hour, end_hour) 구간의 호출 목록. 같은 (date, seed)면 항상 같은 결과."""
+                       is_holiday: bool = False, weather_factor: float = 1.0, hourly_precip_mm=None) -> list[Call]:
+        """[start_hour, end_hour) 구간의 호출 목록. 같은 (date, seed, 날씨)면 항상 같은 결과."""
         rng = random.Random(f"fetex-demand|{seed}|{date.isoformat()}")
-        rates = self.hourly_calls(date, is_holiday, weather_factor)
+        rates = self.hourly_calls(date, is_holiday, weather_factor, hourly_precip_mm)
         shares = self.cell_shares(date)
         cells = sorted(shares)
         cell_w = [shares[c] for c in cells]

@@ -70,6 +70,7 @@ def launch_workers(algo_a: str, algo_b: str):
 
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"; env["PYTHONUTF8"] = "1"
+    env["PYTHONHASHSEED"] = "0"
 
     print(f"[오케스트레이터] 새 창 2개로 '{algo_a}'와 '{algo_b}' 동시 측정 시작...")
 

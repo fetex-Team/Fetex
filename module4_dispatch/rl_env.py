@@ -10,6 +10,7 @@ import random
 import sys
 import numpy as np
 import traci
+import vehicle_subscriptions
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -23,7 +24,7 @@ from passenger_manager import PassengerTimeoutManager
 from passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
 from holiday_utils import pick_run_date
-from module4_dispatch.hungarian_dispatcher import HungarianDispatcher
+from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
 from poi_extractor import CATEGORIES as ZONE_CATEGORIES
 
 N_ZONES = len(ZONE_CATEGORIES)
@@ -100,10 +101,23 @@ class TaxiRepositionEnv(gym.Env):
         self.committed = {}          # 재배치 명령을 받고 아직 이동 중인 택시 {taxi_id: 목표 edge}
         self._last_riding = set()    # 직전 결정 시점의 탑승 승객 (매 스텝 중복 조회 방지)
 
+    def _pick_episode_date(self):
+        """학습 에피소드 날짜. rl_train_start~rl_train_end가 있으면 그 기간 안에서만 뽑는다
+        (평가 날짜(sim_date 이후)와 겹치지 않게 시간 순서로 분리 — 수요예측 학습 기간과 같은 8주).
+        없으면 예전처럼 최근 90일에서 평일/공휴일을 번갈아 뽑는다."""
+        rng = random.Random(self.training_seed_base + self._episode_index)
+        start, end = CFG.get("rl_train_start"), CFG.get("rl_train_end")
+        if start and end:
+            import datetime as _dt
+            d0, d1 = _dt.date.fromisoformat(str(start)), _dt.date.fromisoformat(str(end))
+            return d0 + _dt.timedelta(days=rng.randint(0, max(0, (d1 - d0).days)))
+        return pick_run_date(CFG, index=self._episode_index, rng=rng)
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self._close_sumo()
 
+        vehicle_subscriptions.reset()
         traci.start([
             self.sumo_binary, "-c", self.sumo_cfg_path,
             "--no-step-log", "true", "--no-warnings", "true",
@@ -134,7 +148,7 @@ class TaxiRepositionEnv(gym.Env):
             episode_date = pick_run_date(CFG, index=self._episode_index, rng=date_rng)
 
         dispatch_algo = self.meta.get("taxi_dispatch_algorithm", "greedy")
-        self.dispatcher = HungarianDispatcher() if dispatch_algo == "hungarian" else None
+        self.dispatcher = build_hungarian_dispatcher(self.sumo_cfg_path) if dispatch_algo == "hungarian" else None
         
         sim_start_hour = self.meta.get("sim_start_hour", 0)
         

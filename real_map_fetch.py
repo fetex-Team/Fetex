@@ -10,14 +10,37 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
+OSM_API_URL = "https://api.openstreetmap.org/api/0.6/map?bbox={lng_min},{lat_min},{lng_max},{lat_max}"
+OVERPASS_URL = "https://overpass-api.de/api/map?bbox={lng_min},{lat_min},{lng_max},{lat_max}"
+
+
+def _download(url):
+    req = urllib.request.Request(url, headers={'User-Agent': 'fetex-digital-twin/1.0'})
+    with urllib.request.urlopen(req, timeout=120) as response:
+        return response.read()
+
+
+def _ensure_bounds(payload: bytes, lat_min, lat_max, lng_min, lng_max) -> bytes:
+    """Overpass 결과에는 <bounds>가 없을 수 있어, 캐시 재사용 판정용으로 요청 범위를 넣어 둔다."""
+    head = payload[:4000]
+    if b"<bounds" in head:
+        return payload
+    i = payload.find(b">", payload.find(b"<osm")) + 1
+    tag = (f'\n <bounds minlat="{lat_min:.7f}" minlon="{lng_min:.7f}" '
+           f'maxlat="{lat_max:.7f}" maxlon="{lng_max:.7f}"/>').encode()
+    return payload[:i] + tag + payload[i:]
+
+
 def fetch_osm_data(lat_min, lat_max, lng_min, lng_max, output_path):
-    """Overpass API / OpenStreetMap API를 사용하여 위경도 영역 OSM 데이터 다운로드"""
-    url = f"https://api.openstreetmap.org/api/0.6/map?bbox={lng_min},{lat_min},{lng_max},{lat_max}"
+    """OpenStreetMap API로 영역 OSM 데이터 다운로드. 영역이 커서 거절되면(노드 5만 개 제한 등) Overpass로 대체."""
+    bbox = dict(lat_min=lat_min, lat_max=lat_max, lng_min=lng_min, lng_max=lng_max)
     print(f"[안내] OSM 실제 지도 데이터 다운로드 중... (bbox={lng_min},{lat_min},{lng_max},{lat_max})")
-    
-    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-    with urllib.request.urlopen(req) as response:
-        payload = response.read()
+    try:
+        payload = _download(OSM_API_URL.format(**bbox))
+    except Exception as exc:  # noqa: BLE001 — 400(범위 초과)·509(과부하) 등은 Overpass로 재시도
+        print(f"[안내] OSM API 실패({exc}) — Overpass API로 다시 받습니다.")
+        payload = _download(OVERPASS_URL.format(**bbox))
+    payload = _ensure_bounds(payload, lat_min, lat_max, lng_min, lng_max)
 
     # Windows에서 기존 region.osm.xml을 직접 'wb'로 열면, Explorer 미리 보기나
     # 백신의 순간 검사 때문에 간헐적으로 [Errno 22] Invalid argument가 난다.
@@ -98,10 +121,30 @@ def convert_to_sumo_net(filtered_path, net_path):
         # [핵심] 교차로 꽉 막힘 방지를 위해 주요 교차로에 신호등 자동 배치
         '--tls.guess', 'true',
         '--tls.join', 'true'
-        
     ]
     print("[안내] netconvert로 SUMO 네트워크 변환 중...")
     subprocess.run(cmd, check=True)
+
+
+def _cached_osm_matches(raw_osm, lat_min, lat_max, lng_min, lng_max, tol=1e-6):
+    """이미 받아 둔 OSM 원본의 <bounds>가 요청 범위와 같으면 True.
+
+    매 실행마다 OSM API에서 다시 받으면 (1) 네트워크가 없을 때 실행이 멈추고
+    (2) 그 사이 OSM이 수정되면 지도(도로 수·edge id)가 바뀌어 실험 재현이 깨진다.
+    그래서 같은 범위면 기존 파일을 재사용하고, FETEX_REFRESH_OSM=1일 때만 새로 받는다."""
+    if os.environ.get("FETEX_REFRESH_OSM") == "1" or not os.path.exists(raw_osm):
+        return False
+    try:
+        for _event, elem in ET.iterparse(raw_osm, events=("start",)):
+            if elem.tag == "bounds":
+                got = [float(elem.get(k)) for k in ("minlat", "maxlat", "minlon", "maxlon")]
+                want = [lat_min, lat_max, lng_min, lng_max]
+                return all(abs(a - b) <= tol for a, b in zip(got, want))
+            if elem.tag in ("node", "way"):
+                return False  # bounds 없이 바로 데이터가 시작되면 범위를 확인할 수 없음
+    except ET.ParseError:
+        return False
+    return False
 
 
 def build_real_map_network(lat_min, lat_max, lng_min, lng_max, output_dir):
@@ -116,7 +159,22 @@ def build_real_map_network(lat_min, lat_max, lng_min, lng_max, output_dir):
     filtered_osm = os.path.join(output_dir, "region_filtered.osm.xml")
     net_path = os.path.join(output_dir, "grid.net.xml")
 
-    fetch_osm_data(lat_min, lat_max, lng_min, lng_max, raw_osm)
+    if _cached_osm_matches(raw_osm, lat_min, lat_max, lng_min, lng_max):
+        print(f"[안내] 같은 범위의 OSM 원본이 이미 있어 재사용합니다: {raw_osm} "
+              "(새로 받으려면 환경변수 FETEX_REFRESH_OSM=1)")
+    else:
+        # 다른 설정 폴더(sumo_config, sumo_config_A ...)에 같은 범위 원본이 있으면 복사해서 쓴다
+        import glob
+        import shutil
+        sibling = next((p for p in sorted(glob.glob(os.path.join(os.path.dirname(os.path.abspath(output_dir)),
+                                                                 "*", "region.osm.xml")))
+                        if os.path.abspath(p) != os.path.abspath(raw_osm)
+                        and _cached_osm_matches(p, lat_min, lat_max, lng_min, lng_max)), None)
+        if sibling:
+            shutil.copyfile(sibling, raw_osm)
+            print(f"[안내] 같은 범위의 OSM 원본을 다른 설정 폴더에서 복사해 재사용합니다: {sibling}")
+        else:
+            fetch_osm_data(lat_min, lat_max, lng_min, lng_max, raw_osm)
     filter_osm_data(raw_osm, filtered_osm)
     convert_to_sumo_net(filtered_osm, net_path)
 

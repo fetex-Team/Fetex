@@ -208,6 +208,8 @@ class PassengerSpawnManager:
         self.demand_source = str(CFG.get("demand_source", "synthetic")).lower()
         self.schedule = []
         self.schedule_summary = None
+        self.call_by_pid = {}       # pid -> Call (실데이터 호출)
+        self._real_model = None
         self._schedule_idx = 0
         self.spawn_failures = 0
         if self.demand_source == "real":
@@ -229,6 +231,7 @@ class PassengerSpawnManager:
         date = _dt.date.fromisoformat(str(sim_date)) if sim_date else _dt.date.fromisoformat(
             str(CFG.get("sim_date", "2026-09-07")))
         model = RealDemandModel(meta, CFG)
+        self._real_model = model
         # 날씨 보정(기존 기능 유지): 택시 선택 확률 가산값을 호출량 배율로 바꿔 적용
         weather_factor = 1.0 + self.weather_bonus
         self.schedule = model.build_schedule(date, self.sim_start_hour, self.sim_end_hour,
@@ -242,6 +245,16 @@ class PassengerSpawnManager:
               f"영역 실측 하루 {self.schedule_summary['area_daily_calls_real']:.0f}건 x 배율 {model.scale} "
               f"x 날씨 {weather_factor:.2f} -> {self.sim_start_hour:g}~{self.sim_end_hour:g}시 호출 {len(self.schedule)}건 "
               f"(TIMS 2025 + 서울시 시간대 통계)")
+
+    def cell_mean_time_min(self, cell: str) -> float:
+        """TIMS 셀의 평균 통행시간(분). 모르면 전체 평균."""
+        m = self._real_model
+        if m is None:
+            return 21.0
+        if cell in m.cells:
+            return m.cells[cell].mean_time_min
+        act = list(m.active.values())
+        return sum(c.mean_time_min for c in act) / max(len(act), 1)
 
     def _maintain_real(self, now_seconds: float):
         """미리 만든 스케줄에서 now 이전 호출을 모두 생성. 실패해도 다음 호출은 그대로 진행."""
@@ -261,6 +274,7 @@ class PassengerSpawnManager:
                     pass
                 continue
             self.total_spawned += 1
+            self.call_by_pid[pid] = call
             self._dest_category[pid] = call.kind if call.kind == "external" else call.category
             if self._current_pids is not None:
                 self._current_pids.add(pid)

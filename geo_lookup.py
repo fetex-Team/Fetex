@@ -27,6 +27,8 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 CACHE_PATH = os.path.join(ROOT, "region_cache.json")
 
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+API_TIMEOUT_SEC = 3
+_FAILED_IN_PROCESS = {}
 # 응답 없는 서버를 기다리는 최대 시간(초). 예전 10초 -> 3초 (docs/module1_map_verification.md A-3)
 API_TIMEOUT_SEC = 3
 _FAILED_IN_PROCESS = {}

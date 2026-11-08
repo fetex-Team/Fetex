@@ -15,6 +15,7 @@ RL 재배치 정책 학습 스크립트. headless(sumo, GUI 없음)로 빠르게
 import os
 import sys
 import json
+import shutil
 from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -192,6 +193,12 @@ def main():
         save_vecnormalize=use_vecnorm,
     )
     model.learn(total_timesteps=total_timesteps, callback=[progress_cb, checkpoint_cb])
+    if os.path.exists(MODEL_OUT):
+        backup_dir = os.path.join(PROJECT_ROOT, "rl_model_backups")
+        os.makedirs(backup_dir, exist_ok=True)
+        backup = os.path.join(backup_dir, f"rl_reposition_model_before_{datetime.now():%Y%m%d_%H%M%S}.zip")
+        shutil.copy2(MODEL_OUT, backup)
+        print(f"[백업] 이전 정책 -> {backup}")
     model.save(MODEL_OUT)
     print(f"[완료] 학습된 정책을 저장했습니다: {MODEL_OUT}")
     if use_vecnorm:
@@ -202,7 +209,6 @@ def main():
 
     # ── rl_model_backups 안전 백업 보관 ──
     try:
-        import shutil
         backup_dir = os.path.join(PROJECT_ROOT, "rl_model_backups")
         os.makedirs(backup_dir, exist_ok=True)
         rmode = CFG.get("rl_reward_mode", "default")
@@ -217,4 +223,7 @@ def main():
 
 
 if __name__ == "__main__":
+    sys.path.insert(0, PROJECT_ROOT)
+    from reproducibility import ensure_fixed_hash_seed
+    ensure_fixed_hash_seed()
     main()

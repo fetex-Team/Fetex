@@ -282,9 +282,13 @@ def run_queue_and_wait(combos: list, config_dir_names: list, result_prefix: str,
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
+    env["PYTHONHASHSEED"] = "0"
     category_model = os.environ.get("AI_CATEGORY_MODEL_PATH")
     if category_model:
         env["AI_CATEGORY_MODEL_PATH"] = category_model
+    rl_model = os.environ.get("AI_RL_MODEL_PATH")
+    if rl_model:
+        env["AI_RL_MODEL_PATH"] = rl_model
 
     total = len(combos)
     result_paths = []
@@ -368,6 +372,7 @@ def launch_workers(combos: list, session_dir: str = None) -> list:
     env = os.environ.copy()
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
+    env["PYTHONHASHSEED"] = "0"
 
     result_paths = []
     print(f"[오케스트레이터] 조합 {len(combos)}개를 새 창에서 동시 측정 시작...")

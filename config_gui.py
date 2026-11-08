@@ -17,7 +17,7 @@ PRESET_DIR = os.path.join(ROOT, "presets")
 os.makedirs(PRESET_DIR, exist_ok=True)
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
-STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned"]
+STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
 
 FACTOR_OPTIONS = {
     "taxi_strategy": ("택시 전략 (체크)", STRATEGIES),
@@ -36,6 +36,10 @@ NUMERIC_GROUPS = {
         ("num_passengers", "기본 승객 수", 0, 10000, 0, 1),
         ("sim_start_hour", "시뮬레이션 시작 시각", 0, 23, 0, 1), ("sim_end_hour", "시뮬레이션 종료 시각", 1, 24, 0, 1),
         ("passenger_wait_timeout", "승객 최대 대기시간(초)", 1, 7200, 0, 1),
+        ("real_demand_scale", "실측 수요 배율 (1.0=영역 실측 전체)", 0.01, 5, 2, 0),
+        ("real_internal_trip_km", "영역 안 하차 기준 거리(km)", 0.1, 10, 2, 0),
+        ("real_demand_scale", "실측 수요 배율 (1.0=영역 실측 전체)", 0.01, 5, 2, 0),
+        ("real_internal_trip_km", "영역 안 하차 기준 거리(km)", 0.1, 10, 2, 0),
         ("real_demand_scale", "실측 수요 배율 (1.0=영역 실측 전체)", 0.01, 5, 2, 0),
         ("real_internal_trip_km", "영역 안 하차 기준 거리(km)", 0.1, 10, 2, 0),
         ("depart_jitter_sec", "출발시간 분산 표준편차(초)", 0, 1800, 1, 0),
@@ -135,6 +139,8 @@ CHOICES = [
     ("taxi_dispatch_algorithm", "SUMO taxi dispatch algorithm", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
     ("taxi_idle_algorithm", "SUMO taxi idle algorithm", ["randomCircling", "stopOnRoad", "taxiStop"]),
     ("passenger_mode", "승객 생성 모드", ["replay", "legacy"]),
+    ("demand_source", "수요 출처 (real=실측보정)", ["real", "synthetic"]),
+    ("demand_source", "수요 출처 (real=실측보정)", ["real", "synthetic"]),
     ("demand_source", "수요 출처 (real=실측보정)", ["synthetic", "real"]),
     ("holiday_mode", "공휴일 판정 모드", ["auto", "weekday", "holiday"]),
     ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
@@ -464,7 +470,10 @@ class ConfigGUI:
         # [데이터 품질 검사] 원본 로그를 삭제/수정하지 않고 이상 여부만 검사한다.
         quality_bar = ttk.Frame(bottom_frame)
         quality_bar.pack(fill="x", padx=12, pady=(0, 4))
-        ttk.Button(quality_bar, text="🔎 수요 로그 데이터 검사", command=self.open_data_quality_checker).pack(
+        ttk.Button(quality_bar, text="📊 실측 수요 데이터 품질 검사", command=self.open_data_quality_checker).pack(
+            side="left", fill="x", expand=True, padx=3
+        )
+        ttk.Button(quality_bar, text="📦 현재 모델 스냅샷 저장 (날짜+택시계수)", command=self.snapshot_current_models).pack(
             side="left", fill="x", expand=True, padx=3
         )
 
@@ -893,6 +902,8 @@ class ConfigGUI:
         e = os.environ.copy()
         e["PYTHONIOENCODING"] = "utf-8"
         e["PYTHONUTF8"] = "1"
+        e["PYTHONHASHSEED"] = "0"  # 실행 재현성 (reproducibility.py 참고)
+        e["PYTHONHASHSEED"] = "0"  # 실행 재현성 (reproducibility.py 참고)
         return e
 
     def _run(self, script, args=(), blocking=False, env_extra=None):
@@ -918,6 +929,123 @@ class ConfigGUI:
         self.save_config_only()
         if self._run(os.path.join("module1_simulation", "build_env.py"), blocking=True):
             self._run("main.py")
+
+    def snapshot_current_models(self):
+        """현재 saved_models의 수요예측 모델들과 module4_dispatch의 RL 모델을
+        '날짜_taxi{대수}' 폴더에 스냅샷으로 영구 보관합니다."""
+        c = self.current()
+        num_taxis = int(c.get("num_taxis", 70))
+        today_str = datetime.now().strftime("%m%d")
+        default_name = f"{today_str}_taxi{num_taxis}"
+
+        sm_dir = os.path.join(ROOT, "saved_models")
+        os.makedirs(sm_dir, exist_ok=True)
+        cand_name = default_name
+        cnt = 1
+        while os.path.exists(os.path.join(sm_dir, cand_name)):
+            cnt += 1
+            cand_name = f"{default_name}_{cnt}"
+
+        from tkinter import simpledialog
+        folder_name = simpledialog.askstring(
+            "모델 스냅샷 저장",
+            f"현재 RL 및 수요예측 모델을 보관할 폴더명을 입력하세요:\n(saved_models/<폴더명> 에 저장됩니다)",
+            initialvalue=cand_name,
+            parent=self.root,
+        )
+        if not folder_name:
+            return
+        folder_name = folder_name.strip()
+        dst_dir = os.path.join(sm_dir, folder_name)
+        os.makedirs(dst_dir, exist_ok=True)
+
+        copied_files = []
+        # 1. saved_models 루트의 모델 파일들 복사
+        for fname in os.listdir(sm_dir):
+            fpath = os.path.join(sm_dir, fname)
+            if os.path.isfile(fpath) and (fname.endswith(".pkl") or fname.endswith(".joblib") or fname.endswith(".pt")):
+                shutil.copy2(fpath, os.path.join(dst_dir, fname))
+                copied_files.append(fname)
+
+        # 2. module4_dispatch의 RL 모델 파일들 복사
+        m4_dir = os.path.join(ROOT, "module4_dispatch")
+        rl_zip = os.path.join(m4_dir, "rl_reposition_model.zip")
+        rl_norm = os.path.join(m4_dir, "rl_reposition_model_vecnorm.pkl")
+        if os.path.exists(rl_zip):
+            shutil.copy2(rl_zip, os.path.join(dst_dir, "rl_reposition_model.zip"))
+            copied_files.append("rl_reposition_model.zip")
+        if os.path.exists(rl_norm):
+            shutil.copy2(rl_norm, os.path.join(dst_dir, "rl_reposition_model_vecnorm.pkl"))
+            copied_files.append("rl_reposition_model_vecnorm.pkl")
+
+        # 3. 스냅샷 메타정보 저장
+        meta_info = {
+            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "folder_name": folder_name,
+            "num_taxis": num_taxis,
+            "demand_source": c.get("demand_source", "real"),
+            "real_demand_scale": c.get("real_demand_scale", 1.0),
+            "rl_reward_mode": c.get("rl_reward_mode", "default"),
+            "files": copied_files,
+        }
+        with open(os.path.join(dst_dir, "snapshot_meta.json"), "w", encoding="utf-8") as f:
+            json.dump(meta_info, f, ensure_ascii=False, indent=2)
+
+        messagebox.showinfo(
+            "저장 완료",
+            f"현재 모델 스냅샷이 성공적으로 저장되었습니다!\n\n"
+            f"📁 위치: saved_models/{folder_name}\n"
+            f"📄 포함 파일: {len(copied_files)}개 (RL zip, 수요예측 pkl 등)\n\n"
+            f"A/B 테스트 창의 '선호 모델 프리셋'에서 바로 선택하여 비교하실 수 있습니다."
+        )
+        self.status.config(text=f"모델 스냅샷 저장 완료: saved_models/{folder_name}")
+
+    def _list_model_snapshots(self):
+        """saved_models/ 하위의 스냅샷 폴더들을 탐색하여
+        [(라벨, dir_path, category_model_path, rl_model_path, meta)] 리스트 반환."""
+        sm_dir = os.path.join(ROOT, "saved_models")
+        results = [
+            ("기본 (현재 활성 모델)", sm_dir,
+             os.path.join(sm_dir, "category_demand_models.pkl"),
+             os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip"),
+             {"num_taxis": self.current().get("num_taxis", 70)}),
+        ]
+        if not os.path.isdir(sm_dir):
+            return results
+
+        for name in sorted(os.listdir(sm_dir)):
+            p = os.path.join(sm_dir, name)
+            if not os.path.isdir(p) or name.startswith(".") or name == "saved_models_backups":
+                continue
+            cat_path = os.path.join(p, "category_demand_models.pkl")
+            rl_path = os.path.join(p, "rl_reposition_model.zip")
+            meta_path = os.path.join(p, "snapshot_meta.json")
+
+            meta = {}
+            if os.path.exists(meta_path):
+                try:
+                    with open(meta_path, "r", encoding="utf-8") as mf:
+                        meta = json.load(mf)
+                except Exception:
+                    pass
+
+            if os.path.exists(cat_path) or os.path.exists(rl_path):
+                taxi_str = f"택시 {meta.get('num_taxis', '?')}대" if "num_taxis" in meta else "모델 세트"
+                created = meta.get("created_at", "")[:10]
+                label_parts = [name, f"({taxi_str}"]
+                if created:
+                    label_parts.append(f"| {created}")
+                label_parts.append(")")
+                label = " ".join(label_parts).replace("( ", "(").replace(" )", ")")
+
+                results.append((
+                    label,
+                    p,
+                    cat_path if os.path.exists(cat_path) else None,
+                    rl_path if os.path.exists(rl_path) else None,
+                    meta
+                ))
+        return results
 
     def _backup_saved_models(self, rl_total_timesteps: int, skip_v2: bool = False):
         """train.py가 saved_models/를 덮어쓰기 전에, 날짜/시각 붙여서 통째로 백업.
@@ -1356,22 +1484,22 @@ class ConfigGUI:
 
     def open_ab_compare_dialog(self):
         win = tk.Toplevel(self.root)
-        win.title("A/B 비교하기")
-        win.geometry("420x650")
+        win.title("A/B 다중비교 설정")
+        win.geometry("460x730")
         win.resizable(False, False)
 
         ttk.Label(
             win,
-            text="비교할 값을 체크하세요. 체크된 값들의 카테시안 조합(전체 곱)이\n"
-                 "2개 이상이면 비교가 진행됩니다. (항목별로는 1개만 체크해도 됨)",
-            padding=10, wraplength=340, justify="left",
+            text="비교할 인자를 체크하세요. 선택된 인자의 모든 조합(직교 곱)을\n"
+                 "2개 이상으로 자동 병렬 실행합니다.",
+            padding=10, wraplength=420, justify="left",
         ).pack()
 
         value_vars = {}
 
         for key, (label, values) in FACTOR_OPTIONS.items():
             box = ttk.LabelFrame(win, text=label, padding=8)
-            box.pack(fill="x", padx=15, pady=6)
+            box.pack(fill="x", padx=15, pady=4)
             value_vars[key] = {}
             for v in values:
                 var = tk.BooleanVar(value=False)
@@ -1384,20 +1512,49 @@ class ConfigGUI:
             _t = _date.today()
             _today_txt = f"오늘({_t})은 {'공휴일/주말' if is_holiday_date(_t) else '평일'}"
         except Exception:
-            _today_txt = "오늘 날짜로 평일/공휴일 자동 판정"
-        ttk.Label(win, text=f"※ 공휴일 칸을 체크 안 하면 {_today_txt}로 실행해요.",
+            _today_txt = "오늘 날짜의 평일/공휴일 판정 적용"
+        ttk.Label(win, text=f"* 공휴일 판정 미체크 시 기본으로 {_today_txt}로 실행됩니다.",
                   foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
 
+        # ── [선호 모델 프리셋 (RL 및 수요예측 스냅샷)] ──
+        snapshots = self._list_model_snapshots()
+        snap_box = ttk.LabelFrame(win, text="⭐ 선호 모델 프리셋 (스냅샷 세트)", padding=8)
+        snap_box.pack(fill="x", padx=15, pady=6)
+
+        snap_var = tk.StringVar(value=snapshots[0][0])
+        snap_combo = ttk.Combobox(snap_box, textvariable=snap_var, values=[s[0] for s in snapshots],
+                                  state="readonly", width=46)
+        snap_combo.pack(fill="x")
+
+        snap_info_lbl = ttk.Label(snap_box, text="현재 활성 RL 모델 및 수요예측 모델 세트를 사용합니다.",
+                                  foreground="#2563eb", font=("맑은 고딕", 9))
+        snap_info_lbl.pack(anchor="w", pady=(4, 0))
+
+        def _on_snap_change(*args):
+            chosen = snap_var.get()
+            meta = {}
+            for s in snapshots:
+                if s[0] == chosen:
+                    meta = s[4]
+                    break
+            if "num_taxis" in meta:
+                t = meta["num_taxis"]
+                dt = meta.get("created_at", "")
+                snap_info_lbl.config(text=f"📌 저장 정보: 택시 {t}대 환경 | 저장일시: {dt}")
+            else:
+                snap_info_lbl.config(text="현재 활성 RL 모델 및 수요예측 모델 세트를 사용합니다.")
+
+        snap_var.trace_add("write", _on_snap_change)
+
+        # 기존 개별 수요예측 모델 선택기 (선호 프리셋이 '기본'일 때 보조 사용)
         models = self._list_category_models()
-        model_box = ttk.LabelFrame(win, text="수요예측 모델 (선택)", padding=8)
-        model_box.pack(fill="x", padx=15, pady=6)
+        model_box = ttk.LabelFrame(win, text="수요예측 모델 (기본 모드 시 세부 선택)", padding=8)
+        model_box.pack(fill="x", padx=15, pady=4)
         model_var = tk.StringVar(value=models[0][0])
         ttk.Combobox(model_box, textvariable=model_var, values=[m[0] for m in models],
-                     state="readonly", width=44).pack(fill="x")
-        ttk.Label(model_box, text="rl_prepositioned 전략이 참고하는 수요예측입니다.",
-                  foreground="#6b7280").pack(anchor="w", pady=(4, 0))
-        ttk.Label(win, text="※ 비교로 생긴 로그를 학습에 쓰려면 '학습만 실행' 창에서 고르세요.",
-                  foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
+                     state="readonly", width=46).pack(fill="x")
+        ttk.Label(model_box, text="* 프리셋이 '기본'일 때만 적용되며, 스냅샷 선택 시 스냅샷 내 모델이 우선합니다.",
+                  foreground="#6b7280", wraplength=400, justify="left").pack(anchor="w", pady=(2, 0))
 
         def run_compare():
             selected = {}
@@ -1407,7 +1564,7 @@ class ConfigGUI:
                     selected[key] = chosen
 
             if not selected:
-                messagebox.showwarning("경고", "비교할 항목을 하나 이상 체크하세요.")
+                messagebox.showwarning("경고", "비교할 인자를 하나 이상 체크하세요.")
                 return
 
             total_combos = 1
@@ -1416,8 +1573,8 @@ class ConfigGUI:
             if total_combos < 2:
                 messagebox.showwarning(
                     "경고",
-                    f"현재 체크된 조합은 {total_combos}개뿐이라 비교가 안 됩니다. "
-                    f"전체 조합(항목별 체크 수를 곱한 값)이 2개 이상 되도록 더 체크하세요.",
+                    f"현재 선택된 조합은 {total_combos}개뿐이라 비교할 수 없습니다. "
+                    f"하나 이상(예: 전략 2개 또는 알고리즘 2개 등)을 2개 이상 선택해 다중 조합을 만드세요.",
                 )
                 return
 
@@ -1427,27 +1584,45 @@ class ConfigGUI:
 
             if len(combos) > 4:
                 if not messagebox.askyesno(
-                        "ℹ 순차 큐 실행 안내",
-                        f"비교할 조합이 총 {len(combos)}개입니다.\n"
-                        f"PC 과부하 방지를 위해 최대 4개 슬롯으로 순차 투입되어 안전하게 실행됩니다.\n\n"
-                        f"실행할까요?"):
+                        "조합 수 확인",
+                        f"선택하신 조합이 총 {len(combos)}개입니다.\n"
+                        f"PC 리소스에 따라 시간이 많이 걸릴 수 있습니다.\n\n"
+                        f"계속하시겠습니까?"):
                     return
 
             if "holiday_mode" not in selected:
                 for _c in combos:
-                    _c["holiday_mode"] = "today"   # 미체크: 오늘 날짜 기준 자동 판정
+                    _c["holiday_mode"] = "today"
 
             win.destroy()
             self.save_config_only()
-            model_path = dict(models)[model_var.get()]
-            # 실행 버튼을 다시 눌러도 설정이 섞이지 않도록, 이 클릭 시점의 설정을
-            # 대기열 작업과 함께 전달한다. 실제 시작 순서는 multi_factor_compare.py가 관리한다.
+
+            # 선택된 스냅샷 처리
+            chosen_snap = None
+            for s in snapshots:
+                if s[0] == snap_var.get():
+                    chosen_snap = s
+                    break
+
+            extra_env = {}
+            if chosen_snap and chosen_snap[1] != os.path.join(ROOT, "saved_models"):
+                # 특정 스냅샷(예: 1103, 1108_taxi70 등) 선택 시
+                if chosen_snap[2] and os.path.exists(chosen_snap[2]):
+                    extra_env["AI_CATEGORY_MODEL_PATH"] = chosen_snap[2]
+                if chosen_snap[3] and os.path.exists(chosen_snap[3]):
+                    extra_env["AI_RL_MODEL_PATH"] = chosen_snap[3]
+            else:
+                # 기본 모드: 기존 콤보박스 선택값 사용
+                model_path = dict(models).get(model_var.get())
+                if model_path:
+                    extra_env["AI_CATEGORY_MODEL_PATH"] = model_path
+
             config_snapshot = self.current()
             self._run("multi_factor_compare.py", [json.dumps(combos, ensure_ascii=False),
                                                     json.dumps(config_snapshot, ensure_ascii=False)],
-                      env_extra={"AI_CATEGORY_MODEL_PATH": model_path})
+                      env_extra=extra_env)
 
-        ttk.Button(win, text="실행 (최대 4개 슬롯 · 추가 실행은 대기열)", command=run_compare).pack(pady=15, fill="x", padx=15)
+        ttk.Button(win, text="🚀 A/B 다중비교 실행", command=run_compare).pack(pady=12, fill="x", padx=15)
 
     def _build_log_picker(self, parent, persist=True, allow_copy=False):
         """학습 팝업 안에 들어가는 '학습에 쓸 로그' 선택 목록. 반환값 save()를 호출하면 selected_logs.json에 저장.
