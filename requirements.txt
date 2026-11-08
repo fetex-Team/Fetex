@@ -28,6 +28,7 @@ tqdm
 
 stable_baselines3
 psutil
+flask
 rtree
 # 지도 POI 좌표 변환(없으면 POI 구역이 조용히 랜덤 배정됨) / 공휴일 판정
 pyproj

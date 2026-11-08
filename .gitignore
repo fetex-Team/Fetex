@@ -48,3 +48,5 @@ data/external/topis/
 results/repeat/*/edgespeed/
 # 경찰청 신호 API 원본 (용량 큼, tools/fetch_signal_plans.py로 다시 받기). 시뮬레이션은 data/external/signal_plans_gangnam.json만 읽음
 data/external/signal_plans/
+results/dashboard_jobs/
+results/dashboard_cache/

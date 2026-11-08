@@ -75,6 +75,7 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 ## 결과 요약 — 근거 기반 디지털 트윈 (7일, 택시 61대, 같은 손님 목록)
 
 **결론: 배차 방법 간 차이는 없고, 결과는 택시 수가 좌우한다.** 전체 표는 [`docs/RESULTS_SUMMARY.md`](docs/RESULTS_SUMMARY.md).
+조건을 바꿔 직접 돌려 보려면 대시보드: `python dashboard/app.py` ([`docs/DASHBOARD.md`](docs/DASHBOARD.md)).
 
 | 전략 | 서비스율 | 평균 대기 |
 |---|---:|---:|
@@ -91,6 +92,7 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 
 ## 문서
 - [`docs/RESULTS_SUMMARY.md`](docs/RESULTS_SUMMARY.md) — 결과 요약표 (항목·결과·근거·원자료)
+- [`docs/DASHBOARD.md`](docs/DASHBOARD.md) — 대시보드: `python dashboard/app.py` (결과 비교·조건 바꿔 실행·Unity 재생 파일)
 - [`REPORT.md`](REPORT.md) — 통합 보고서
 - [`docs/design/`](docs/design/README.md) — 설계 결정 기록 (무엇을 왜 바꿨는지, 근거 수치)
 - [`docs/real_data_calibration.md`](docs/real_data_calibration.md) — 실측 수요 보정 방법·검증

@@ -1,0 +1,15 @@
+{
+ "label": "대시보드 점검: 택시 70대",
+ "note": "",
+ "dates": [
+  "2026-10-14"
+ ],
+ "strategies": [
+  "patrol"
+ ],
+ "overrides": {
+  "num_taxis": 70
+ },
+ "created": "2026-11-08T04:03:51",
+ "source": "dashboard"
+}

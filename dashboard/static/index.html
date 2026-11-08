@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gangnam Taxi Twin — FeTex</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg viewBox="0 0 24 24" class="mark" aria-hidden="true"><path d="M12 2 21 7v10l-9 5-9-5V7z" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M12 7.5 16.5 10v4.9L12 17.5 7.5 14.9V10z" fill="currentColor"/></svg>
+      <div><div class="b1">Gangnam Twin</div><div class="b2">FeTex · 과제 12</div></div>
+    </div>
+    <nav id="nav">
+      <div class="nav-sec">분석</div>
+      <a data-tab="overview" class="on"><svg viewBox="0 0 20 20"><path d="M3 10.5 10 4l7 6.5V16a1 1 0 0 1-1 1h-3.5v-4h-5v4H4a1 1 0 0 1-1-1z"/></svg>개요</a>
+      <a data-tab="compare"><svg viewBox="0 0 20 20"><path d="M4 16V9M10 16V4M16 16v-5"/></svg>실험 비교</a>
+      <a data-tab="sens"><svg viewBox="0 0 20 20"><path d="M10 3v14M4 6h6M10 9h6M6 12h4M10 15h3"/></svg>민감도</a>
+      <div class="nav-sec">실행</div>
+      <a data-tab="run"><svg viewBox="0 0 20 20"><path d="M4 6h8M15 6h1M4 14h2M9 14h7"/><circle cx="13.5" cy="6" r="1.8"/><circle cx="7.5" cy="14" r="1.8"/></svg>새 시뮬레이션</a>
+      <a data-tab="jobs"><svg viewBox="0 0 20 20"><path d="M4 5h12M4 10h12M4 15h7"/></svg>작업<span id="jobBadge" class="pill-count hidden"></span></a>
+      <a data-tab="unity"><svg viewBox="0 0 20 20"><path d="m10 3 6 3.5v7L10 17l-6-3.5v-7z"/><path d="M10 10v7M10 10l6-3.5M10 10 4 6.5"/></svg>Unity 재생</a>
+    </nav>
+    <div class="side-foot">
+      <div class="env"><span class="dot-live"></span><span id="envText">로컬 · 127.0.0.1</span></div>
+      <button id="themeBtn" class="icon-btn" title="라이트/다크 전환" aria-label="테마 전환"><svg viewBox="0 0 20 20"><path d="M15.5 12.5A6 6 0 0 1 7.5 4.5a6 6 0 1 0 8 8z"/></svg></button>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <div>
+        <div class="crumb" id="crumb">분석</div>
+        <h1 id="pageTitle">개요</h1>
+      </div>
+      <div class="top-right" id="topRight"></div>
+    </header>
+
+    <!-- 개요 -->
+    <section id="tab-overview" class="page on">
+      <div class="kpis" id="kpis"></div>
+      <div class="grid g-12">
+        <div class="card span-5">
+          <div class="card-h"><div><h2>디지털 트윈 — 강남역 1km²</h2><p id="mapSub">도로망과 H3 칸별 하루 호출</p></div><div class="legend-seq" id="mapLegend"></div></div>
+          <div id="map" class="map"></div>
+          <div class="facts" id="mapFacts"></div>
+        </div>
+        <div class="span-7 stack">
+          <div class="card"><div class="card-h"><div><h2>전략별 서비스율</h2><p id="ovN"></p></div></div><div id="ovRate"></div></div>
+          <div class="card"><div class="card-h"><div><h2>순찰 대비 평균 대기</h2><p>날짜별로 짝지은 차이 · 95% 신뢰구간</p></div></div><div id="ovCI"></div></div>
+          <div class="card"><div class="card-h"><div><h2>시간대별 호출</h2><p id="ovHourSub"></p></div></div><div id="ovHour"></div></div>
+        </div>
+        <div class="card span-12">
+          <div class="card-h"><div><h2>날짜별 서비스율</h2><p>같은 날짜는 네 전략이 같은 손님 목록</p></div><div class="legend" id="ovLegend"></div></div>
+          <div id="ovDates"></div>
+        </div>
+        <div class="card span-12">
+          <div class="card-h"><div><h2>조건과 근거</h2><p>모든 설정값의 출처 — <code>docs/design/08_evidence_register.md</code></p></div><div class="grades" id="gradeKey"></div></div>
+          <div id="ovParams"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 실험 비교 -->
+    <section id="tab-compare" class="page">
+      <div class="grid cmp">
+        <div class="card list-card">
+          <div class="search"><svg viewBox="0 0 20 20"><circle cx="9" cy="9" r="5.5"/><path d="m13 13 4 4"/></svg><input id="expSearch" placeholder="실험 검색"></div>
+          <div id="expList" class="exp-list"></div>
+        </div>
+        <div class="stack">
+          <div class="card">
+            <div class="card-h"><div><h2 id="cmpTitle">실험을 고르세요</h2><p id="cmpNote"></p></div></div>
+            <div class="chips-row" id="cmpChips"></div>
+            <div id="cmpTable"></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><div><h2>날짜별</h2><p id="cmpDatesSub"></p></div>
+              <div class="seg" id="cmpMetric">
+                <button data-m="service_rate" class="on">서비스율</button><button data-m="avg_wait_sec">평균 대기</button><button data-m="n_timeout_removed">놓친 손님</button><button data-m="p90_wait_sec">90% 대기</button>
+              </div></div>
+            <div class="legend" id="cmpLegend"></div>
+            <div id="cmpDates"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 민감도 -->
+    <section id="tab-sens" class="page">
+      <div class="card">
+        <div class="card-h"><div><h2>무엇이 결과를 바꾸나</h2><p>가정을 하나씩 바꾼 실험 vs 기준 실험의 같은 날짜 (순찰 전략). 주황 = 서비스율 하락, 파랑 = 상승.</p></div></div>
+        <div id="sensChart"></div>
+      </div>
+      <div class="card"><div class="card-h"><div><h2>표로 보기</h2></div></div><div id="sensTable"></div></div>
+    </section>
+
+    <!-- 새 시뮬레이션 -->
+    <section id="tab-run" class="page">
+      <form id="runForm" class="grid run">
+        <div class="stack" id="runParams"></div>
+        <div class="card sticky">
+          <div class="card-h"><div><h2>실행 설정</h2><p>바꾼 조건만 실험에 적용됩니다</p></div></div>
+          <label class="fld"><span>실험 이름</span><input name="name" placeholder="예: taxi70_poi (비우면 자동)"></label>
+          <label class="fld"><span>설명</span><input name="label" placeholder="예: 택시 70대 + 건물 배수"></label>
+          <div class="fld"><span>전략</span><div id="runStrategies" class="toggles"></div></div>
+          <div class="fld"><span>날짜</span><div id="runDates" class="toggles days"></div>
+            <input id="runDateExtra" placeholder="추가 날짜 (예: 2026-09-21, 쉼표로)"></div>
+          <div class="fld"><span>동시 실행</span><div class="seg" id="runJobs"></div></div>
+          <div class="summary" id="runSummary"></div>
+          <div class="actions"><button type="button" class="btn ghost" id="runReset">초기화</button><button type="submit" class="btn primary"><svg viewBox="0 0 20 20"><path d="M6 4.5v11l9-5.5z"/></svg>시뮬레이션 실행</button></div>
+          <div id="runMsg"></div>
+        </div>
+      </form>
+    </section>
+
+    <!-- 작업 -->
+    <section id="tab-jobs" class="page">
+      <div class="card"><div class="card-h"><div><h2>작업</h2><p>한 번에 한 작업씩 실행됩니다. 끝난 실행은 저장돼 멈춰도 이어서 할 수 있습니다.</p></div></div><div id="jobList"></div></div>
+      <div class="card"><div class="card-h"><div><h2>로그</h2><p id="logTitle">작업을 고르면 실시간 로그가 보입니다</p></div></div><pre id="logBox" class="console"></pre></div>
+    </section>
+
+    <!-- Unity -->
+    <section id="tab-unity" class="page">
+      <div class="grid g-12">
+        <form id="unityForm" class="card span-5">
+          <div class="card-h"><div><h2>재생 파일 만들기</h2><p>고른 날짜·조건으로 시뮬레이션을 돌려 차량 궤적을 기록 (전략당 약 10분)</p></div></div>
+          <label class="fld"><span>조건</span><select id="unityFrom"><option value="">현재 기본 조건</option></select></label>
+          <label class="fld"><span>날짜</span><select name="date" id="unityDate"></select></label>
+          <div class="fld"><span>전략</span><div id="unityStrategies" class="toggles"></div></div>
+          <label class="fld"><span>이름</span><input name="name" placeholder="비우면 replay_날짜"></label>
+          <label class="fld"><span>Unity StreamingAssets 폴더 <em>선택</em></span><input name="unity_dir" placeholder="C:\…\Assets\StreamingAssets — 끝나면 자동 복사"></label>
+          <div class="note" id="unityOverrides"></div>
+          <div class="actions"><button type="submit" class="btn primary">재생 파일 만들기</button></div>
+          <div id="unityMsg"></div>
+        </form>
+        <div class="card span-7">
+          <div class="card-h"><div><h2>재생 파일</h2><p>map.json + 전략별 .json.gz → Unity FetexReplayPlayer</p></div></div>
+          <div id="unityList"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+<div id="tip" class="tip" role="tooltip"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
