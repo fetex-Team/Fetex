@@ -67,27 +67,30 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | `real_internal_trip_km` | 1.0 | 이보다 짧은 운행만 영역 안 하차(나머지는 경계 도로로 나감) |
 | `h3_resolution` | 8 | 예측·재배치 격자 (근거: `docs/real_data_calibration.md` 4절) |
 | `dispatch_cost` | `network` | 헝가리안 비용: 도로망 최단 이동시간(다익스트라) / `euclidean` = 예전 직선 거리 |
-| `num_taxis` | 50 | 택시 대수 (카카오 몫 수요에서 서비스율 99% 이상) |
+| `num_taxis` | 61 | 택시 대수 (국토부 통행량·영업통계로 추정, `tools/estimate_taxi_supply.py`) |
 | `taxi_strategy` | `prepositioned` | `patrol` / `prepositioned` / `rl_prepositioned` |
 | `taxi_dispatch_algorithm` | `hungarian` | 현재 호출 매칭 방식 |
 | `sim_date`, `run_date_mode` | 2026-09-07, `alternate` | 비교 실험은 `sim_date`로 날짜 고정 |
 
-## 결과 요약 (7일 반복, 9~23시, 택시 50대 — 날짜마다 세 전략 같은 손님 목록)
-| 전략 | 평균 대기 (카카오 몫)<br>직선 거리 → **도로 이동시간** | 타임아웃/일 (손님 100%)<br>직선 거리 → **도로 이동시간** |
-|---|---|---|
-| **patrol** | 80.6초 → **60.1초** | 306 → **266명** |
-| prepositioned | 86.5초 → 69.6초 | 306 → 315명 |
-| rl_prepositioned | 91.2초 → 75.5초 | 316 → 330명 |
-| **forecast** (예측 재배치, 새 전략) | — → **59.4초** | — → 294명 |
+## 결과 요약 — 근거 기반 디지털 트윈 (7일, 택시 61대, 같은 손님 목록)
 
-- **헝가리안 매칭 비용을 직선 거리 → 다익스트라 도로 이동시간으로 바꿔 세 전략 모두 평균 대기 10~20초 단축** (`"dispatch_cost": "network"`, 기본값)
-- 가장 좋은 조합: **순찰 + 헝가리안(도로 이동시간)**. 미리 옮겨 두는 전략(선배치·RL)은 7일 모두 평균 대기가 더 길다
-- 수요 예측(H3 res 8, 30분 앞) WAPE **26.4%** — 포아송 잡음 하한 24.8%, 나이브 36.2%
-- Unity 재생 회전 구간 도로 이탈 **56.0% → 0.6%**, 재생 파일 48MB → 8MB(gzip)
+**결론: 배차 방법 간 차이는 없고, 결과는 택시 수가 좌우한다.** 전체 표는 [`docs/RESULTS_SUMMARY.md`](docs/RESULTS_SUMMARY.md).
+
+| 전략 | 서비스율 | 평균 대기 |
+|---|---:|---:|
+| 순찰 `patrol` | 95.7% | 153초 |
+| 예측 재배치 `forecast` | 95.8% | 154초 |
+| 시간표 선배치 `prepositioned` | 95.5% | 166초 |
+| RL `rl_prepositioned` | 95.7% | 180초 |
+
+- 도로 속도 실측 대비 2.1배 → 0.93배 (버스차로·5030·경찰청 신호·TOPIS 정체)
+- 근거 없던 값 교체: 손님 위치(생활인구 250m), 택시 61대, 포기 시간 600초, 구역 안 하차 5.4%. 설정 42개 근거 대장
+- 민감도: 택시 61→50대 −21%p, 나간 택시 늦게 복귀 −22%p, 손님 쪽 가정 ±2.3%p
 
 자세한 수치·한계는 [`REPORT.md`](REPORT.md).
 
 ## 문서
+- [`docs/RESULTS_SUMMARY.md`](docs/RESULTS_SUMMARY.md) — 결과 요약표 (항목·결과·근거·원자료)
 - [`REPORT.md`](REPORT.md) — 통합 보고서
 - [`docs/design/`](docs/design/README.md) — 설계 결정 기록 (무엇을 왜 바꿨는지, 근거 수치)
 - [`docs/real_data_calibration.md`](docs/real_data_calibration.md) — 실측 수요 보정 방법·검증
