@@ -46,6 +46,29 @@ DOW_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # 원본 일별 zip(약 15MB, cp949)에서 tools/extract_living_pop.py로 뽑았다.
 LIVING_POP_PATH = os.path.join(DATA_DIR, "seoul_living_pop", "living_pop_250m_gangnam_20261026_1101.csv")
 DAY_TYPES = ("weekday", "saturday", "sunday")
+# 한국교통연구원 「택시 기종점 통행량」(부동산 빅데이터 플랫폼, 파일 ES1004AO00101QY2404, 기준월 202312, 평일 WEEK_CD=1)에서
+# 강남역 500m 격자 9칸 출발 행만 추린 것. 격자 표기 '다사58a44b' = 1km 번호 + 500m 반칸(a/b) (tools/extract_taxi_od.py)
+OD_INTERNAL_PATH = os.path.join(DATA_DIR, "taxi_od", "od_gangnam_internal_share.csv")
+OD_HOURLY_PATH = os.path.join(DATA_DIR, "taxi_od", "od_gangnam_hourly.csv")
+
+
+def od_grid_code(code500: str) -> str:
+    """500m 국가격자 '다사116089' -> 기종점 자료 표기 '다사58a44b' (1km 번호 + 500m 반칸 a/b)."""
+    ix, iy = int(code500[2:5]), int(code500[5:8])
+    return f"{code500[:2]}{ix // 2:02d}{'ab'[ix % 2]}{iy // 2:02d}{'ab'[iy % 2]}"
+
+
+def load_od_internal(path: str = OD_INTERNAL_PATH) -> dict[str, float]:
+    """기종점 격자 -> 출발 통행 중 강남역 9칸 안에서 끝나는 비율."""
+    return {r["grid_od"]: float(r["internal_share"]) for r in _read_csv(path)}
+
+
+def load_od_hourly(path: str = OD_HOURLY_PATH) -> list[float]:
+    """평일 0~23시 비율. TM_CD 1~24 = 0~1시 … 23~24시로 본다(코드가 1부터 시작)."""
+    rows = {int(r["tm_cd"]): float(r["weekday_trips"]) for r in _read_csv(path)}
+    vals = [rows.get(h + 1, 0.0) for h in range(24)]
+    tot = sum(vals)
+    return [v / tot for v in vals]
 
 # 시간대별 POI 가중치 (같은 500m 칸 안에서 어느 도로에서 호출이 더 자주 나는지).
 # 칸별 총량은 TIMS 실측으로 고정되고, 이 값은 칸 "안"의 배분만 바꾼다.
@@ -312,6 +335,17 @@ class RealDemandModel:
             if self.spatial_source == "living_pop_250m" else {}
         self._day_type = "weekday"
         self.hourly = load_hourly_profile(hourly_path)
+        # 시간대 비율: "seoul_2025"(기본, 서울 전체 택시 2025) / "gangnam_od"(평일만 강남역 기종점 자료 비율, 비교용 — 표본 편차 있음)
+        self.hourly_source = str(cfg.get("real_hourly_profile", "seoul_2025"))
+        if self.hourly_source == "gangnam_od":
+            self.hourly = {**self.hourly, "weekday": load_od_hourly()}
+        elif self.hourly_source != "seoul_2025":
+            raise ValueError(f"real_hourly_profile은 'seoul_2025' 또는 'gangnam_od'이어야 합니다: {self.hourly_source}")
+        # 구역 안 하차 비율: "taxi_od"(기본, 칸별 실측 비율) / "exp_distance"(예전: 평균 운행거리 지수분포 + 1km 기준)
+        self.internal_source = str(cfg.get("real_internal_source", "taxi_od"))
+        if self.internal_source not in ("taxi_od", "exp_distance"):
+            raise ValueError(f"real_internal_source는 'taxi_od' 또는 'exp_distance'이어야 합니다: {self.internal_source}")
+        self.od_internal = load_od_internal() if self.internal_source == "taxi_od" else {}
         # 요일 배율: "seoul_2022_01"(기본, 서울 교통이용 통계보고서 2022년 1월 p.2) / "flat"(평일 안·주말 안 차이 없음, 민감도 분석용)
         self.dow_source = str(cfg.get("real_dow_factors", "seoul_2022_01"))
         if self.dow_source == "flat":
@@ -432,8 +466,14 @@ class RealDemandModel:
         return {c: v / tot for c, v in w.items()}
 
     def internal_share(self, code: str) -> float:
-        """영역 안에서 끝나는 손님 비율. 운행거리가 평균 L km인 지수분포라고 보고
-        P(거리 < real_internal_trip_km) = 1 - exp(-d/L). (강남역 칸 평균 L≈10.5km -> 약 9%)"""
+        """영역 안에서 끝나는 손님 비율.
+        taxi_od(기본): 기종점 자료에서 그 칸 출발 통행 중 강남역 9칸 안 도착 비율 (칸별 3.7~7.8%, 전체 5.4%).
+        exp_distance: 운행거리가 평균 L km인 지수분포라고 보고 P(거리 < real_internal_trip_km) = 1 - exp(-d/L) (약 9%)."""
+        if self.internal_source == "taxi_od":
+            v = self.od_internal.get(od_grid_code(code))
+            if v is not None:
+                return v
+            return sum(self.od_internal.values()) / max(len(self.od_internal), 1)
         mean_km = max(self.cells[code].mean_dist_km, 0.1)
         return 1 - math.exp(-self.internal_km / mean_km)
 

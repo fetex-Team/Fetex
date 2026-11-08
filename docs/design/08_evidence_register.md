@@ -49,7 +49,9 @@
 | 비 | `weather_precip_coef_per_mm` | `0.0199` | D | 강수 1mm당 +1.99% (95% CI +0.23~+3.79%, p=0.027) — 수도권 생활이동(강남구 출발) × 기상청 ASOS 시간 회귀 (`docs/weather_coefficient.md`) |
 | 비 상한 | `weather_precip_cap_mm` | `30.0` | G | 회귀 자료의 관측 범위 밖 외삽 방지 |
 | 그날 실측 날씨 | `use_historical_weather` | `true` | A | Open-Meteo 과거 날씨(ERA5) 시간별 강수 |
-| 구역 안 하차 기준 | `real_internal_trip_km` | `1.0` | G | TIMS 칸별 평균 운행거리(강남역 약 10.5km)를 지수분포로 보고 1km 안에서 끝나는 비율(약 9%)만 구역 안에서 내림 → 민감도 §4 |
+| 구역 안 하차 비율 | `real_internal_source` | `"taxi_od"` | A | **[2026-11-07 교체]** 한국교통연구원 「택시 기종점 통행량」(부동산 빅데이터 플랫폼, 기준월 202312, 평일) — 강남역 9칸 출발 통행 중 9칸 안 도착 비율, 칸별 3.7~7.8%(전체 5.4%). 예전 가정(약 9%)은 `"exp_distance"` |
+| (예전 방식) 하차 거리 기준 | `real_internal_trip_km` | `1.0` | G | `real_internal_source="exp_distance"`일 때만 씀: 평균 운행거리 지수분포에서 1km 안 비율 |
+| 시간대 비율 출처 | `real_hourly_profile` | `"seoul_2025"` | B | 서울 전체 택시 시간대 비율. 강남역만의 비율(기종점 자료, `"gangnam_od"`)은 표본 편차가 커서 비교용 → §4 |
 
 ### 2-3. 공급 (택시)
 

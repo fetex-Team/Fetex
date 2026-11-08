@@ -36,7 +36,11 @@ DEFAULT_CONFIG = {
     # 실측 호출량 중 카카오 T 플랫폼이 배차하는 비율 = 앱 호출 비율 약 80%(서울시, 2024 시민만족도 조사)
     #   x 카카오 일반호출 점유율 96%(공정위, 2022) ≈ 0.77. 영역 전체 택시 수요를 보려면 1.0.
     "real_demand_scale": 0.77,
-    "real_internal_trip_km": 1.0,
+    "real_internal_trip_km": 1.0,     # real_internal_source="exp_distance"일 때만 씀
+    # 구역 안 하차 비율: "taxi_od" = 한국교통연구원 택시 기종점 통행량(칸별 실측, 전체 5.4%) / "exp_distance" = 예전 거리 가정(약 9%)
+    "real_internal_source": "taxi_od",
+    # 시간대 비율: "seoul_2025" = 서울 전체 택시(2025 보고서) / "gangnam_od" = 강남역 기종점 자료 평일 비율(비교용)
+    "real_hourly_profile": "seoul_2025",
     # 요일 배율: "seoul_2022_01" = 서울 교통이용 통계보고서 2022년 1월 p.2 (2025년판엔 요일 표 없음) / "flat" = 민감도 분석용
     "real_dow_factors": "seoul_2022_01",
     # 칸(500m) 안 승차 위치: "living_pop_250m" = 시각별 250m 격자 실측 생활인구 비례(서울 열린데이터광장 OA-22784) / "poi" = 예전 가정 배율

@@ -78,7 +78,7 @@ def test_grid_code():
 def test_volume_shares_and_determinism():
     with tempfile.TemporaryDirectory() as tmp:
         meta, paths = _fixture(tmp)
-        model = dm.RealDemandModel(meta, {"real_demand_scale": 1.0}, **paths)
+        model = dm.RealDemandModel(meta, {"real_demand_scale": 1.0, "real_internal_source": "exp_distance"}, **paths)
         date = dt.date(2025, 9, 1)          # 월요일, 평일 시간대는 균등(1/24)
         expected = model.area_daily_calls(date)
         assert 4290 < expected < 4401       # 두 칸 하루 약 4000건 x 평일 배율 1.1
@@ -100,6 +100,16 @@ def test_volume_shares_and_determinism():
         assert abs(sum(internal88) / len(internal88) - 0.393) < 0.06
         assert all(c.dest in meta["boundary_edges"] for c in s1 if c.kind == "external")
         assert all(c.origin != c.dest for c in s1)
+
+
+def test_internal_share_from_taxi_od():
+    """기본(taxi_od): 칸별 구역 안 하차 비율 = 기종점 자료 실측 (다사116089 -> 다사58a44b, 7.6%)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        meta, paths = _fixture(tmp)
+        model = dm.RealDemandModel(meta, {}, **paths)
+        assert dm.od_grid_code("다사116089") == "다사58a44b"
+        assert abs(model.internal_share("다사116089") - dm.load_od_internal()["다사58a44b"]) < 1e-12
+        assert 0.03 < model.internal_share("다사116089") < 0.09
 
 
 def test_weekend_profile_and_scale():

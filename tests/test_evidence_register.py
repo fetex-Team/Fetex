@@ -21,7 +21,7 @@ ROW = re.compile(r"^\|[^|]*\|\s*`([a-z0-9_]+)`\s*\|\s*`([^`]+)`\s*\|\s*([A-G][^|
 
 REQUIRED = {
     "use_real_map", "map_bus_lanes", "map_speed_limits", "signal_plans", "speed_profile",
-    "demand_source", "real_demand_scale", "real_dow_factors", "real_spatial_weights", "real_internal_trip_km",
+    "demand_source", "real_demand_scale", "real_dow_factors", "real_spatial_weights", "real_internal_source", "real_hourly_profile",
     "weather_precip_coef_per_mm", "use_historical_weather",
     "num_taxis", "passenger_wait_timeout", "taxi_external_away", "external_replacement_ratio", "external_return_factor",
     "taxi_dispatch_algorithm", "dispatch_cost", "forecast_min_idle_ratio", "forecast_alloc_power",
