@@ -71,13 +71,13 @@ def test_read_endpoints(client):
 
 def test_run_builds_command_and_rejects_bad_input(client, tmp_path):
     r = client.post("/api/run", json={"name": "dash_test_run", "dates": ["2026-09-10"], "strategies": ["patrol"],
-                                      "overrides": {"num_taxis": 70, "real_spatial_weights": "poi"}})
+                                      "overrides": {"num_taxis": 70, "real_spatial_weights": "living_pop_250m"}})
     assert r.status_code == 202, r.get_json()
     j = r.get_json()
     assert j["total"] == 1 and j["status"] == "dry_run"
     cmd = " ".join(j["cmd"])
     assert "module4_dispatch" in cmd and "repeat_experiments.py" in cmd
-    assert "--name dash_test_run" in cmd and "--set num_taxis=70 real_spatial_weights=\"poi\"" in cmd
+    assert "--name dash_test_run" in cmd and "--set num_taxis=70 real_spatial_weights=\"living_pop_250m\"" in cmd
     cond = os.path.join(ROOT, "results", "repeat", "dash_test_run", "conditions.json")
     assert os.path.exists(cond)
     os.remove(cond)
