@@ -26,7 +26,7 @@ export_unity_replay ─▶ map.json + 전략별 재생 파일(v2, .json.gz) ─�
 | 수요 예측 | MultiOutput XGBoost(t+1~t+6, 시뮬레이션용 demand_v2) vs CNN-LSTM, 기준선 대비 평가 | `module3_prediction/train.py`, `notebooks/02_Model_Experiments.ipynb` |
 | 동적 배차 | 헝가리안 매칭(비용 = 다익스트라 도로 이동시간) + 시간표 선배치/RL 재배치 + 할증 계산 | `module4_dispatch/`, `module4_dispatch/network_cost.py` |
 | 성능 비교 | 같은 손님 목록(수요 지문)에서 7일 반복 비교 + 통계 검정(신뢰구간·부호 검정), 결과 재현성 보장 | `module4_dispatch/experiments/repeat_experiments.py`, `module4_dispatch/experiments/check_determinism.py`, `module1_simulation/unity/export_unity_replay.py` |
-| 시각화 | Unity 3D 재생(차선 경로 보간), 대시보드 | Unity 브랜치 `KJS-UNITY` |
+| 시각화 | Unity 3D 재생(차선 경로 보간), 결과 대시보드 | Unity 브랜치 `KJS-UNITY`, `dashboard/` |
 
 ## 빠른 시작 (Windows PowerShell 기준)
 ```powershell
@@ -47,7 +47,8 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | 학습 전체(지도 → 로그 → 수요예측 → v2 변환 → RL) | `python main.py train` |
 | A/B 비교 · Unity 재생 · 로그 리포트 | `python main.py compare '<조합 JSON>'` · `python main.py unity --stride 5` · `python main.py analyze --logs <CSV...>` |
 | 전략 3개 공정 비교 + Unity 재생 파일 | `python module1_simulation/unity/export_unity_replay.py --stride 5 --unity-dir <Unity>/Assets/StreamingAssets` |
-| 택시 대수 산정 | `python module4_dispatch/experiments/fleet_sizing.py --taxis 50 70 --strategy prepositioned` |
+| 택시 대수 산정 | `python module4_dispatch/experiments/fleet_sizing.py --taxis 50 70 --strategy prepositioned` · 공공 통계로 추정: `python module4_dispatch/experiments/estimate_taxi_supply.py` |
+| 결과 대시보드(결과 비교·조건 바꿔 실행·Unity 재생 파일) | `python main.py dashboard` ([`docs/DASHBOARD.md`](docs/DASHBOARD.md)) |
 | 실측 날씨 받기(네트워크 필요) | `python data/loaders/fetch_weather_history.py 2026-07-01 2026-10-27` |
 | 학습용 8주 호출 생성(SUMO 불필요, 약 10초) | `python data/loaders/generate_demand_logs.py` |
 | 수요 예측 학습(demand_v2 + CNN-LSTM 비교) | `python module3_prediction/train.py --logs "data/real_demand_logs/demand_log_*.csv"` → `saved_models/demand_v2.joblib`(시뮬레이션용), `results/module3/<freq>/`(지표·그래프). 5분 단위: `--freq 5min`, 비교표: `python module3_prediction/evaluate.py --compare-freq 5min 10min` |
@@ -66,6 +67,9 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 - **[적용하기]** 를 눌러야 내 설정 `config.json`이 바뀐다 (개인 파일, git 제외).
 - 세부 설정의 **현재 화면을 프리셋으로 저장** → `presets/user/`(개인 프리셋, 지금은 git에 올림)에 저장되고 기본 탭 버튼(★)에 나타난다.
 - 팀 기본값을 바꾸려면 `presets/default/기본.json`을 고쳐 커밋한다.
+- 팀 프리셋 **「근거기반_현실화」**(`presets/default/근거기반_현실화.json`): 도로 현실화(중앙버스차로 버스 전용·안전속도 5030·경찰청 신호 계획·TOPIS 속도 배율) +
+  칸 안 승차 위치 생활인구(250m)·영역 안 하차 5.4%(택시 기종점 실측)·택시 61대·대기 한도 600초. 기본 탭 프리셋 버튼으로 고르거나
+  `python main.py play --config presets/default/근거기반_현실화.json`. 근거는 `docs/design/07_road_realism.md`·`08_evidence_register.md`.
 
 ## 주요 설정
 | 키 | 기본 | 의미 |
@@ -77,29 +81,49 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 | `real_internal_trip_km` | 1.0 | 이보다 짧은 운행만 영역 안 하차(나머지는 경계 도로로 나감) |
 | `h3_resolution` | 8 | 예측·재배치 격자 (근거: `docs/real_data_calibration.md` 4절) |
 | `dispatch_cost` | `network` | 헝가리안 비용: 도로망 최단 이동시간(다익스트라) / `euclidean` = 예전 직선 거리 |
-| `num_taxis` | 50 | 택시 대수 (카카오 몫 수요에서 서비스율 99% 이상) |
+| `num_taxis` | 50 | 택시 대수 (「근거기반_현실화」는 61대 — 국토부 통행량·영업통계로 추정, `module4_dispatch/experiments/estimate_taxi_supply.py`) |
+| `passenger_wait_timeout` | 500 | 손님이 기다리는 최대 시간(초). 「근거기반_현실화」는 600초 |
 | `taxi_strategy` | `prepositioned` | `patrol` / `prepositioned` / `rl_prepositioned` |
 | `taxi_dispatch_algorithm` | `hungarian` | 현재 호출 매칭 방식 |
 | `sim_date`, `run_date_mode` | 2026-09-07, `alternate` | 비교 실험은 `sim_date`로 날짜 고정 |
 
-## 결과 요약 (7일 반복, 9~23시, 택시 50대 — 날짜마다 세 전략 같은 손님 목록)
+## 결과 요약
+
+### 팀 기본 설정 (7일 반복, 9~23시, 택시 50대 — 날짜마다 전략들이 같은 손님 목록)
 | 전략 | 평균 대기 (카카오 몫)<br>직선 거리 → **도로 이동시간** | 타임아웃/일 (손님 100%)<br>직선 거리 → **도로 이동시간** |
 |---|---|---|
 | **patrol** | 80.6초 → **60.1초** | 306 → **266명** |
 | prepositioned | 86.5초 → 69.6초 | 306 → 315명 |
 | rl_prepositioned | 91.2초 → 75.5초 | 316 → 330명 |
-| **forecast** (예측 재배치, 새 전략) | — → **59.4초** | — → 294명 |
+| **forecast** (예측 재배치) | — → **59.4초** | — → 294명 |
 
-- **헝가리안 매칭 비용을 직선 거리 → 다익스트라 도로 이동시간으로 바꿔 세 전략 모두 평균 대기 10~20초 단축** (`"dispatch_cost": "network"`, 기본값)
+- 헝가리안 매칭 비용을 직선 거리 → 다익스트라 도로 이동시간으로 바꿔 세 전략 모두 평균 대기 10~20초 단축 (`"dispatch_cost": "network"`, 기본값)
 - 가장 좋은 조합: **순찰 + 헝가리안(도로 이동시간)**. 미리 옮겨 두는 전략(선배치·RL)은 7일 모두 평균 대기가 더 길다
-- 수요 예측(H3 res 8, 30분 앞) WAPE **26.4%** — 포아송 잡음 하한 24.8%, 나이브 36.2%
+- 수요 예측(H3 res 8, 10분 칸, 2026-11-06 재학습) 시험 WAPE **26.3%**·30분 합계 16.4% — 포아송 잡음 하한 24.8%, 나이브 36.2%
 - Unity 재생 회전 구간 도로 이탈 **56.0% → 0.6%**, 재생 파일 48MB → 8MB(gzip)
+
+### 「근거기반_현실화」 프리셋 (ldk 실행, 7일, 택시 61대, 같은 손님 목록)
+**결론: 배차 방법 간 차이는 없고(0.3%p 안), 결과는 택시 수가 좌우한다.** 전체 표는 [`docs/RESULTS_SUMMARY.md`](docs/RESULTS_SUMMARY.md).
+
+| 전략 | 서비스율 | 평균 대기 |
+|---|---:|---:|
+| 순찰 `patrol` | 95.7% | 153초 |
+| 예측 재배치 `forecast` | 95.8% | 154초 |
+| 시간표 선배치 `prepositioned` | 95.5% | 166초 |
+| RL `rl_prepositioned` | 95.7% | 180초 |
+
+- 도로 속도 실측 대비 2.1배 → 0.93배 (버스차로·5030·경찰청 신호·TOPIS 정체). 같은 도로에 택시 50대면 순찰 79.7%
+- 근거 없던 값 교체: 손님 위치(생활인구 250m), 택시 61대, 포기 시간 600초, 구역 안 하차 5.4%. 설정 42개 근거 대장
+- 민감도: 택시 61→50대 −21%p, 나간 택시 늦게 복귀 −22%p, 손님 쪽 가정 ±2.3%p
+- RL·예측 재배치 수치는 ldk의 예전 모델 결과다. 수요 예측은 11-06에 다시 학습했고 RL도 다시 학습할 예정이라, 프리셋 조건의 이 두 전략은 이후 다시 돌린다.
 
 자세한 수치·한계는 [`REPORT.md`](REPORT.md).
 
 ## 문서
+- [`docs/RESULTS_SUMMARY.md`](docs/RESULTS_SUMMARY.md) — 결과 요약표 (항목·결과·근거·원자료)
+- [`docs/DASHBOARD.md`](docs/DASHBOARD.md) — 대시보드: `python main.py dashboard` (결과 비교·조건 바꿔 실행·Unity 재생 파일)
 - [`REPORT.md`](REPORT.md) — 통합 보고서
-- [`docs/design/`](docs/design/README.md) — 설계 결정 기록 (무엇을 왜 바꿨는지, 근거 수치)
+- [`docs/design/`](docs/design/README.md) — 설계 결정 기록 (무엇을 왜 바꿨는지, 근거 수치. 07 도로 현실화·08 근거 대장 포함)
 - [`docs/real_data_calibration.md`](docs/real_data_calibration.md) — 실측 수요 보정 방법·검증
 - [`docs/replay_motion.md`](docs/replay_motion.md) — Unity 차량 회전 궤적 문제와 수정
 - [`docs/module1_map_verification.md`](docs/module1_map_verification.md) — 지도·외부데이터 검증 (1번)
@@ -112,30 +136,33 @@ python measure_wait_time.py              # 3) 화면 없이 한 번 측정 (대�
 과제 결과물 구조(data · module1~4 · notebooks · docs)를 그대로 따르고, 모듈 안의 하위 폴더는 그 모듈의 보조 도구다.
 ```
 README.md · REPORT.md       실행 가이드 · 통합 분석 보고서
-main.py                     실행 진입점 (play / train / compare / unity / analyze — 실행 순서는 여기)
+main.py                     실행 진입점 (play / train / compare / unity / analyze / dashboard — 실행 순서는 여기)
 config_gui.py               설정 GUI (값 편집·프리셋·저장, 실행은 main.py에 맡기고 진행 상황만 표시)
 config_loader.py · config_schema.py   설정 로더(기본값 = presets/default/기본.json) · GUI 항목 정의
 measure_wait_time.py        공용 시뮬레이션 실행·측정 루프 (여러 도구가 import)
 
 data/                       ① 데이터 + 데이터 로드 스크립트
   loaders/                    generate_demand_logs(실측 통계 → 호출 로그), fetch_weather_history(Open-Meteo),
-                              fetch_weather_asos·fetch_signal_plans·fetch_all_external(공공데이터포털)
-  external/                   실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨)
+                              fetch_weather_asos·fetch_signal_plans·fetch_all_external(공공데이터포털),
+                              extract_living_pop·extract_taxi_od·extract_topis_speed·topis_links·build_signal_plans(프리셋용 실측 추출)
+  external/                   실측 데이터 (TIMS, 서울시 2025 통계, 실측 날씨, 생활인구 250m, 택시 통행량·기종점, TOPIS 속도, 신호 계획)
   real_demand_logs/           학습용 8주 호출 로그   sim_logs/ 시뮬레이션 로그   features/ 전처리 저장본(git 제외)
-module1_simulation/         ② 디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model), 지도·날씨·공휴일
+module1_simulation/         ② 디지털 트윈: build_env·run_simulation, 택시/승객 매니저, 수요 모델(demand_model), 지도·날씨·공휴일,
+                              신호 계획(signal_plans)·TOPIS 속도 배율(speed_profile)
   unity/                      Unity 재생 파일 내보내기·궤적 복원·궤적 검사
-  checks/                     지도 변환 경고·회전 금지·지역 좌표 폴백·날씨 출처 검증
+  checks/                     지도 변환 경고·회전 금지·지역 좌표 폴백·날씨 출처 검증, TOPIS 속도 비교·보정, 기종점 통행시간 검증
 module2_preprocessing/      ③ 전처리: H3 인덱싱, 시계열 피처(43개), 외부 데이터 병합, 전처리 저장본, POI, 학습 로그 선택
   eda/                        8주 EDA, H3 해상도 비교, POI 구역 지도, 피처 효과 비교(ablation) 코드 → 결과는 results/eda/
 module3_prediction/         ④ 예측: 학습 train.py(XGBoost vs CNN-LSTM → demand_v2)·train_category_demand.py, 평가 evaluate.py,
                               실시간 예측 h3_predictor.py(H3 격자, forecast 재배치용)·category_predictor.py(장소 종류별, RL용)
 module4_dispatch/           ⑤ 배차: 헝가리안·커스텀 배차, 예측 재배치(forecast), RL 선배치, 할증
-  experiments/                A/B 비교(multi_factor_compare + 워커), 7일 반복 실험, 택시 대수 산정, 재현성 검사
+  experiments/                A/B 비교(multi_factor_compare + 워커), 7일 반복 실험, 택시 대수 산정(fleet_sizing·estimate_taxi_supply), 재현성 검사
+dashboard/                  결과 대시보드 (python main.py dashboard, docs/DASHBOARD.md)
 notebooks/                  ⑥ EDA·모델 실험 노트북
 docs/                       ⑦ 설계·검증 문서
 tools/                      여러 모듈에 걸친 도구: 수요 로그 분석기, 런타임 검증, GUI 지역 검색 위젯
 tests/                      단위·통합 테스트
-presets/                    팀 프리셋(default/, 기본.json = 팀 기본값)·개인 프리셋(user/)   config.json 내 설정(git 제외)
+presets/                    팀 프리셋(default/, 기본.json = 팀 기본값, 근거기반_현실화.json = 도로·수요 실측 근거 설정)·개인 프리셋(user/)   config.json 내 설정(git 제외)
 saved_models/               demand_v2.joblib · cnn_lstm_demand.pt · category_demand_*.pkl (Module 3)
 results/                    eda/(Module 2 EDA 그림·표), repeat/(반복 실험), unity_replay/, module3/, fleet_sizing/, motion_eval/, ab_results/, runtime_validation/
 ```
