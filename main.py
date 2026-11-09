@@ -9,6 +9,7 @@
     python main.py unity [--strategies ... --algorithm ... --stride N --unity-dir 경로]   Unity 재생 파일
     python main.py analyze --logs <로그 CSV ...>   수요 로그 리포트 (tools/analyze_demand_logs.py)
     python main.py analyzer                     수요 로그 분석기(브라우저) 서버
+    python main.py dashboard [--port 8050 --no-browser]   디지털 트윈 대시보드 (dashboard/app.py, docs/DASHBOARD.md)
 
 공통 옵션:
     --config 경로   이 설정 파일로 실행 (없으면 config.json, 그것도 없으면 presets/default/기본.json)
@@ -242,6 +243,7 @@ COMMANDS = {
     "unity": _passthrough(os.path.join("module1_simulation", "unity", "export_unity_replay.py"), "Unity 재생 파일 생성 중"),
     "analyze": _passthrough(os.path.join("tools", "analyze_demand_logs.py"), "수요 로그 리포트 생성 중"),
     "analyzer": _passthrough(os.path.join("tools", "analyzer_server.py"), "수요 로그 분석기(브라우저) 실행 중 — 끝내려면 이 창을 닫기"),
+    "dashboard": _passthrough(os.path.join("dashboard", "app.py"), "디지털 트윈 대시보드 실행 중 (기본 http://127.0.0.1:8050, --port로 변경) — 끝내려면 Ctrl+C"),
 }
 
 

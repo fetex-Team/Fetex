@@ -1,0 +1,45 @@
+{
+  "dates": [
+    "2026-09-10",
+    "2026-10-13",
+    "2026-10-14"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "patrol": {
+      "service_rate": {
+        "mean": 0.7388666666666667,
+        "n": 3
+      },
+      "n_timeout_removed": {
+        "mean": 1322.3333333333333,
+        "n": 3
+      },
+      "avg_wait_sec": {
+        "mean": 251.83333333333334,
+        "n": 3
+      },
+      "p90_wait_sec": {
+        "mean": 453.3333333333333,
+        "n": 3
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 341.23333333333335,
+        "n": 3
+      },
+      "est_revenue_won": {
+        "mean": 61805478.333333336,
+        "n": 3
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-10": true,
+    "2026-10-13": true,
+    "2026-10-14": true
+  },
+  "scenario": "base",
+  "overrides": {
+    "num_taxis": 50
+  }
+}

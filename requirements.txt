@@ -28,6 +28,9 @@ tqdm
 
 stable_baselines3
 psutil
+flask
+# TOPIS·택시 공급 엑셀 읽기 (data/loaders/topis_links.py, extract_topis_speed.py, estimate_taxi_supply.py)
+openpyxl
 rtree
 # 지도 POI 좌표 변환(없으면 POI 구역이 조용히 랜덤 배정됨) / 공휴일 판정
 pyproj

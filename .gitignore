@@ -71,3 +71,13 @@ results/module3/**/models/
 
 # 개인 설정 (팀 기본값은 presets/default/기본.json). 개인 프리셋 presets/user/는 지금은 git에 올림
 config.json
+
+# 외부 원자료 (용량 큼, 출처에서 다시 받기)
+data/external/topis/
+# 검증용 시간별 도로 속도 원본 (용량 큼, module4_dispatch/experiments/repeat_experiments.py --set edge_speed_output=... 로 다시 생성)
+results/repeat/*/edgespeed/
+# 경찰청 신호 API 원본 (용량 큼, data/loaders/fetch_signal_plans.py로 다시 받기). 시뮬레이션은 data/external/signal_plans_gangnam.json만 읽음
+data/external/signal_plans/
+# 대시보드 작업 기록·지도 캐시 (dashboard/jobs.py, dashboard/twin_map.py가 다시 만듦)
+results/dashboard_jobs/
+results/dashboard_cache/

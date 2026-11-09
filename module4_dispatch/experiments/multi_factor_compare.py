@@ -175,6 +175,12 @@ def run_queue_and_wait(combos: list, config_dir_names: list, session_dir: str,
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     env["PYTHONHASHSEED"] = "0"  # 실행 재현성: 같은 조건이면 같은 결과 (reproducibility.py)
+    # RL 모델 스냅샷 선택(KJS): AI_RL_MODEL_PATH가 있으면 워커(measure_wait_time.py)에 그대로 넘긴다.
+    # 워커는 cwd=ROOT로 뜨므로 상대 경로는 지금 위치 기준 절대 경로로 바꿔 넘긴다.
+    rl_model = os.environ.get("AI_RL_MODEL_PATH")
+    if rl_model:
+        env["AI_RL_MODEL_PATH"] = os.path.abspath(rl_model)
+        print(f"[오케스트레이터] RL 모델 지정: {env['AI_RL_MODEL_PATH']}")
 
     total = len(combos)
     result_paths = [(_combo_label(c), os.path.join(session_dir, f"combo{i}.json").replace("\\", "/"))
