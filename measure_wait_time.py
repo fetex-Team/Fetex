@@ -61,7 +61,11 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 SUMO_CFG = os.path.join(ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
 META_PATH = os.path.join(ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 DEMAND_LOG_PATH = os.path.join(ROOT, "data", "raw", "simulation_demand_log.csv")
-RL_MODEL_PATH = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")  # 추가
+# RL 재배치 정책 파일. AI_RL_MODEL_PATH 환경변수로 다른 zip(예: 재학습한 모델)을 골라 쓸 수 있다.
+RL_MODEL_PATH = os.environ.get(
+    "AI_RL_MODEL_PATH",
+    os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip"),
+)
 # RLRepositionMaintainer가 RL 정책과 "실행 시점"에 짝지어 쓸 수요예측 파일.
 # 기본값은 기존 카테고리 모델이며, AI_CATEGORY_MODEL_PATH 환경변수로 다른 pkl
 # (예: saved_models_backups/<시각>/category_demand_models.pkl)을 골라 바로 조합해 쓸 수 있다.
@@ -114,8 +118,11 @@ def _create_controllers(meta: dict, sumo_cfg: str):
             print(f"[안내] RL 재배치 정책을 불러왔습니다: {RL_MODEL_PATH}")
             print(f"[안내] 수요예측은 이걸 씁니다: {CATEGORY_MODEL_PATH}")
         else:
-            print(f"[경고] {RL_MODEL_PATH}가 없어 RL 재배치 없이 '{dispatch_algo}' 매칭만 수행합니다. "
-                  f"먼저 module4_dispatch/rl_train.py를 실행하세요.")
+            print("=" * 70)
+            print(f"[경고] rl_prepositioned 전략을 골랐지만 RL 모델 파일이 없습니다: {RL_MODEL_PATH}")
+            print(f"[경고] RL 재배치 없이 '{dispatch_algo}' 매칭만 수행합니다 (결과는 RL 전략이 아님). "
+                  f"먼저 module4_dispatch/rl_train.py를 실행하거나 AI_RL_MODEL_PATH 환경변수로 모델 경로를 지정하세요.")
+            print("=" * 70)
     return manager, dispatcher, pax_manager, rl_maintainer
 
 
@@ -147,6 +154,48 @@ def _resolve_run_date(meta: dict):
         if holiday_mode in ("weekday", "holiday") and is_holiday_date(run_date) != (holiday_mode == "holiday"):
             run_date = pick_run_date(CFG, index=1 if holiday_mode == "holiday" else 0, mode="alternate")
     return run_date, holiday_mode
+
+
+def _create_road_realism(run_date, sim_start_hour, spawn_manager, dispatcher, sumo_cfg):
+    """[현실화] 실제 신호 운영계획(경찰청)과 시간대별 실측 속도 보정(TOPIS) 컨트롤러를 만든다.
+    module1_simulation/signal_plans.py, speed_profile.py. 설정이 꺼져 있으면(signal_plans!="real",
+    speed_profile!="topis") 각각 None. speed_profile="topis"이고 배차기가 도로망 이동 시간 표를 쓰면
+    시간대별 표(TimeVaryingTravelTime)로 바꿔 끼운다 — 예측 재배치도 이 표를 같이 보도록
+    _create_forecast_repositioner보다 먼저 호출해야 한다.
+    반환: (signal_ctrl, speed_ctrl)"""
+    from module1_simulation.signal_plans import SignalPlanController
+    from module1_simulation.speed_profile import SpeedProfileController
+    from module4_dispatch.network_cost import TimeVaryingTravelTime, net_file_from_sumocfg
+    is_hol = bool(getattr(spawn_manager, "is_holiday", False))
+    net_file = net_file_from_sumocfg(sumo_cfg)
+    signal_ctrl = SignalPlanController.from_config(CFG, run_date, sim_start_hour, is_hol)
+    shared_tt = None
+    if dispatcher is not None and getattr(dispatcher, "travel_time", None) is not None \
+            and CFG.get("speed_profile", "topis") == "topis":
+        shared_tt = TimeVaryingTravelTime(net_file)
+        dispatcher.travel_time = shared_tt          # 배차와 재배치가 같은 시간대별 이동 시간 표를 본다
+    speed_ctrl = SpeedProfileController.from_config(CFG, net_file, run_date, sim_start_hour, is_hol,
+                                                    travel_time=shared_tt)
+    if signal_ctrl:
+        print(f"[안내] 실제 신호 계획 적용: {', '.join(v['name'] for v in signal_ctrl.data.values())}")
+    if speed_ctrl:
+        print("[안내] 시간대별 실측 속도 보정 적용 (TOPIS)")
+    return signal_ctrl, speed_ctrl
+
+
+def _edge_speed_args(run_date, strategy, sim_start_hour):
+    """[검증] edge_speed_output=폴더: 1시간 단위 도로별 평균 속도(SUMO edgeData)를 저장하는 traci.start 추가 인자.
+    module1_simulation/checks/compare_topis_speed.py가 TOPIS 실측과 비교한다. 설정이 없으면 빈 목록."""
+    if not CFG.get("edge_speed_output"):
+        return []
+    ed_dir = os.path.abspath(CFG["edge_speed_output"])
+    os.makedirs(ed_dir, exist_ok=True)
+    ed_name = f"edgespeed_{run_date.isoformat()}_{strategy}_h{sim_start_hour:02d}"
+    ed_add = os.path.join(ed_dir, ed_name + ".add.xml")
+    with open(ed_add, "w", encoding="utf-8") as f:
+        f.write(f'<additional><edgeData id="hourly" period="3600" excludeEmpty="true" '
+                f'file="{ed_name}.xml"/></additional>\n')
+    return ["--additional-files", ed_add]
 
 
 def _create_forecast_repositioner(meta, run_date, spawn_manager, dispatcher, sim_start_hour, sumo_cfg):
@@ -261,7 +310,8 @@ def _save_demand_logs(tracker, log_recorder, meta, spawn_manager, run_date):
 
 
 def _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end_seconds,
-               strategy, algorithm, dispatcher, away_model, forecast_repositioner):
+               strategy, algorithm, dispatcher, away_model, forecast_repositioner,
+               signal_ctrl=None, speed_ctrl=None):
     """대기시간 지표와 실행 정보를 결과 dict로 정리한다.
 
     규칙: 차에 못 탄 채 wait_timeout이 지나면 소멸(확정). 탑승한 사람은 소멸 기한이 사라진다.
@@ -322,6 +372,8 @@ def _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end
                             if getattr(spawn_manager, "mean_fare_won", None) else None),
         "external_away": away_model.summary() if away_model is not None else None,
         "forecast_reposition": forecast_repositioner.summary() if forecast_repositioner is not None else None,
+        "signal_plans": signal_ctrl.summary() if signal_ctrl else None,
+        "speed_profile": speed_ctrl.summary() if speed_ctrl else None,
         "dispatch_cost": getattr(dispatcher, "cost_mode", None),  # 헝가리안만 비용 방식이 있음
         "dispatch_cost_stats": (dict(dispatcher.cost_stats) if hasattr(dispatcher, "cost_stats") else None),
         "waits": waits,
@@ -404,6 +456,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
     # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
     away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))
+    # [현실화] 신호·속도 보정 — 예측 재배치가 같은 시간대별 이동 시간 표를 쓰도록 재배치기보다 먼저 만든다
+    signal_ctrl, speed_ctrl = _create_road_realism(run_date, sim_start_hour, spawn_manager, dispatcher, _sumo_cfg)
     forecast_repositioner = _create_forecast_repositioner(meta, run_date, spawn_manager, dispatcher,
                                                           sim_start_hour, _sumo_cfg)
 
@@ -425,7 +479,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     teleport_count = 0
 
     vehicle_subscriptions.reset()   # 새 SUMO 실행: 구독 기록 초기화
-    traci.start([sumo_binary, "-c", _sumo_cfg])
+    traci.start([sumo_binary, "-c", _sumo_cfg]
+                + _edge_speed_args(run_date, meta.get("taxi_strategy") or "unknown", sim_start_hour))
 
     step = 0
     now = 0.0                 # 첫 스텝 전에 연결이 끊겨도 결과 정리가 가능하도록
@@ -435,9 +490,20 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
         while step < max_steps:
             traci.simulationStep()
             now = traci.simulation.getTime()
+            if signal_ctrl:
+                signal_ctrl.maintain(now)
+            if speed_ctrl:
+                speed_ctrl.maintain(now)
             # [성능] 맵 전체 상태 조회는 스텝당 딱 한 번. 하위 매니저/기록기는 이 값을 재사용한다.
             current_pids = set(traci.person.getIDList())
             current_vids = set(traci.vehicle.getIDList())
+            # [하차 감지] 배차보다 먼저: 이번 스텝에 내린 택시가 같은 스텝에 다음 배차를 받기 전에
+            # 복귀 지연 시나리오(taxi_external_away)가 영역 밖으로 나간 택시를 뺄 수 있게 한다.
+            # (예전에는 배차 뒤에 감지해서, 택시가 부족한 날엔 거의 모든 택시가 '이미 배차됨'으로 빠지지 않았다)
+            tracker.detect_arrivals(now, current_pids, pax_manager.removed_pids, away_model)
+            if away_model is not None and away_model.removed_this_step:
+                current_vids -= away_model.removed_this_step
+                away_model.removed_this_step = set()
             idle_taxis = fetch_idle_taxis() if (dispatcher or recorder is not None) else None  # RL 단독이면 RL이 1분마다 직접 조회
             manager.maintain(now, current_vids=current_vids)  # 도착 임박한 택시에 새 목적지를 얹어 소멸을 막음 (대수 유지)
             pax_manager.maintain(now, current_pids=current_pids)  # 대기시간 초과 승객 소멸 처리
@@ -459,9 +525,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                 _wall_prev = _print_progress(now, sim_start_hour, sim_end_seconds, log_recorder, tracker, pax_manager,
                                              current_vids, current_pids, _wall0, _wall_prev)
 
-            # 승객 등장·탑승(riding_map: 택시 대수만큼만 TraCI 호출) → 하차 감지
+            # 승객 등장·탑승(riding_map: 택시 대수만큼만 TraCI 호출). 하차 감지는 배차보다 먼저 한다 (루프 위쪽 [하차 감지])
             tracker.observe(now, current_pids, riding_map(now, current_vids))
-            tracker.detect_arrivals(now, current_pids, pax_manager.removed_pids, away_model)
 
             if recorder is not None:
                 teleport_count += traci.simulation.getStartingTeleportNumber()
@@ -494,7 +559,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
             pass
 
     result = _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end_seconds,
-                        strategy, algorithm, dispatcher, away_model, forecast_repositioner)
+                        strategy, algorithm, dispatcher, away_model, forecast_repositioner,
+                        signal_ctrl=signal_ctrl, speed_ctrl=speed_ctrl)
     _save_demand_logs(tracker, log_recorder, meta, spawn_manager, run_date)
     if recorder is not None:
         recorder.finish(result)

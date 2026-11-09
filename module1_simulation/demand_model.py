@@ -42,6 +42,33 @@ GANGNAM_PATH = os.path.join(DATA_DIR, "gangnam_taxi_pickups_2025.csv")
 DOW_PATH = os.path.join(DATA_DIR, "seoul_taxi_dow_2022_01.csv")
 
 DOW_KEYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+# 서울 열린데이터광장 「[내국인] 서울 생활인구(250m)」(OA-22784) 2026-10-26(월)~11-01(일) 7일, 강남역 주변 250m 격자만 추림.
+# 원본 일별 zip(약 15MB, cp949)에서 tools/extract_living_pop.py로 뽑았다.
+LIVING_POP_PATH = os.path.join(DATA_DIR, "seoul_living_pop", "living_pop_250m_gangnam_20261026_1101.csv")
+DAY_TYPES = ("weekday", "saturday", "sunday")
+# 한국교통연구원 「택시 기종점 통행량」(부동산 빅데이터 플랫폼, 파일 ES1004AO00101QY2404, 기준월 202312, 평일 WEEK_CD=1)에서
+# 강남역 500m 격자 9칸 출발 행만 추린 것. 격자 표기 '다사58a44b' = 1km 번호 + 500m 반칸(a/b) (tools/extract_taxi_od.py)
+OD_INTERNAL_PATH = os.path.join(DATA_DIR, "taxi_od", "od_gangnam_internal_share.csv")
+OD_HOURLY_PATH = os.path.join(DATA_DIR, "taxi_od", "od_gangnam_hourly.csv")
+
+
+def od_grid_code(code500: str) -> str:
+    """500m 국가격자 '다사116089' -> 기종점 자료 표기 '다사58a44b' (1km 번호 + 500m 반칸 a/b)."""
+    ix, iy = int(code500[2:5]), int(code500[5:8])
+    return f"{code500[:2]}{ix // 2:02d}{'ab'[ix % 2]}{iy // 2:02d}{'ab'[iy % 2]}"
+
+
+def load_od_internal(path: str = OD_INTERNAL_PATH) -> dict[str, float]:
+    """기종점 격자 -> 출발 통행 중 강남역 9칸 안에서 끝나는 비율."""
+    return {r["grid_od"]: float(r["internal_share"]) for r in _read_csv(path)}
+
+
+def load_od_hourly(path: str = OD_HOURLY_PATH) -> list[float]:
+    """평일 0~23시 비율. TM_CD 1~24 = 0~1시 … 23~24시로 본다(코드가 1부터 시작)."""
+    rows = {int(r["tm_cd"]): float(r["weekday_trips"]) for r in _read_csv(path)}
+    vals = [rows.get(h + 1, 0.0) for h in range(24)]
+    tot = sum(vals)
+    return [v / tot for v in vals]
 
 # 시간대별 POI 가중치 (같은 500m 칸 안에서 어느 도로에서 호출이 더 자주 나는지).
 # 칸별 총량은 TIMS 실측으로 고정되고, 이 값은 칸 "안"의 배분만 바꾼다.
@@ -135,6 +162,47 @@ def grid_bounds(code: str) -> tuple[float, float, float, float]:
     x0, y0 = _GRID_SQUARES[code[:2]]
     ix, iy = int(code[2:5]), int(code[5:8])
     return x0 + ix * CELL_M, y0 + iy * CELL_M, x0 + (ix + 1) * CELL_M, y0 + (iy + 1) * CELL_M
+
+
+def grid250_code_of(x: float, y: float) -> str | None:
+    """UTM-K 좌표가 속한 250m 국가기준격자 코드(서울 생활인구 250m 표기, 예: '다사58004425').
+    '다사' 뒤 4자리씩이 좌하단 X·Y의 칸 원점(900,000 / 1,900,000)으로부터 거리(10m 단위)다."""
+    for prefix, (x0, y0) in _GRID_SQUARES.items():
+        ix, iy = int((x - x0) // 250.0), int((y - y0) // 250.0)
+        if 0 <= ix < 400 and 0 <= iy < 400:
+            return f"{prefix}{ix * 25:04d}{iy * 25:04d}"
+    return None
+
+
+def day_type_of(date: _dt.date, is_holiday: bool = False) -> str:
+    """평일 / 토요일 / 일요일·공휴일 (평일 공휴일은 일요일로 본다)."""
+    if date.weekday() == 6 or (is_holiday and date.weekday() < 5):
+        return "sunday"
+    return "saturday" if date.weekday() == 5 else "weekday"
+
+
+def load_living_pop(path: str = LIVING_POP_PATH) -> dict[tuple[str, int], dict[str, float]]:
+    """(요일 유형, 시) -> {250m 격자: 평균 생활인구}. 한 격자가 행정동별로 여러 행이면 합친다.
+    비식별 처리 값('*', 3명 이하)은 0으로 본다."""
+    per_day: dict[tuple[str, int, str], float] = {}
+    for r in _read_csv(path):
+        try:
+            v = float(r["pop"])
+        except ValueError:
+            v = 0.0
+        key = (r["date"], int(r["hour"]), r["grid250"])
+        per_day[key] = per_day.get(key, 0.0) + v
+    sums: dict[tuple[str, int], dict[str, float]] = {}
+    days: dict[str, set] = {t: set() for t in DAY_TYPES}
+    for (d, h, g), v in per_day.items():
+        dt = day_type_of(_dt.date(int(d[:4]), int(d[4:6]), int(d[6:8])))
+        days[dt].add(d)
+        sums.setdefault((dt, h), {})
+        sums[(dt, h)][g] = sums[(dt, h)].get(g, 0.0) + v
+    missing = [t for t in DAY_TYPES if not days[t]]
+    if missing:
+        raise ValueError(f"생활인구 파일에 {missing} 날짜가 없습니다: {path}")
+    return {k: {g: v / len(days[k[0]]) for g, v in m.items()} for k, m in sums.items()}
 
 
 # ---------------------------------------------------------------------------
@@ -257,8 +325,35 @@ class RealDemandModel:
         self.scale = float(cfg.get("real_demand_scale", 1.0))
         self.internal_km = float(cfg.get("real_internal_trip_km", 1.0))
         self.poi_weights = {**DEFAULT_POI_WEIGHTS, **(cfg.get("real_poi_weights") or {})}
+        # 칸(500m) 안에서 어느 도로에 손님이 나타나는지:
+        #   "living_pop_250m"(기본) = 그 시각 250m 격자의 실측 생활인구에 비례 (서울 열린데이터광장 OA-22784)
+        #   "poi" = 예전 방식, 건물 종류별 가정 배율(DEFAULT_POI_WEIGHTS). 비교 실험용
+        self.spatial_source = str(cfg.get("real_spatial_weights", "living_pop_250m"))
+        if self.spatial_source not in ("living_pop_250m", "poi"):
+            raise ValueError(f"real_spatial_weights는 'living_pop_250m' 또는 'poi'이어야 합니다: {self.spatial_source}")
+        self.living_pop = load_living_pop(cfg.get("real_living_pop_file") or LIVING_POP_PATH) \
+            if self.spatial_source == "living_pop_250m" else {}
+        self._day_type = "weekday"
         self.hourly = load_hourly_profile(hourly_path)
-        self.dow = load_dow_factors(dow_path)
+        # 시간대 비율: "seoul_2025"(기본, 서울 전체 택시 2025) / "gangnam_od"(평일만 강남역 기종점 자료 비율, 비교용 — 표본 편차 있음)
+        self.hourly_source = str(cfg.get("real_hourly_profile", "seoul_2025"))
+        if self.hourly_source == "gangnam_od":
+            self.hourly = {**self.hourly, "weekday": load_od_hourly()}
+        elif self.hourly_source != "seoul_2025":
+            raise ValueError(f"real_hourly_profile은 'seoul_2025' 또는 'gangnam_od'이어야 합니다: {self.hourly_source}")
+        # 구역 안 하차 비율: "taxi_od"(기본, 칸별 실측 비율) / "exp_distance"(예전: 평균 운행거리 지수분포 + 1km 기준)
+        self.internal_source = str(cfg.get("real_internal_source", "taxi_od"))
+        if self.internal_source not in ("taxi_od", "exp_distance"):
+            raise ValueError(f"real_internal_source는 'taxi_od' 또는 'exp_distance'이어야 합니다: {self.internal_source}")
+        self.od_internal = load_od_internal() if self.internal_source == "taxi_od" else {}
+        # 요일 배율: "seoul_2022_01"(기본, 서울 교통이용 통계보고서 2022년 1월 p.2) / "flat"(평일 안·주말 안 차이 없음, 민감도 분석용)
+        self.dow_source = str(cfg.get("real_dow_factors", "seoul_2022_01"))
+        if self.dow_source == "flat":
+            self.dow = {k: 1.0 for k in DOW_KEYS}
+        elif self.dow_source == "seoul_2022_01":
+            self.dow = load_dow_factors(dow_path)
+        else:
+            raise ValueError(f"real_dow_factors는 'seoul_2022_01' 또는 'flat'이어야 합니다: {self.dow_source}")
         self.weekpart = load_gangnam_ratios(gangnam_path)
         # 시간별 강수량 1mm당 호출 증가율 (docs/weather_coefficient.md 실측 추정, 상한 cap mm)
         self.precip_coef = float(cfg.get("weather_precip_coef_per_mm", 0.0199))
@@ -294,6 +389,10 @@ class RealDemandModel:
             raise ValueError("이 지역은 TIMS 파일 범위('다사' 격자, 서울 대부분) 밖입니다. "
                              "demand_source를 'synthetic'으로 바꾸세요.")
         self.edge_cell = edge_cell
+        self.edge_g250 = {e: grid250_code_of(*latlng_to_utmk(*self.edge_latlng[e])) for e in self.edges}
+        self.g250_edges: dict[str, int] = {}
+        for g in self.edge_g250.values():
+            self.g250_edges[g] = self.g250_edges.get(g, 0) + 1
 
         codes = set(edge_cell.values()) | set(self._overlapping_codes())
         raw = load_tims_cells(tims_path, codes)
@@ -367,12 +466,24 @@ class RealDemandModel:
         return {c: v / tot for c, v in w.items()}
 
     def internal_share(self, code: str) -> float:
-        """영역 안에서 끝나는 손님 비율. 운행거리가 평균 L km인 지수분포라고 보고
-        P(거리 < real_internal_trip_km) = 1 - exp(-d/L). (강남역 칸 평균 L≈10.5km -> 약 9%)"""
+        """영역 안에서 끝나는 손님 비율.
+        taxi_od(기본): 기종점 자료에서 그 칸 출발 통행 중 강남역 9칸 안 도착 비율 (칸별 3.7~7.8%, 전체 5.4%).
+        exp_distance: 운행거리가 평균 L km인 지수분포라고 보고 P(거리 < real_internal_trip_km) = 1 - exp(-d/L) (약 9%)."""
+        if self.internal_source == "taxi_od":
+            v = self.od_internal.get(od_grid_code(code))
+            if v is not None:
+                return v
+            return sum(self.od_internal.values()) / max(len(self.od_internal), 1)
         mean_km = max(self.cells[code].mean_dist_km, 0.1)
         return 1 - math.exp(-self.internal_km / mean_km)
 
     def edge_weight(self, edge: str, hour: float) -> float:
+        """이 도로에서 손님이 나타날 상대 가중치. 칸별 총량은 TIMS로 고정되고 이 값은 칸 안 배분만 정한다."""
+        if self.spatial_source == "living_pop_250m":
+            g = self.edge_g250.get(edge)
+            pop = self.living_pop.get((self._day_type, int(hour) % 24), {}).get(g, 0.0)
+            # 격자 인구를 그 격자 안 도로 수로 나눔 -> 격자 합계가 인구에 비례. 0명(비식별)인 격자도 아주 작게 남겨 둔다
+            return max(pop, 1.0) / self.g250_edges.get(g, 1)
         cats = self.edge_cats.get(edge)
         if not cats:
             return 1.0
@@ -387,6 +498,7 @@ class RealDemandModel:
                        is_holiday: bool = False, weather_factor: float = 1.0, hourly_precip_mm=None) -> list[Call]:
         """[start_hour, end_hour) 구간의 호출 목록. 같은 (date, seed, 날씨)면 항상 같은 결과."""
         rng = random.Random(f"fetex-demand|{seed}|{date.isoformat()}")
+        self._day_type = day_type_of(date, is_holiday)
         rates = self.hourly_calls(date, is_holiday, weather_factor, hourly_precip_mm)
         shares = self.cell_shares(date)
         cells = sorted(shares)

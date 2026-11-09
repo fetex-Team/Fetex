@@ -15,9 +15,9 @@
     그 외:                 (len_a − pa) / v_a + D[a][b] + pb / v_b
 - 갈 수 없는 조합은 UNREACHABLE(1e6초)로 두어 다른 택시가 우선 배정되게 한다.
 
-한계
-- 신호 대기·정체는 넣지 않았다(자유 흐름 시간). 상대 비교(어느 택시가 더 빨리 가나)에는 충분하고,
-  정체 반영이 필요하면 traci.edge.getTraveltime으로 주기적으로 갱신하는 확장이 가능하다.
+정체 반영
+- config speed_profile="topis"(기본)이면 TimeVaryingTravelTime이 시간대마다 도로 속도에 TOPIS 실측 기반 배율을 곱한 표로
+  바뀐다(시뮬레이션 도로 제한속도에 넣는 배율과 같음). 신호 대기는 그 배율 안에 평균적으로 들어간다.
 """
 from __future__ import annotations
 
@@ -46,13 +46,15 @@ def net_file_from_sumocfg(sumocfg_path: str) -> str | None:
 
 
 class NetworkTravelTime:
-    def __init__(self, net_file: str, vclass: str = "taxi"):
+    def __init__(self, net_file: str, vclass: str = "taxi", speed_scale: dict | None = None):
+        """speed_scale: {도로 id: 배율} — 시간대별 실측 속도 보정(module1_simulation/speed_profile.py). 없으면 제한속도 그대로."""
         import sumolib
         net = sumolib.net.readNet(net_file, withInternal=True)
         edges = [e for e in net.getEdges() if e.getFunction() != "internal"]
         self.index = {e.getID(): i for i, e in enumerate(edges)}
         self.length = np.array([e.getLength() for e in edges])
-        self.speed = np.array([max(e.getSpeed(), 0.1) for e in edges])
+        sc = speed_scale or {}
+        self.speed = np.array([max(e.getSpeed() * sc.get(e.getID(), 1.0), 0.1) for e in edges])
         n = len(edges)
         succ = [[] for _ in range(n)]          # (다음 도로 index, 교차로 내부 통과 시간)
         for i, e in enumerate(edges):
@@ -95,6 +97,9 @@ class NetworkTravelTime:
 
     def time(self, from_edge: str, from_pos: float, to_edge: str, to_pos: float) -> float:
         a, b = self.index.get(from_edge), self.index.get(to_edge)
+        return self._time(a, b, from_pos, to_pos)
+
+    def _time(self, a, b, from_pos, to_pos):
         if a is None or b is None:
             return UNREACHABLE
         pa = min(max(from_pos, 0.0), self.length[a])
@@ -105,3 +110,27 @@ class NetworkTravelTime:
         if mid >= UNREACHABLE:
             return UNREACHABLE
         return (self.length[a] - pa) / self.speed[a] + mid + pb / self.speed[b]
+
+
+class TimeVaryingTravelTime:
+    """시간대별 속도 보정을 따라가는 도로망 이동 시간. 배차·재배치가 같은 객체를 공유한다.
+    set_scale(key, scale)로 표를 바꾸며, 같은 key의 표는 한 번만 만든다(도로 382개 기준 0.5초 미만)."""
+
+    def __init__(self, net_file: str, vclass: str = "taxi"):
+        self.net_file, self.vclass = net_file, vclass
+        self._tables: dict = {}
+        self.current = NetworkTravelTime.cached(net_file, vclass)
+        self.key = None
+
+    def set_scale(self, key, scale: dict):
+        if key == self.key:
+            return
+        if key not in self._tables:
+            self._tables[key] = NetworkTravelTime(self.net_file, self.vclass, speed_scale=scale)
+        self.current, self.key = self._tables[key], key
+
+    def time(self, from_edge, from_pos, to_edge, to_pos):
+        return self.current.time(from_edge, from_pos, to_edge, to_pos)
+
+    def __getattr__(self, name):              # index, length, speed, D 등은 현재 표를 그대로 보여 준다
+        return getattr(self.__dict__["current"], name)

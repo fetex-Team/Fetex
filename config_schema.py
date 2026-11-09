@@ -138,6 +138,15 @@ CHOICES = [
     ("demand_source", "수요 출처 (real=실측보정)", ["real", "synthetic"]),
     ("holiday_mode", "공휴일 판정 모드", ["auto", "weekday", "holiday"]),
     ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
+    # 도로·근거 기반 현실화 (팀 기본값은 예전 동작, 근거 기반 값은 '근거기반_현실화' 프리셋)
+    ("map_bus_lanes", "중앙버스차로 (build_env 때 반영)", ["open", "bus_only"]),
+    ("map_speed_limits", "제한속도 없는 도로 (build_env 때 반영)", ["osm_default", "seoul_5030"]),
+    ("signal_plans", "신호 운영", ["guess", "real"]),
+    ("speed_profile", "시간대별 정체 보정", ["free_flow", "topis"]),
+    ("real_internal_source", "구역 안 하차 비율 출처", ["exp_distance", "taxi_od"]),
+    ("real_hourly_profile", "시간대 비율 출처", ["seoul_2025", "gangnam_od"]),
+    ("real_dow_factors", "요일 배율", ["seoul_2022_01", "flat"]),
+    ("real_spatial_weights", "칸 안 승차 위치", ["poi", "living_pop_250m"]),
 ]
 
 # 날씨 보정 값 (세부 설정 '날씨 보정' 섹션)
@@ -155,6 +164,7 @@ WEATHER_NUMERICS = [
 TEXTS = [
     ("sim_date", "시뮬레이션 기준 날짜 (YYYY-MM-DD)"),
     ("taxi_respawn_prefix", "택시 재생성 ID 접두어"),
+    ("edge_speed_output", "도로 속도 기록 폴더 (비우면 안 씀)"),
 ]
 HOLIDAY_MULT_ITEMS = [
     ("school", "등교 (0=공휴일 등교 없음)"),
@@ -194,6 +204,9 @@ DETAIL_SECTIONS = [
                                   "restaurant_civilian_taxi_probability"]),
     ("승객 수요(가정 모델) — 백화점", ["department_enabled", "department_pop_base", "department_window_start",
                                 "department_window_end", "department_taxi_probability", "department_stay_sec"]),
+    ("도로·근거 기반 현실화", ["map_bus_lanes", "map_speed_limits", "signal_plans", "speed_profile",
+                         "real_internal_source", "real_hourly_profile", "real_dow_factors", "real_spatial_weights",
+                         "edge_speed_output"]),
     ("공휴일", ["holiday_mode", "holiday_multipliers"]),
     ("날씨 보정", ["weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
     ("택시 운행·배차", ["taxi_strategy", "taxi_dispatch_algorithm", "dispatch_cost", "taxi_idle_algorithm",
@@ -244,7 +257,24 @@ TIPS = {
     "suppress_sumo_warnings": "SUMO 경고 로그를 숨긴다. 출력이 줄어 조금 빨라진다.",
     "demand_source": "real=TIMS 2025 격자 승차 + 서울시 2025 통계로 보정한 수요, synthetic=학교·회사·음식점 가정 모델.",
     "real_demand_scale": "실측 호출량 중 이 시뮬레이션이 맡는 비율. 기본 0.77 = 앱 호출 80% × 카카오 점유율 96%. 영역 전체는 1.0.",
-    "real_internal_trip_km": "이 거리보다 짧은 운행은 영역 안에서 내리고, 나머지는 경계 도로로 나간다고 본다.",
+    "real_internal_trip_km": "이 거리보다 짧은 운행은 영역 안에서 내리고, 나머지는 경계 도로로 나간다고 본다. "
+                             "real_internal_source=exp_distance일 때만 쓴다.",
+    "map_bus_lanes": "강남대로 중앙버스전용차로(OSM busway). open=예전 동작(일반 도로로 바꿔 모든 차 통행), "
+                     "bus_only=버스 전용 유지(서울 중앙버스전용차로는 연중 24시간 운영). 지도를 다시 만들어야(build_env) 반영된다.",
+    "map_speed_limits": "OSM에 제한속도가 없는 도로의 속도. osm_default=예전 동작(SUMO 기본: 간선 100, 이면 50km/h), "
+                        "seoul_5030=서울 안전속도 5030(간선 50, 이면 30km/h). 지도를 다시 만들어야(build_env) 반영된다.",
+    "signal_plans": "신호 운영. guess=예전 동작(netconvert가 추정한 신호), "
+                    "real=경찰청 신호 운영계획(강남역·교보타워사거리, data/external/signal_plans_gangnam.json)을 요일·시각별로 적용.",
+    "speed_profile": "시간대별 정체 보정. free_flow=예전 동작(제한속도 그대로), "
+                     "topis=서울시 TOPIS 실측 속도 기준 시간대별 배율을 도로 속도와 배차 이동 시간 표에 함께 적용.",
+    "real_internal_source": "구역 안에서 내리는 손님 비율. exp_distance=예전 동작(운행거리 지수분포 + 기준 거리, 약 9%), "
+                            "taxi_od=한국교통연구원 택시 기종점 통행량 칸별 실측(전체 약 5.4%).",
+    "real_hourly_profile": "시간대별 호출 비율. seoul_2025=서울 전체 택시(2025 보고서), gangnam_od=강남역 기종점 자료 평일 비율(비교용).",
+    "real_dow_factors": "요일 배율. seoul_2022_01=서울 교통이용 통계보고서 2022년 1월, flat=평일 안·주말 안 차이 없음(민감도 분석용).",
+    "real_spatial_weights": "500m 칸 안에서 어느 도로에 손님이 나타나는지. poi=예전 동작(건물 종류별 가정 배율), "
+                            "living_pop_250m=그 시각 250m 격자 실측 생활인구에 비례(서울 열린데이터광장).",
+    "edge_speed_output": "검증용. 폴더를 적으면 1시간 단위 도로별 평균 속도(SUMO edgeData)를 저장한다 "
+                         "(TOPIS 실측 비교용). 비우면 저장하지 않는다.",
     "passenger_mode": "replay=시간대별 동적 생성(기본), legacy=예전 방식(시작 시 정적 승객 배치).",
     "num_passengers": "가정 모델의 기본 승객 수 (주거 독립 가챠 모수). 실측 모드에서는 쓰지 않는다.",
     "residential_base_pop_per_edge": "주거 도로 1개당 인구 (가정 모델).",

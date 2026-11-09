@@ -344,6 +344,9 @@ class ConfigGUI:
         c.update({k: v.get() for k, v in self.bool_vars.items()})
         c.update({k: v.get() for k, v in self.choice_vars.items()})
         c.update({k: v.get().strip() for k, v in self.text_vars.items()})
+        for k in self.text_vars:   # 기본값이 null인 글자 항목(edge_speed_output 등)은 비우면 다시 null로 저장
+            if c[k] == "" and k in DEFAULT_CONFIG and DEFAULT_CONFIG[k] is None:
+                c[k] = None
         for k, (v, dec, isint) in self.vars.items():
             c[k] = int(v.get()) if isint else round(float(v.get()), dec)
         c["holiday_multipliers"] = {k: round(float(v.get()), 2) for k, v in self.holiday_mult_vars.items()}
@@ -354,7 +357,8 @@ class ConfigGUI:
         self.freq_var.set(c.get("freq", DEFAULT_CONFIG["freq"]))
         self.seed_var.set("" if c.get("passenger_seed") is None else str(c.get("passenger_seed")))
         for k, v in self.text_vars.items():
-            v.set(c.get(k, DEFAULT_CONFIG.get(k, "")))
+            _val = c.get(k, DEFAULT_CONFIG.get(k, ""))
+            v.set("" if _val is None else _val)   # null을 "None" 글자로 보여 주지 않게
         for k, v in self.bool_vars.items():
             v.set(bool(c.get(k, DEFAULT_CONFIG.get(k, False))))
         for k, v in self.choice_vars.items():

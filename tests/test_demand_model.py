@@ -78,7 +78,7 @@ def test_grid_code():
 def test_volume_shares_and_determinism():
     with tempfile.TemporaryDirectory() as tmp:
         meta, paths = _fixture(tmp)
-        model = dm.RealDemandModel(meta, {"real_demand_scale": 1.0}, **paths)
+        model = dm.RealDemandModel(meta, {"real_demand_scale": 1.0, "real_internal_source": "exp_distance"}, **paths)
         date = dt.date(2025, 9, 1)          # 월요일, 평일 시간대는 균등(1/24)
         expected = model.area_daily_calls(date)
         assert 4290 < expected < 4401       # 두 칸 하루 약 4000건 x 평일 배율 1.1
@@ -100,6 +100,16 @@ def test_volume_shares_and_determinism():
         assert abs(sum(internal88) / len(internal88) - 0.393) < 0.06
         assert all(c.dest in meta["boundary_edges"] for c in s1 if c.kind == "external")
         assert all(c.origin != c.dest for c in s1)
+
+
+def test_internal_share_from_taxi_od():
+    """기본(taxi_od): 칸별 구역 안 하차 비율 = 기종점 자료 실측 (다사116089 -> 다사58a44b, 7.6%)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        meta, paths = _fixture(tmp)
+        model = dm.RealDemandModel(meta, {}, **paths)
+        assert dm.od_grid_code("다사116089") == "다사58a44b"
+        assert abs(model.internal_share("다사116089") - dm.load_od_internal()["다사58a44b"]) < 1e-12
+        assert 0.03 < model.internal_share("다사116089") < 0.09
 
 
 def test_weekend_profile_and_scale():
@@ -132,10 +142,29 @@ def test_hourly_weather_factor():
 def test_poi_weight_concentrates_within_cell():
     with tempfile.TemporaryDirectory() as tmp:
         meta, paths = _fixture(tmp)
-        model = dm.RealDemandModel(meta, {}, **paths)
+        model = dm.RealDemandModel(meta, {"real_spatial_weights": "poi"}, **paths)
         calls = [c for c in model.build_schedule(dt.date(2025, 9, 1), 0, 24, seed=3) if c.cell == "다사116089"]
         a1 = sum(c.origin == "a1" for c in calls) / len(calls)
         assert abs(a1 - 0.75) < 0.04, a1                      # 지하철 출구 가중치 3 : 1
+
+
+def test_living_pop_weight_follows_measured_population():
+    """기본(living_pop_250m): 칸 안 배분이 그 시각 250m 격자 생활인구에 비례 (도로 a1을 다른 250m 격자로 옮겨 3:1)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        meta, paths = _fixture(tmp)
+        x, y = dm.latlng_to_utmk(*meta["edge_latlng"]["a2"])
+        meta["edge_latlng"]["a1"] = list(dm.utmk_to_latlng(x - 250.0, y))        # 서쪽 옆 250m 격자
+        g1 = dm.grid250_code_of(*dm.latlng_to_utmk(*meta["edge_latlng"]["a1"]))
+        g2 = dm.grid250_code_of(x, y)
+        assert g1 != g2 and dm.grid_code_of(x - 250.0, y) == dm.grid_code_of(x, y) == "다사116089"
+        lp = os.path.join(tmp, "lp.csv")
+        days = ("20261026", "20261031", "20261101")                               # 월 토 일
+        _write(lp, ["date", "hour", "adm_code", "grid250", "pop"],
+               [[d, f"{h:02d}", 1, g, 300 if g == g1 else 100] for d in days for h in range(24) for g in (g1, g2)])
+        model = dm.RealDemandModel(meta, {"real_living_pop_file": lp}, **paths)
+        calls = [c for c in model.build_schedule(dt.date(2025, 9, 1), 0, 24, seed=3) if c.cell == "다사116089"]
+        a1 = sum(c.origin == "a1" for c in calls) / len(calls)
+        assert abs(a1 - 0.75) < 0.04, a1
 
 
 if __name__ == "__main__":

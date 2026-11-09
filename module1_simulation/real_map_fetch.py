@@ -71,8 +71,13 @@ def fetch_osm_data(lat_min, lat_max, lng_min, lng_max, output_path):
     print(f"[완료] OSM 원본 저장: {output_path} ({file_size_kb:.1f} KB)")
 
 
-def filter_osm_data(input_osm, output_osm):
-    """불필요한 OSM 요소(철도, 수로, 버스전용차로 제한 등) 정제"""
+def filter_osm_data(input_osm, output_osm, open_bus_lanes=False):
+    """불필요한 OSM 요소(철도, 수로, 항공) 제거.
+
+    open_bus_lanes=False(기본): 버스전용차로(highway=busway)는 버스 전용으로 두어 택시·일반 차량이 못 쓰게 한다.
+      서울 중앙버스전용차로는 휴일과 관계없이 연중 24시간 운영 (서울시 교통분야 누리집
+      https://news.seoul.go.kr/traffic/archives/35276). 강남대로 중앙차로가 여기에 해당한다.
+    open_bus_lanes=True: 예전 동작 — busway를 일반 도로(tertiary)로 바꿔 모든 차량에 개방 (비교 실험용)."""
     tree = ET.parse(input_osm)
     root = tree.getroot()
 
@@ -81,15 +86,15 @@ def filter_osm_data(input_osm, output_osm):
 
     for way in list(root.findall('way')):
         tags = {tag.attrib['k']: tag.attrib['v'] for tag in way.findall('tag')}
-        
+
         # 1. 철도/수로/항공 관련 요소 제거
         if any(k in tags for k in ['railway', 'waterway', 'aeroway']):
             root.remove(way)
             removed_count += 1
             continue
 
-        # 2. 버스전용차로(busway) 태그 정제 (일반 차량 통행 가능하도록 보정)
-        if tags.get('access') in ['no', 'bus'] or tags.get('highway') == 'busway':
+        # 2. (비교 실험용) 버스전용차로 개방
+        if open_bus_lanes and (tags.get('access') in ['no', 'bus'] or tags.get('highway') == 'busway'):
             for tag in way.findall('tag'):
                 if tag.attrib['k'] == 'access':
                     tag.attrib['v'] = 'yes'
@@ -98,11 +103,34 @@ def filter_osm_data(input_osm, output_osm):
             busway_fixed += 1
 
     tree.write(output_osm, encoding='utf-8', xml_declaration=True)
-    print(f"[안내] 철도/수로/항공 요소 {removed_count}개 제거, 버스전용차로 {busway_fixed}개 일반도로 재분류 완료 → {output_osm}")
+    bus_msg = f"버스전용차로 {busway_fixed}개 일반도로로 개방" if open_bus_lanes else "버스전용차로는 버스 전용 유지"
+    print(f"[안내] 철도/수로/항공 요소 {removed_count}개 제거, {bus_msg} → {output_osm}")
 
 
-def convert_to_sumo_net(filtered_path, net_path):
-    """netconvert를 사용하여 OSM 파일을 SUMO 네트워크(.net.xml)로 변환"""
+SPEED_TYPE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "typemap", "seoul_5030.typ.xml")
+
+
+def _default_type_file():
+    """SUMO 기본 OSM 도로 종류표(osmNetconvert.typ.xml) 위치."""
+    cands = []
+    if os.environ.get("SUMO_HOME"):
+        cands.append(os.path.join(os.environ["SUMO_HOME"], "data", "typemap", "osmNetconvert.typ.xml"))
+    try:
+        import sumo  # pip eclipse-sumo
+        cands.append(os.path.join(os.path.dirname(sumo.__file__), "data", "typemap", "osmNetconvert.typ.xml"))
+    except ImportError:
+        pass
+    return next((p for p in cands if os.path.exists(p)), None)
+
+
+def convert_to_sumo_net(filtered_path, net_path, speed_limits="seoul_5030"):
+    """netconvert를 사용하여 OSM 파일을 SUMO 네트워크(.net.xml)로 변환.
+
+    speed_limits="seoul_5030"(기본): OSM에 제한속도(maxspeed)가 없는 도로에 서울 안전속도 5030을 적용
+      (간선 50km/h, 이면도로 30km/h — 서울시 2020.12.21 발표, 2021.4.17 전국 시행,
+      https://mediahub.seoul.go.kr/archives/1305625). SUMO 기본값은 간선 100km/h, 이면도로 50km/h라 실제보다 빠르다.
+      maxspeed가 적힌 도로(예: 경부고속도로 80~90)는 그 값을 그대로 쓴다.
+    speed_limits="osm_default": 예전 동작 (SUMO 기본 종류표만 사용)."""
     cmd = [
         'netconvert',
         '--osm-files', filtered_path,
@@ -120,7 +148,12 @@ def convert_to_sumo_net(filtered_path, net_path):
         '--tls.guess', 'true',
         '--tls.join', 'true'
     ]
-    print("[안내] netconvert로 SUMO 네트워크 변환 중...")
+    if speed_limits == "seoul_5030":
+        base = _default_type_file()
+        if base is None:
+            raise SystemExit("[중단] SUMO 기본 도로 종류표(osmNetconvert.typ.xml)를 찾지 못했습니다. SUMO_HOME을 확인하세요.")
+        cmd += ['--type-files', f"{base},{SPEED_TYPE_FILE}"]
+    print(f"[안내] netconvert로 SUMO 네트워크 변환 중... (제한속도: {speed_limits})")
     subprocess.run(cmd, check=True)
 
 
@@ -145,7 +178,8 @@ def _cached_osm_matches(raw_osm, lat_min, lat_max, lng_min, lng_max, tol=1e-6):
     return False
 
 
-def build_real_map_network(lat_min, lat_max, lng_min, lng_max, output_dir):
+def build_real_map_network(lat_min, lat_max, lng_min, lng_max, output_dir,
+                           open_bus_lanes=False, speed_limits="seoul_5030"):
     """전체 매핑 파이프라인 수행.
     반환값이 (net_path, raw_osm_path) 튜플로 바뀌었습니다.
     raw_osm_path(필터링 전 원본)는 poi_extractor.py가 학교/주택/회사/음식점/
@@ -173,7 +207,7 @@ def build_real_map_network(lat_min, lat_max, lng_min, lng_max, output_dir):
             print(f"[안내] 같은 범위의 OSM 원본을 다른 설정 폴더에서 복사해 재사용합니다: {sibling}")
         else:
             fetch_osm_data(lat_min, lat_max, lng_min, lng_max, raw_osm)
-    filter_osm_data(raw_osm, filtered_osm)
-    convert_to_sumo_net(filtered_osm, net_path)
+    filter_osm_data(raw_osm, filtered_osm, open_bus_lanes=open_bus_lanes)
+    convert_to_sumo_net(filtered_osm, net_path, speed_limits=speed_limits)
 
     return net_path, raw_osm
