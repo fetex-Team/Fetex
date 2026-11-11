@@ -33,28 +33,50 @@ class PassengerTimeoutManager:
         self.removed_pids = set()   # 타임아웃으로 소멸 처리된 person_id
         self.removed_at = {}        # person_id -> 소멸 시각(초), 통계 집계용
         self._pending_remove = set()  # 논리적으로만 타임아웃 확정, 물리 제거는 예약 해제 후로 미룬 승객
-        self._reserved_now = set()  
-        self._reserved_at = -1e9    
+        self._reserved_now = set()  # 택시가 배정됐거나(4) 탑승한(8) 예약의 승객 (10초마다 새로 만듦)
+        self._reserved_at = -1e9
+        self._fresh_at = None       # 물리 제거 직전 확인용 즉시 조회 결과의 시각
+        self._fresh_protected = set()
+
+    @staticmethod
+    def _query_assigned() -> set:
+        """SUMO에서 택시가 배정됐거나(4) 이미 태운(8) 예약의 승객 id 집합."""
+        return {
+            p
+            for state in (4, 8)
+            for r in traci.person.getTaxiReservations(state)
+            for p in r.persons
+        }
+
+    def _assigned_just_now(self, now_seconds: float, pid: str) -> bool:
+        """물리 제거 직전에 그 스텝 기준으로 다시 확인 (10초 갱신 사이에 배정된 승객 보호).
+        스텝당 최대 1번만 조회한다."""
+        if self._fresh_at != now_seconds:
+            try:
+                self._fresh_protected = self._query_assigned()
+            except traci.exceptions.TraCIException:
+                self._fresh_protected = set()
+            self._fresh_at = now_seconds
+        return pid in self._fresh_protected
 
     def _refresh_reserved(self, now_seconds: float, current_pids: set = None):
         # 10초 주기로 실행하여 엔진 통신 부하 최소화
         if now_seconds - self._reserved_at < 10:
-            return
+            return False
         self._reserved_at = now_seconds
         try:
-            # 1. 배차 확정(2) 및 탑승 중(4)인 승객 보호 명단에 누적
-            safe_passengers = {
-                p 
-                for state in (2, 4) 
-                for r in traci.person.getTaxiReservations(state) 
-                for p in r.persons
-            }
-            self._reserved_now.update(safe_passengers)
-            
+            # 1. 보호 명단을 매번 새로 만든다 (누적 금지).
+            #    SUMO 예약 상태 비트: 1=new, 2=retrieved(디스패처가 조회만 함), 4=assigned(택시 배정), 8=picked up(탑승).
+            #    커스텀 디스패처가 매 스텝 getTaxiReservations(1)을 부르므로 미배정 예약도 곧 2가 된다 →
+            #    2를 보호하면 사실상 모든 대기 승객이 영원히 보호돼 타임아웃 제거가 안 된다.
+            #    그래서 택시가 실제로 배정됐거나(4) 태운(8) 예약의 승객만 보호한다.
+            #    (디스패처 dispatched_person_ids 보호는 maintain/_flush_pending_remove에서 따로 확인)
+            self._reserved_now = self._query_assigned()
+
             # 2. 현재 맵에 살아있는 전체 승객 목록 불러오기
             active_persons = set(current_pids) if current_pids is not None else set(traci.person.getIDList())
             
-            # 3. 예약 보호 명단 청소 (하차해서 맵에서 사라진 사람 지우기)
+            # 3. 맵에서 이미 사라진 사람은 보호 명단에서도 뺀다
             self._reserved_now.intersection_update(active_persons)
             
             # 4. [신규 추가] depart_time 청소 (딴 거 타러 갔거나, 하차해서 사라진 사람의 기록 삭제)
@@ -64,7 +86,8 @@ class PassengerTimeoutManager:
                 
         except traci.exceptions.TraCIException:
             pass
- 
+        return True
+
     def _is_reserved(self, pid: str, now_seconds: float = None) -> bool:
         if now_seconds is not None:
             self._refresh_reserved(now_seconds)
@@ -77,7 +100,12 @@ class PassengerTimeoutManager:
         if current_pids is None:
             current_pids = set(traci.person.getIDList())
         # 1. 최신 SUMO 예약 상태를 현재 스텝 기준으로 갱신 (10초 주기)
-        self._refresh_reserved(now_seconds, current_pids)
+        if self._refresh_reserved(now_seconds, current_pids):
+            # 탑승 중인 승객은 갱신 때마다 타임아웃 시계를 다시 맞춘다.
+            # (예전엔 waited>=timeout일 때만 멈춰서, 오래 탄 뒤 하차해 남은 stage가 있는 승객이 곧바로 타임아웃됐다)
+            for pid in riding_map(now_seconds):
+                if pid in current_pids:
+                    self.depart_time[pid] = now_seconds
 
         for pid in list(current_pids):  # 루프 중 discard가 일어나므로 복사본 순회
             if pid not in self.depart_time:
@@ -116,13 +144,13 @@ class PassengerTimeoutManager:
             self.removed_pids.add(pid)
             self.removed_at[pid] = now_seconds
 
-            if is_currently_reserved:
+            if is_currently_reserved or self._assigned_just_now(now_seconds, pid):
                 self._pending_remove.add(pid)
                 continue
 
             self._physical_remove(pid, current_pids)
 
-        self._flush_pending_remove(current_pids)
+        self._flush_pending_remove(current_pids, now_seconds)
 
     def _physical_remove(self, pid: str, current_pids: set):
         if self.dispatcher and hasattr(self.dispatcher, "dispatched_person_ids"):
@@ -137,7 +165,7 @@ class PassengerTimeoutManager:
         except Exception:
             pass
 
-    def _flush_pending_remove(self, current_pids: set):
+    def _flush_pending_remove(self, current_pids: set, now_seconds: float = None):
         """예약이 풀린(택시도 안 오고 탑승도 안 한) 논리 타임아웃 승객만 뒤늦게 물리 제거."""
         for pid in list(self._pending_remove):
             if pid not in current_pids:   # 이미 탑승/하차/소멸로 맵에서 사라짐
@@ -152,6 +180,8 @@ class PassengerTimeoutManager:
                 self.dispatcher and hasattr(self.dispatcher, "dispatched_person_ids")
                 and pid in self.dispatcher.dispatched_person_ids
             ):
+                continue
+            if now_seconds is not None and self._assigned_just_now(now_seconds, pid):
                 continue
             self._pending_remove.discard(pid)
             self._physical_remove(pid, current_pids)

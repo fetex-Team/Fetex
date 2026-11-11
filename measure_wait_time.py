@@ -452,7 +452,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
     if rl_maintainer is not None and getattr(spawn_manager, "_real_model", None) is not None:
         rl_maintainer.set_run_date(run_date, demand_model=spawn_manager._real_model,
-                                   sim_start_hour=sim_start_hour, seed=meta.get("passenger_seed"))
+                                   sim_start_hour=sim_start_hour, seed=meta.get("passenger_seed"),
+                                   is_holiday=bool(getattr(spawn_manager, "is_holiday", is_holiday_date(run_date))))
 
     # [시나리오] 영역 밖으로 나간 택시의 복귀 지연 (taxi_external_away=true일 때만)
     away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))

@@ -558,10 +558,12 @@ class TaxiFleetManager:
                         if rte and len(rte.edges) > 0:
                             traci.vehicle.changeTarget(vid, new)
                             self.spawn_stats["stuck_rerouted"] += 1
-                            self._pos_track.pop(vid, None)  # 타이머 리셋
                     except Exception as e:
                         if type(e).__name__ == "FatalTraCIError":
                             raise
+                # 성공/실패와 상관없이 타이머 리셋 — 실패해도 매 스텝 findRoute를 다시 시도하지 않고
+                # stuck_reroute_sec 뒤에 다시 시도한다
+                self._pos_track.pop(vid, None)
             return
         self._update_pos_track(vid, now_seconds, current_edge)
 

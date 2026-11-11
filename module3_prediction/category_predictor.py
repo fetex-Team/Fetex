@@ -28,14 +28,17 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 from config_loader import CFG
 
 MODEL_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pkl")
+_WARNED_OLD_BUNDLE = False   # 설정 키 없는 예전 번들 경고는 프로세스당 한 번만
 
 
 def build_past_requests(demand_model, run_date, sim_start_hour: float, seed, request_category: dict,
-                        days: int = 8):
+                        days: int = 8, is_holiday_today=None):
     """시뮬레이션 시작 전 호출 기록 [(시각, 카테고리, 승차 도로), ...] — 지난 days일(하루 전체) + 오늘 0시~시작 시각.
 
     실측 보정 수요 모델(RealDemandModel)로 학습 로그와 같은 규칙·시드로 만든다 (forecast 재배치와 같은 방식).
-    예측기의 lag(시작 직후)와 '어제·지난주 같은 시각' 피처를 학습 때처럼 채우는 데 쓴다."""
+    예측기의 lag(시작 직후)와 '어제·지난주 같은 시각' 피처를 학습 때처럼 채우는 데 쓴다.
+    is_holiday_today: 오늘(run_date) 실제 승객 생성에 쓴 공휴일 여부 (holiday_mode로 강제될 수 있음,
+    spawn_manager.is_holiday). None이면 예전처럼 날짜로 판정한다. 과거 날짜는 항상 날짜로 판정."""
     from module1_simulation.holiday_utils import is_holiday_date
     from module1_simulation.weather_history import load_hourly_weather
 
@@ -59,7 +62,8 @@ def build_past_requests(demand_model, run_date, sim_start_hour: float, seed, req
                                            hourly_precip_mm=precip(d)))
     if sim_start_hour > 0:
         add(run_date, demand_model.build_schedule(run_date, 0, sim_start_hour, seed,
-                                                  is_holiday=bool(is_holiday_date(run_date)),
+                                                  is_holiday=bool(is_holiday_date(run_date)
+                                                                  if is_holiday_today is None else is_holiday_today),
                                                   hourly_precip_mm=precip(run_date)))
     return out
 
@@ -92,6 +96,18 @@ class CategoryDemandPredictor:
         self.models = bundle["models"]          # {category: XGBRegressor}
         self.feature_cols = bundle["feature_cols"]
         self.category_list = bundle["category_list"]
+        # 학습 때 전처리 설정(집계 칸·lag·이동평균 창)이 지금과 다르면 피처 이름은 같아도 값의 뜻이 달라진다
+        # → h3_predictor처럼 여기서 막는다. 예전 번들(키 없음)은 확인할 수 없어 한 번만 경고한다.
+        _keys = ("freq", "max_lag", "rolling_short", "rolling_long")
+        diff = {k: (bundle[k], CFG[k]) for k in _keys if k in bundle and bundle[k] != CFG[k]}
+        if diff:
+            raise ValueError(f"카테고리 수요 모델과 지금 전처리 설정이 다릅니다 (모델, 지금): {diff}. "
+                             f"같은 설정으로 train_category_demand.py를 다시 실행하세요.")
+        global _WARNED_OLD_BUNDLE
+        if not all(k in bundle for k in _keys) and not _WARNED_OLD_BUNDLE:
+            _WARNED_OLD_BUNDLE = True
+            print(f"[경고] {os.path.basename(model_path)}에 학습 전처리 설정(freq/max_lag/rolling_*)이 없어 "
+                  f"지금 설정과 같은지 확인할 수 없습니다. 설정을 바꿨다면 train_category_demand.py로 다시 학습하세요.")
 
         # run_date: RL 에피소드 시작 시각의 실제 날짜(요일 계산용). 안 주면 오늘 날짜로 대체
         self.run_date = run_date or datetime.date.today()
@@ -251,8 +267,9 @@ class CategoryDemandPredictor:
             feats[f"same_time_{name}"] = float(rec.get(category, 0.0)) if rec is not None else 0.0
             feats[f"has_{name}"] = 1 if rec is not None else 0
 
-        # 시간 피처: 학습 때와 똑같은 함수를 1행짜리 DataFrame에 적용해 이름/값 불일치 제거
-        tf = add_time_features(pd.DataFrame({"time_bucket": [pd.Timestamp(sim_dt)]}), ts_col="time_bucket",
+        # 시간 피처: 학습 때와 똑같은 함수를 1행짜리 DataFrame에 적용해 이름/값 불일치 제거.
+        # 학습 행의 시각은 칸 시작(예: 08:10)이므로 내림한 row로 만든다 (08:13 그대로 넣으면 minute=13으로 어긋남)
+        tf = add_time_features(pd.DataFrame({"time_bucket": [row]}), ts_col="time_bucket",
                               holiday_dates=self._holiday_dates)
         for col in tf.columns:
             if col != "time_bucket":
@@ -260,7 +277,7 @@ class CategoryDemandPredictor:
                 if not isinstance(val, str):
                     feats[col] = float(val)
 
-        feats.update(self._weather_features(sim_dt))   # temperature/precipitation/wind_speed/is_rain/weather_missing/weather_interpolated
+        feats.update(self._weather_features(row))   # 같은 칸 시각 기준 — temperature/precipitation/wind_speed/is_rain/weather_missing/weather_interpolated
 
         missing = [c for c in self.feature_cols if c not in feats]
         if missing and not getattr(self, "_warned_missing", False):

@@ -212,7 +212,8 @@ class TaxiRepositionEnv(gym.Env):
             from collections import Counter
             from module3_prediction.category_predictor import build_past_requests
             past = build_past_requests(self.spawn_manager._real_model, episode_date, sim_start_hour,
-                                       passenger_seed, self._request_category)
+                                       passenger_seed, self._request_category,
+                                       is_holiday_today=is_hol)   # 실제 승객 생성과 같은 공휴일 판정
             self.demand_predictor.set_past_requests(past, sim_start_hour * 3600.0)
             # 재배치 목표 도로 가중치 = 그 도로의 과거 호출 수 (rl_weighted_targets)
             if CFG.get("rl_weighted_targets", True):

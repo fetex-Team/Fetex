@@ -116,7 +116,8 @@ def main():
                 max_decisions=max_decisions,
                 sumo_binary="sumo",     # GUI 없이 headless로 (학습은 GUI 필요 없음)
                 # [Surge Pricing 대체] GUI 탭4의 "인센티브 리워드 가중치" 슬라이더 값.
-                # config.json에 없으면 0.0 (기존 대기감소 보상만 쓰는 것과 완전히 동일하게 동작)
+                # config.json에 없으면 0.0 → 예측 수요 일치도 항은 빠지지만, rl_env 기본 보상에는
+                # 사전 배치 분포 점수(0.5배)가 항상 들어간다 (대기 감소만 보상하는 것은 아님)
                 incentive_weight=CFG.get("incentive_weight", 0.0),
                 target_hotspot_ratio=CFG.get("target_hotspot_ratio", 0.7),
                 randomize_passenger_seed=CFG.get("rl_randomize_passenger_seed", True),
