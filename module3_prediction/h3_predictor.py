@@ -28,7 +28,8 @@ from config_loader import CFG, ROOT
 from module2_preprocessing.external_data_merge import find_weather_file, load_weather, merge_external_data
 from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
 
-MODEL_PATH = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
+# AI_DEMAND_V2_PATH: 보관된 모델 세트(tools/model_sets.py)로 A/B 비교할 때 그 세트의 demand_v2를 쓴다
+MODEL_PATH = os.environ.get("AI_DEMAND_V2_PATH") or os.path.join(ROOT, "saved_models", "demand_v2.joblib")
 
 
 def _load_with_retry(path, tries: int = 4):

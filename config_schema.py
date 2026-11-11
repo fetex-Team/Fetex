@@ -177,22 +177,22 @@ HOLIDAY_MULT_ITEMS = [
     ("evening", "퇴근 (아침 인원에서 파생, 1.0 권장)"),
 ]
 
-# 기본 탭에 보이는 값 (세부 설정과 같은 변수를 공유)
+# 기본 탭에만 보이는 값 (세부 설정 탭에는 다시 나오지 않는다)
 BASIC_KEYS = ["region", "taxi_strategy", "taxi_dispatch_algorithm", "demand_source", "holiday_mode", "use_real_map",
               "num_taxis", "sim_start_hour", "sim_end_hour", "sim_date"]
 
-# 세부 설정 탭의 섹션 (모든 설정이 정확히 한 섹션에 들어간다 — _check_sections가 확인)
+# 세부 설정 탭의 섹션 — 시뮬레이션을 돌릴 때 바꾸는 값만 둔다.
+# 학습·A/B·Unity 설정은 각 실행 창으로 옮겼다 (TRAIN_SECTIONS, AB_KEYS, UNITY_KEYS).
+# 모든 설정은 BASIC_KEYS·DETAIL_SECTIONS·TRAIN_SECTIONS·AB_KEYS·UNITY_KEYS 중 정확히 한 곳에 있다 — _check_sections가 확인.
 DETAIL_SECTIONS = [
-    ("지도·차량", ["region", "use_real_map", "grid_x", "grid_y", "grid_length", "num_taxis", "num_normal_cars",
-                "num_auto_cars", "num_obstacles"]),
-    ("시뮬레이션 기준", ["sim_start_hour", "sim_end_hour", "passenger_wait_timeout", "sim_date", "run_date_mode",
-                   "passenger_seed", "depart_jitter_sec", "sumo_time_to_teleport", "suppress_sumo_warnings"]),
-    ("승객 수요 — 실측 보정", ["demand_source", "real_demand_scale", "real_internal_trip_km", "passenger_mode",
-                         "num_passengers"]),
-    ("승객 수요(가정 모델) — 주거", ["residential_base_pop_per_edge", "residential_schedule_scale",
-                              "residential_taxi_probability", "residential_out_hour", "residential_out_probability",
-                              "residential_evening_in_hour", "residential_evening_in_probability",
-                              "residential_late_in_hour", "residential_late_in_probability"]),
+    ("지도·차량", ["num_normal_cars", "grid_x", "grid_y", "grid_length", "num_auto_cars", "num_obstacles"]),
+    ("시뮬레이션 기준", ["passenger_wait_timeout", "run_date_mode", "passenger_seed", "depart_jitter_sec",
+                   "sumo_time_to_teleport", "suppress_sumo_warnings"]),
+    ("승객 수요 — 실측 보정", ["real_demand_scale", "real_internal_trip_km", "passenger_mode"]),
+    ("승객 수요(가정 모델) — 공통·주거", ["num_passengers", "residential_base_pop_per_edge", "residential_schedule_scale",
+                                  "residential_taxi_probability", "residential_out_hour", "residential_out_probability",
+                                  "residential_evening_in_hour", "residential_evening_in_probability",
+                                  "residential_late_in_hour", "residential_late_in_probability"]),
     ("승객 수요(가정 모델) — 학교", ["school_pop_base", "school_start_hour", "school_end_hour", "school_taxi_peak_hour",
                               "school_afternoon_start_hour", "school_afternoon_end_hour", "school_afternoon_fraction"]),
     ("승객 수요(가정 모델) — 회사·점심", ["company_pop_base", "company_start_hour", "company_end_hour",
@@ -208,26 +208,55 @@ DETAIL_SECTIONS = [
     ("도로·근거 기반 현실화", ["map_bus_lanes", "map_speed_limits", "signal_plans", "speed_profile",
                          "real_internal_source", "real_hourly_profile", "real_dow_factors", "real_spatial_weights",
                          "edge_speed_output"]),
-    ("공휴일", ["holiday_mode", "holiday_multipliers"]),
-    ("날씨 보정", ["weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
-    ("택시 운행·배차", ["taxi_strategy", "taxi_dispatch_algorithm", "dispatch_cost", "taxi_idle_algorithm",
-                   "reposition_fraction", "taxi_remaining_edges_threshold", "taxi_target_pick_attempts",
-                   "taxi_fail_threshold", "taxi_primary_prob", "dispatch_use_euclidean", "taxi_avoid_dead_ends",
-                   "taxi_stuck_reroute_sec", "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders"]),
+    ("공휴일·날씨", ["holiday_multipliers", "weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
+    ("택시 운행·배차", ["dispatch_cost", "taxi_idle_algorithm", "reposition_fraction", "taxi_avoid_dead_ends",
+                   "taxi_remaining_edges_threshold", "taxi_target_pick_attempts", "taxi_fail_threshold",
+                   "taxi_primary_prob", "dispatch_use_euclidean", "taxi_stuck_reroute_sec",
+                   "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders", "taxi_respawn_prefix"]),
     ("요금·인센티브", ["base_fare", "min_multiplier", "max_multiplier", "surge_coefficient", "incentive_weight",
                   "target_hotspot_ratio"]),
+]
+
+# 수요 출처가 real(실측 보정)이면 숨기는 섹션 — 가정 모델(synthetic)에서만 쓰는 값
+SYNTHETIC_SECTIONS = {title for title, _ in DETAIL_SECTIONS if title.startswith("승객 수요(가정 모델)")}
+
+# 섹션 안에서 "고급"으로 한 번 더 접어 두는 값 (거의 바꾸지 않음)
+ADVANCED_KEYS = {
+    "grid_x", "grid_y", "grid_length", "num_auto_cars", "num_obstacles",
+    "passenger_seed", "depart_jitter_sec", "sumo_time_to_teleport", "suppress_sumo_warnings",
+    "real_internal_trip_km", "passenger_mode", "edge_speed_output",
+    "taxi_remaining_edges_threshold", "taxi_target_pick_attempts", "taxi_fail_threshold", "taxi_primary_prob",
+    "dispatch_use_euclidean", "taxi_stuck_reroute_sec", "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders",
+    "taxi_respawn_prefix",
+}
+
+# '학습만 실행' 창의 "고급 학습 설정" (전처리·예측 모델·RL 하이퍼파라미터)
+TRAIN_SECTIONS = [
     ("전처리 (Module 2)", ["freq", "h3_resolution", "max_lag", "rolling_short", "rolling_long", "forecast_horizons"]),
     ("예측 모델 (Module 3)", ["xgb_n_estimators", "xgb_max_depth", "xgb_learning_rate", "test_size", "val_size", "cnn_hidden_dim",
                           "cnn_num_layers", "cnn_kernel_size", "cnn_seq_len", "cnn_epochs", "cnn_patience",
                           "cnn_batch_size", "cnn_lr",
                           "xgb_random_state", "train_random_state"]),
-    ("강화학습 (RL)", ["rl_max_decisions", "rl_total_timesteps", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
-                   "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed", "rl_reward_mode",
+    ("강화학습 (RL)", ["rl_total_timesteps", "rl_max_decisions", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
+                   "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed",
                    "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets"]),
-    ("학습 실행 옵션", ["run_sim_before_training", "taxi_respawn_prefix"]),
-    ("A/B 비교 실행", ["ab_max_parallel_compares", "ab_max_parallel_workers", "ab_queue_stale_sec", "ab_keep_work_dirs"]),
-    ("Unity 연동", ["unity_streaming_assets_dir"]),
 ]
+# 학습 창 위쪽에 따로 보이는 값
+TRAIN_TOP_KEYS = ["rl_reward_mode", "run_sim_before_training"]
+
+# 'A/B 비교하기' 창의 "동시 실행 설정"
+AB_KEYS = ["ab_max_parallel_compares", "ab_max_parallel_workers", "ab_queue_stale_sec", "ab_keep_work_dirs"]
+# '유니티 재생 생성기' 창의 경로 칸
+UNITY_KEYS = ["unity_streaming_assets_dir"]
+
+
+def all_gui_keys():
+    """화면 어딘가에서 바꿀 수 있는 모든 설정 (중복 없이 한 곳씩)."""
+    keys = list(BASIC_KEYS)
+    keys += [k for _, ks in DETAIL_SECTIONS for k in ks]
+    keys += [k for _, ks in TRAIN_SECTIONS for k in ks]
+    keys += TRAIN_TOP_KEYS + AB_KEYS + UNITY_KEYS
+    return keys
 
 # 항목 설명 — GUI에서 마우스를 올리면 뜬다. GUI에 없는 항목도 설명은 여기에 둔다 (기본.json에는 주석 불가).
 TIPS = {

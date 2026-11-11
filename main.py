@@ -5,7 +5,9 @@
 
     python main.py play                         지도 생성 → SUMO GUI 시뮬레이션 (results/simulation/metrics.json)
     python main.py train                        지도 생성 → (로그 생성) → 수요 예측(demand_v2·CNN-LSTM) → 카테고리 모델 → RL
-    python main.py compare '<조합 JSON>' [--model 카테고리모델.pkl]   A/B 병렬 비교 (module4_dispatch/experiments/multi_factor_compare.py)
+        [--real-start 2026-07-13 --real-end 2026-09-06]   그 기간을 실측 통계로 만든 로그로 학습 (시뮬레이션 없음)
+        [--rl-only]                             수요 예측은 지금 모델 그대로, 카테고리 모델·RL만 학습
+    python main.py compare '<조합 JSON>' [--model-set saved_models_backups/<이름>]   A/B 병렬 비교 (module4_dispatch/experiments/multi_factor_compare.py)
     python main.py unity [--strategies ... --algorithm ... --stride N --unity-dir 경로]   Unity 재생 파일
     python main.py analyze --logs <로그 CSV ...>   수요 로그 리포트 (tools/analyze_demand_logs.py)
     python main.py analyzer                     수요 로그 분석기(브라우저) 서버
@@ -121,13 +123,10 @@ def cmd_play(status, args, extra):
 
 # ---------------------------------------------------------------- train
 def backup_saved_models():
-    """학습이 saved_models/를 덮어쓰기 전에 날짜·시각 폴더로 통째로 백업 (시뮬레이션이 쓰는 demand_v2 포함)."""
-    if not os.path.isdir(SAVED) or not os.listdir(SAVED):
-        return "백업 생략 (기존 모델 없음)"
-    dst = os.path.join(ROOT, "saved_models_backups", datetime.now().strftime("%Y%m%d_%H%M%S"))
-    os.makedirs(os.path.dirname(dst), exist_ok=True)
-    shutil.copytree(SAVED, dst)
-    return f"기존 모델을 {os.path.relpath(dst, ROOT)}에 백업"
+    """학습이 덮어쓰기 전에 지금 모델 세트(saved_models + RL 모델 + 학습 조건 메모)를 saved_models_backups/<시각>/에 보관.
+    보관함은 tools/model_sets.py — 이름을 붙이면 A/B 창에서 골라 비교할 수 있다(예전 KJS 스냅샷)."""
+    from tools import model_sets
+    return model_sets.backup_current()[1]
 
 
 def v2_cell_warning():
@@ -147,34 +146,71 @@ def v2_cell_warning():
             f"같은 지역·범위의 로그로 다시 학습하세요.")
 
 
-def backup_rl_model():
-    """RL 모델 zip의 실제 종료 step이 10,000 이상일 때만 rl_model_backups/에 보존."""
-    model = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")
+def rl_model_steps():
+    """RL 모델 zip의 실제 학습 step 수 (확인 불가면 None)."""
     try:
-        with zipfile.ZipFile(model) as z:
-            steps = int(json.loads(z.read("data").decode("utf-8"))["num_timesteps"])
-    except Exception as e:
-        return f"백업 생략 - 실제 종료 step 확인 불가 ({e})"
-    if steps < 10000:
-        return f"백업 생략 - 실제 종료 step {steps:,} < 10,000"
-    dst_dir = os.path.join(ROOT, "rl_model_backups")
-    os.makedirs(dst_dir, exist_ok=True)
-    dst = os.path.join(dst_dir, f"rl_reposition_model_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{steps}steps.zip")
-    shutil.copy2(model, dst)
-    vecnorm = os.path.splitext(model)[0] + "_vecnorm.pkl"   # 학습 때 쓴 관측 정규화 통계도 같이 보존
-    if os.path.exists(vecnorm):
-        shutil.copy2(vecnorm, os.path.splitext(dst)[0] + "_vecnorm.pkl")
-    return f"실제 종료 step {steps:,} >= 10,000, rl_model_backups/{os.path.basename(dst)} 에 보존"
+        with zipfile.ZipFile(os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")) as z:
+            return int(json.loads(z.read("data").decode("utf-8"))["num_timesteps"])
+    except Exception:
+        return None
+
+
+def _parse_train_options(extra):
+    """train 전용 옵션 (GUI '학습만 실행' 창이 넘김). 나머지 인자는 무시."""
+    tp = argparse.ArgumentParser(prog="main.py train", add_help=False)
+    tp.add_argument("--rl-only", action="store_true", help="수요 예측(train.py)을 건너뛰고 카테고리 모델·RL만 학습")
+    tp.add_argument("--real-start", help="실측 통계로 학습 로그를 만들 기간 시작 (YYYY-MM-DD)")
+    tp.add_argument("--real-end", help="실측 통계로 학습 로그를 만들 기간 끝 (YYYY-MM-DD)")
+    opts, _ = tp.parse_known_args(extra)
+    if bool(opts.real_start) != bool(opts.real_end):
+        raise StepFailed("--real-start와 --real-end는 함께 지정해야 합니다")
+    return opts
+
+
+def prepare_real_logs(c, start, end):
+    """실측 통계(RealDemandModel)로 start~end 호출 로그를 만든다. 같은 지역·기간·시드로 이미 있으면 재사용.
+    반환: 로그 글롭 (train.py·train_category_demand.py --logs 용)"""
+    import re
+    from datetime import date
+    s, e = date.fromisoformat(start), date.fromisoformat(end)
+    if s > e:
+        raise StepFailed(f"학습 기간 시작({s})이 끝({e})보다 늦습니다")
+    days = (e - s).days + 1
+    region = re.sub(r'[\\/:*?"<>|\s]+', "", str(c.get("region", "")))   # generate_demand_logs.py와 같은 규칙
+    seed = c.get("passenger_seed") if c.get("passenger_seed") is not None else 42
+    out = os.path.join(ROOT, "data", "real_demand_logs", f"train_{region}_{s:%Y%m%d}_{e:%Y%m%d}")
+    glob_pat = os.path.join(out, "demand_log_*.csv")
+    try:
+        with open(os.path.join(out, "generation_summary.json"), encoding="utf-8") as f:
+            summ = json.load(f)
+        import glob as _glob
+        reuse = (summ.get("start") == s.isoformat() and summ.get("end") == e.isoformat()
+                 and summ.get("seed") == seed and len(_glob.glob(glob_pat)) == days)
+    except (OSError, ValueError):
+        reuse = False
+    if reuse:
+        print(f"[실측 로그] {s} ~ {e} ({days}일) 이미 있어 재사용: {os.path.relpath(out, ROOT)}")
+    else:
+        run_script(os.path.join("data", "loaders", "generate_demand_logs.py"),
+                   ("--days", str(days), "--end", e.isoformat(), "--seed", str(seed), "--out", out))
+    return glob_pat
 
 
 def cmd_train(status, args, extra):
     """지도 → (로그 생성) → 수요 예측(demand_v2 + CNN-LSTM) → 카테고리 수요 모델 → RL → 승격.
-    학습 로그는 '학습 로그 선택'(data/sim_logs)이고, train.py·train_category_demand.py가 같은 로그를 쓴다."""
+    학습 로그: --real-start/--real-end가 있으면 그 기간을 실측 통계로 만든 로그, 없으면 '학습 로그 선택'(data/sim_logs).
+    --rl-only: 수요 예측은 지금 모델 그대로 두고 카테고리 모델·RL만 학습."""
+    opts = _parse_train_options(extra)
     c = load_run_config()
     status.step("0/3", "지도·SUMO 설정 생성 중 (build_env.py)")
     run_script(os.path.join("module1_simulation", "build_env.py"))
 
-    if c.get("run_sim_before_training", True):
+    logs_args = ()
+    if opts.real_start:
+        status.step("0/3", f"실측 통계로 학습 로그 만드는 중 ({opts.real_start} ~ {opts.real_end})")
+        logs_args = ("--logs", prepare_real_logs(c, opts.real_start, opts.real_end))
+        print(f"[안내] RL 학습 기간: {c.get('rl_train_start')} ~ {c.get('rl_train_end')}")
+    elif c.get("run_sim_before_training", True):
         from module2_preprocessing import log_selection
         t0 = time.time()
         n_runs = 3
@@ -187,22 +223,30 @@ def cmd_train(status, args, extra):
     else:
         print("[안내] 학습 전 시뮬레이션 생략 (기존 로그로 학습)")
 
-    status.step("1/3", "기존 모델 백업 후 수요 예측 학습 중 (train.py: demand_v2 + CNN-LSTM)")
     print(backup_saved_models())
-    train_ok = run_script(os.path.join("module3_prediction", "train.py"), check=False)
-    cell_warn = v2_cell_warning() if train_ok else None
-    if cell_warn:
-        print("[경고] " + cell_warn)
+    cell_warn = None
+    if opts.rl_only:
+        train_ok = True
+        print("[RL만] 수요 예측(train.py: demand_v2·CNN-LSTM) 학습을 건너뜁니다. 지금 demand_v2를 그대로 씁니다.")
+    else:
+        status.step("1/3", "수요 예측 학습 중 (train.py: demand_v2 + CNN-LSTM)")
+        train_ok = run_script(os.path.join("module3_prediction", "train.py"), logs_args, check=False)
+        cell_warn = v2_cell_warning() if train_ok else None
+        if cell_warn:
+            print("[경고] " + cell_warn)
 
     # 기존 category_demand_models.pkl은 보존하고, 이번 학습 결과는 별도 파일로 저장한다.
     category_new = os.path.join(SAVED, "category_demand_models_new.pkl")
     status.step("2/3", "카테고리 수요 모델 학습 중 (train_category_demand.py)")
-    run_script(os.path.join("module3_prediction", "train_category_demand.py"), ("--out", category_new))
+    run_script(os.path.join("module3_prediction", "train_category_demand.py"), ("--out", category_new, *logs_args))
 
     status.step("3/3", "강화학습 실행 중 (rl_train.py)")
     rl_ok = run_script(os.path.join("module4_dispatch", "rl_train.py"), check=False,
                        env_extra={"AI_CATEGORY_MODEL_PATH": category_new})
-    rl_backup = backup_rl_model() if rl_ok else "백업 생략 - RL 학습이 정상 종료되지 않음"
+    from tools import model_sets
+    model_sets.write_active_meta(
+        c, rl_only=opts.rl_only, rl_ok=bool(rl_ok), rl_steps=rl_model_steps() if rl_ok else None,
+        demand_logs=(f"실측 {opts.real_start}~{opts.real_end}" if opts.real_start else "시뮬레이션 로그 선택"))
 
     # 이번 라운드 RL이 참고한 카테고리 모델을 고정 이름으로 승격 → 바로 [플레이]해도 같은 수요예측을 쓴다.
     active = os.path.join(SAVED, "category_demand_models.pkl")
@@ -214,17 +258,33 @@ def cmd_train(status, args, extra):
 
     status.done(
         "생성/갱신 파일 (saved_models/, 이전 파일은 saved_models_backups/):\n"
-        "• demand_v2.joblib (forecast 재배치용 수요 예측) · cnn_lstm_demand.pt (비교용)\n"
-        "• category_demand_models.pkl (활성) · category_demand_models_new.pkl (이번 라운드 원본)\n"
+        + ("• demand_v2.joblib · cnn_lstm_demand.pt: 이번엔 학습 안 함 (RL만)\n" if opts.rl_only else
+           "• demand_v2.joblib (forecast 재배치용 수요 예측) · cnn_lstm_demand.pt (비교용)\n")
+        + "• category_demand_models.pkl (활성) · category_demand_models_new.pkl (이번 라운드 원본)\n"
         "• rl_reposition_model.zip (module4_dispatch/)\n"
         "• 평가 지표·그래프: results/module3/\n\n"
         + ("" if train_ok else "[경고] train.py(수요 예측) 학습 실패 — 콘솔 출력 확인. demand_v2는 이전 것 그대로\n")
         + (f"[경고] {cell_warn}\n" if cell_warn else "")
         + f"[승격] {promote}\n"
-        f"[RL 백업] {rl_backup}")
+        "[모델 세트] 이번 학습 조건을 saved_models/model_meta.json에 기록했습니다. "
+        "결과가 좋으면 A/B 창의 [지금 모델 보관]으로 이름을 붙여 두세요.")
 
 
 # ---------------------------------------------------------------- 나머지 (스크립트 그대로 실행)
+def _model_env(a):
+    """compare: --model-set(보관된 모델 세트 폴더)이면 그 세트의 demand_v2·카테고리·RL 모델을, --model이면 카테고리 모델만 바꿔 쓴다."""
+    env = {}
+    if getattr(a, "model_set", None):
+        from tools import model_sets
+        env.update(model_sets.env_for(a.model_set))
+        print(f"[모델 세트] {a.model_set} → " + (", ".join(f"{k}={os.path.basename(v)}" for k, v in env.items()) or "지금 모델"))
+        if "AI_RL_MODEL_PATH" not in env:
+            print("[모델 세트] 이 세트에는 RL 모델이 없어 지금 RL 모델(module4_dispatch/)을 씁니다 (예전 방식 백업).")
+    if a.model:
+        env["AI_CATEGORY_MODEL_PATH"] = a.model
+    return env
+
+
 def _passthrough(script, text, env_extra=None, child_handles_ctrl_c=False):
     def run(status, args, extra):
         status.step("", text)
@@ -238,7 +298,7 @@ COMMANDS = {
     "play": cmd_play,
     "train": cmd_train,
     "compare": _passthrough(os.path.join("module4_dispatch", "experiments", "multi_factor_compare.py"), "A/B 비교 실행 중",
-                            env_extra=lambda a: {"AI_CATEGORY_MODEL_PATH": a.model} if a.model else {},
+                            env_extra=lambda a: _model_env(a),
                             child_handles_ctrl_c=True),
     "unity": _passthrough(os.path.join("module1_simulation", "unity", "export_unity_replay.py"), "Unity 재생 파일 생성 중"),
     "analyze": _passthrough(os.path.join("tools", "analyze_demand_logs.py"), "수요 로그 리포트 생성 중"),
@@ -254,6 +314,7 @@ def main(argv=None):
     p.add_argument("--config", help="실행 설정 파일 (기본: config.json → presets/default/기본.json)")
     p.add_argument("--status", help="진행 상황 JSON 파일 (GUI용)")
     p.add_argument("--model", help="compare: rl_prepositioned가 참고할 카테고리 수요 모델(.pkl)")
+    p.add_argument("--model-set", help="compare: 보관된 모델 세트 폴더 (saved_models_backups/<이름>) — 그 세트의 모델로 비교")
     p.add_argument("--no-build", action="store_true", help="play: 지도 생성을 건너뛰고 기존 지도로 실행")
     args, extra = p.parse_known_args(argv)
 

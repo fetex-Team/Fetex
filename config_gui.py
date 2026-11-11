@@ -18,7 +18,10 @@ from config_loader import (DEFAULT_CONFIG, write_run_config, read_user_config,
                            DEFAULT_PRESET_DIR, USER_PRESET_DIR)
 from config_schema import (  # 설정 항목 정의(데이터)
     FREQ_OPTIONS, STRATEGIES, FACTOR_OPTIONS, FACTOR_VALUE_LABELS, AB_WARN_COMBOS, NUMERIC_GROUPS,
-    BOOLS, CHOICES, WEATHER_NUMERICS, TEXTS, HOLIDAY_MULT_ITEMS, BASIC_KEYS, DETAIL_SECTIONS, TIPS)
+    BOOLS, CHOICES, WEATHER_NUMERICS, TEXTS, HOLIDAY_MULT_ITEMS, BASIC_KEYS, DETAIL_SECTIONS, TIPS,
+    SYNTHETIC_SECTIONS, ADVANCED_KEYS, TRAIN_SECTIONS, TRAIN_TOP_KEYS, AB_KEYS, UNITY_KEYS, all_gui_keys)
+from tools.timeline_picker import TimelineRangePicker
+from tools import model_sets
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
@@ -102,8 +105,11 @@ class ConfigGUI:
         self.load_config_file(show=False)
 
     def _check_sections(self):
-        """모든 설정이 세부 설정의 한 섹션에 들어가 있는지 (빠지면 화면에서 바꿀 수 없음)."""
-        listed = [k for _, keys in DETAIL_SECTIONS for k in keys]
+        """모든 설정이 화면 어딘가(기본·세부 탭, 학습·A/B·Unity 창) 한 곳에 들어가 있는지 (빠지면 화면에서 바꿀 수 없음)."""
+        listed = all_gui_keys()
+        dup = sorted({k for k in listed if listed.count(k) > 1})
+        if dup:
+            print(f"[경고] 설정이 두 곳에 들어가 있음: {dup}")
         known = (set(self._numeric_meta) | set(self._bool_meta) | set(self._choice_meta) | set(self._text_meta)
                  | {"region", "passenger_seed", "holiday_multipliers"})
         missing, unknown = known - set(listed), set(listed) - known
@@ -126,7 +132,13 @@ class ConfigGUI:
         detail = ttk.Frame(nb)
         nb.add(basic, text="기본")
         nb.add(detail, text="세부 설정")
-        # 세부 설정에서 모든 변수를 만든 뒤, 기본 탭은 같은 변수를 공유하는 위젯만 만든다
+        # 세부 탭에 없는 설정(기본 탭·학습·A/B·Unity 창)의 변수는 화면에 안 붙는 보관용 프레임에서 먼저 만든다.
+        # 기본 탭과 각 실행 창은 이 변수를 공유하는 위젯만 만든다(create=False).
+        self._store = ttk.Frame(self.root)
+        detail_keys = {k for _, keys in DETAIL_SECTIONS for k in keys}
+        for key in all_gui_keys():
+            if key not in detail_keys:
+                self._row(self._store, key, create=True)
         self._build_detail_tab(detail)
         self._build_basic_tab(basic)
 
@@ -157,8 +169,9 @@ class ConfigGUI:
         box.pack(fill="x")
         for key in BASIC_KEYS:
             self._row(box, key, create=False)
-        ttk.Label(f, text="나머지 설정은 '세부 설정' 탭에 있습니다. 세부 설정에서 만든 개인 프리셋도 위 버튼에 나타납니다.",
-                  foreground="#64748b").pack(anchor="w", pady=(10, 0))
+        ttk.Label(f, text="나머지 시뮬레이션 설정은 '세부 설정' 탭에, 학습 설정은 [학습만 실행] 창에, "
+                          "동시 실행 수·Unity 경로는 각 실행 창에 있습니다.\n세부 설정에서 만든 개인 프리셋도 위 버튼에 나타납니다.",
+                  foreground="#64748b", justify="left").pack(anchor="w", pady=(10, 0))
 
     def _build_detail_tab(self, parent):
         inner = _scroll_area(parent)
@@ -175,14 +188,61 @@ class ConfigGUI:
         ttk.Button(ctl, text="모두 펼치기", command=lambda: self._toggle_all(True)).pack(side="left", padx=3)
         ttk.Button(ctl, text="모두 접기", command=lambda: self._toggle_all(False)).pack(side="left", padx=3)
         self._sections = []
+        self._section_frames = []
         for title, keys in DETAIL_SECTIONS:
             content = self._section(inner, title)
             for key in keys:
-                self._row(content, key, create=True)
+                if key not in ADVANCED_KEYS:
+                    self._row(content, key, create=True)
+            adv = [k for k in keys if k in ADVANCED_KEYS]
+            if adv:
+                adv_box = self._mini_fold(content, f"고급 ({len(adv)}개, 거의 바꾸지 않음)")
+                for key in adv:
+                    self._row(adv_box, key, create=True)
+        self._synthetic_note = ttk.Label(inner, foreground="#64748b", wraplength=720, justify="left",
+                                         text="※ 수요 출처가 real(실측 보정)이라 가정 모델 섹션 5개는 숨겼어요. "
+                                              "기본 탭에서 수요 출처를 synthetic으로 바꾸면 보여요.")
+        self.choice_vars["demand_source"].trace_add("write", lambda *a: self._relayout_sections())
+        self._relayout_sections()
         self._toggle_weather_rows()
 
-    def _section(self, parent, title):
-        """접기/펼치기 섹션. 기본은 접힘."""
+    def _relayout_sections(self):
+        """수요 출처가 real이면 가정 모델(synthetic) 섹션을 숨긴다. 순서를 지키려고 전부 다시 붙인다."""
+        synthetic = self.choice_vars["demand_source"].get() == "synthetic"
+        for _, frame in self._section_frames:
+            frame.pack_forget()
+        self._synthetic_note.pack_forget()
+        for title, frame in self._section_frames:
+            if synthetic or title not in SYNTHETIC_SECTIONS:
+                frame.pack(fill="x", pady=2)
+        if not synthetic:
+            self._synthetic_note.pack(anchor="w", pady=(6, 0))
+
+    def _mini_fold(self, parent, title, open_=False):
+        """섹션 안의 작은 접기 (예: 고급). 내용 프레임을 돌려준다."""
+        holder = ttk.Frame(parent)
+        holder.pack(fill="x", pady=(4, 0))
+        content = ttk.Frame(holder, padding=(12, 0, 0, 0))
+        state = {"open": open_}
+        btn = ttk.Label(holder, foreground="#2563eb", cursor="hand2")
+
+        def toggle(_e=None):
+            state["open"] = not state["open"]
+            draw()
+
+        def draw():
+            btn.config(text=f"{'▾' if state['open'] else '▸'} {title}")
+            if state["open"]:
+                content.pack(fill="x")
+            else:
+                content.pack_forget()
+        btn.bind("<Button-1>", toggle)
+        btn.pack(anchor="w")
+        draw()
+        return content
+
+    def _section(self, parent, title, register=True):
+        """접기/펼치기 섹션. 기본은 접힘. register=False면 '모두 펼치기'와 숨김 대상에서 뺀다(실행 창용)."""
         frame = ttk.Frame(parent)
         frame.pack(fill="x", pady=2)
         content = ttk.Frame(frame, padding=(14, 2, 4, 6))
@@ -198,7 +258,9 @@ class ConfigGUI:
                 content.pack_forget()
         btn.config(command=toggle)
         btn.pack(fill="x")
-        self._sections.append(toggle)
+        if register:
+            self._sections.append(toggle)
+            self._section_frames.append((title, frame))
         return content
 
     def _toggle_all(self, open_):
@@ -390,10 +452,11 @@ class ConfigGUI:
         self._loaded_config = c.copy()
         self.status.config(text="설정을 적용했습니다. (config.json 저장 완료)")
 
-    def _prepare_run_config(self, label):
+    def _prepare_run_config(self, label, overrides=None):
         """실행 버튼용: 화면 값을 results/run_configs/<label>_<시각>.json에 저장하고 이후 실행이 그 파일을 쓰게 한다.
-        config.json은 [적용하기]를 눌렀을 때만 바뀐다. 반환: 화면 값 dict"""
-        c = self.current()
+        overrides: 이번 실행에만 덮어쓸 값 (예: 학습 창에서 고른 RL 학습 기간).
+        config.json은 [적용하기]를 눌렀을 때만 바뀐다. 반환: 실행 설정 dict"""
+        c = {**self.current(), **(overrides or {})}
         self._run_config_path = write_run_config(c, label)
         self.status.config(text=f"이번 실행 설정: {os.path.relpath(self._run_config_path, ROOT)} "
                                 f"(config.json은 [적용하기]로만 바뀜)")
@@ -433,7 +496,7 @@ class ConfigGUI:
             self.status.config(text=f"개인 프리셋 '{n}' 삭제")
 
     # ---------------------------------------------------------------- 실행 (main.py에 맡김)
-    def _launch(self, command, args=(), title=None, popup_done=False, model=None):
+    def _launch(self, command, args=(), title=None, popup_done=False, model=None, model_set=None):
         """main.py <command>를 새 콘솔 창에서 실행하고, 진행 상황 파일을 1초마다 읽어 상태 줄·팝업에 표시.
         실행 순서는 main.py가 가지고, GUI는 설정 파일(_prepare_run_config)과 진행 표시만 맡는다."""
         title = title or command
@@ -443,6 +506,8 @@ class ConfigGUI:
             cmd += ["--config", self._run_config_path]
         if model:
             cmd += ["--model", model]
+        if model_set:
+            cmd += ["--model-set", model_set]
         cmd += list(args)
         env = {**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1", "PYTHONHASHSEED": "0"}
         try:
@@ -486,9 +551,9 @@ class ConfigGUI:
         self._prepare_run_config("play")
         self._launch("play", title="플레이")
 
-    def run_training(self):
-        self._prepare_run_config("train")
-        self._launch("train", title="학습", popup_done=True)
+    def run_training(self, args=(), overrides=None):
+        self._prepare_run_config("train", overrides)
+        self._launch("train", args, title="학습", popup_done=True)
 
     def open_unity_replay_dialog(self):
         """유니티 재생 데이터(Replay JSON) 생성을 위한 설정 다이얼로그."""
@@ -560,7 +625,7 @@ class ConfigGUI:
         unity_box = ttk.LabelFrame(body, text="4. 유니티(Unity) 연동", padding=8)
         unity_box.pack(fill="x", pady=4)
 
-        unity_dir_var = tk.StringVar(value=str(self.current().get("unity_streaming_assets_dir") or ""))
+        unity_dir_var = self.text_vars["unity_streaming_assets_dir"]   # 설정값과 같은 변수 → [적용하기]로 저장됨
         copy_var = tk.BooleanVar(value=bool(unity_dir_var.get()) and os.path.isdir(unity_dir_var.get()))
         ttk.Checkbutton(
             unity_box,
@@ -568,7 +633,7 @@ class ConfigGUI:
             variable=copy_var
         ).pack(anchor="w")
         ttk.Entry(unity_box, textvariable=unity_dir_var).pack(fill="x", pady=(2, 0))
-        ttk.Label(unity_box, text="Unity 프로젝트의 Assets/StreamingAssets 경로 (세부 설정에 저장해 두면 다음부터 자동으로 채워져요)",
+        ttk.Label(unity_box, text="Unity 프로젝트의 Assets/StreamingAssets 경로 (메인 화면에서 [적용하기]를 누르면 저장돼서 다음부터 자동으로 채워져요)",
                   foreground="#6b7280", wraplength=460).pack(anchor="w", pady=(2, 0))
 
         def run_export():
@@ -598,47 +663,20 @@ class ConfigGUI:
         """(하위 호환) 유니티 재생 생성기 다이얼로그 호출"""
         self.open_unity_replay_dialog()
 
-    def _list_category_models(self):
-        """[(표시이름, 경로)] 수요예측 모델 후보. 맨 위가 '최신 성공작'(마지막으로 RL까지 정상 종료된 학습의 모델).
-        활성과 내용이 똑같은 파일(변환본 등)은 중복으로 나열하지 않고 활성 이름 뒤에 표시."""
-        import filecmp
-        from datetime import datetime as _dt
-
-        def stamp(p):
-            return _dt.fromtimestamp(os.path.getmtime(p)).strftime("%m-%d %H:%M")
-
-        sm = os.path.join(ROOT, "saved_models")
-        active = os.path.join(sm, "category_demand_models.pkl")
-        others = [
-            ("학습 중간본(_new)", os.path.join(sm, "category_demand_models_new.pkl")),
-        ]
-        bdir = os.path.join(ROOT, "saved_models_backups")
-        if os.path.isdir(bdir):
-            for ts in sorted(os.listdir(bdir), reverse=True)[:10]:
-                others.append((f"백업 {ts}", os.path.join(bdir, ts, "category_demand_models.pkl")))
-
-        out, same_as_active = [], []
-        for name, p in others:
-            if not os.path.exists(p):
-                continue
-            if os.path.exists(active) and filecmp.cmp(active, p, shallow=False):
-                if not name.startswith("백업"):
-                    same_as_active.append(name)
-                    continue  # 활성과 같은 내용 -> 따로 나열 안 함
-            out.append((f"{name} ({stamp(p)})", p))
-        if os.path.exists(active):
-            note = f" · {', '.join(same_as_active)}와 동일" if same_as_active else ""
-            out.insert(0, (f"최신 성공작 ({stamp(active)}){note}", active))
-        return out or [("최신 성공작 (모델 파일 없음)", active)]
-
     def open_ab_compare_dialog(self):
         win = tk.Toplevel(self.root)
         win.title("A/B 비교하기")
-        win.geometry("420x650")
-        win.resizable(False, False)
+        win.geometry("460x840")
+        win.resizable(True, True)
+        # 실행 버튼·동시 실행 설정은 먼저 아래에 붙여 창이 작아도 잘리지 않게 한다
+        ab_bar = ttk.Frame(win)
+        ab_bar.pack(side="bottom", fill="x")
+        ab_holder = ttk.Frame(win)
+        ab_holder.pack(side="top", fill="both", expand=True)
+        body = _scroll_area(ab_holder)
 
         ttk.Label(
-            win,
+            body,
             text="비교할 값을 체크하세요. 체크된 값들의 카테시안 조합(전체 곱)이\n"
                  "2개 이상이면 비교가 진행됩니다. (항목별로는 1개만 체크해도 됨)",
             padding=10, wraplength=340, justify="left",
@@ -647,7 +685,7 @@ class ConfigGUI:
         value_vars = {}
 
         for key, (label, values) in FACTOR_OPTIONS.items():
-            box = ttk.LabelFrame(win, text=label, padding=8)
+            box = ttk.LabelFrame(body, text=label, padding=8)
             box.pack(fill="x", padx=15, pady=6)
             value_vars[key] = {}
             for v in values:
@@ -660,22 +698,63 @@ class ConfigGUI:
         _rule = {"sim_date": f"설정 날짜({self.current().get('sim_date', '')}) 고정",
                  "alternate": "과거 90일 중 평일/공휴일 번갈아", "random": "과거 90일 중 무작위"}
         _mode = self.current().get("run_date_mode", "alternate")
-        ttk.Label(win, text=f"※ 공휴일 칸과 실행 날짜를 비우면 설정 규칙({_rule.get(_mode, _mode)})으로 날짜를 정해요.",
+        ttk.Label(body, text=f"※ 공휴일 칸과 실행 날짜를 비우면 설정 규칙({_rule.get(_mode, _mode)})으로 날짜를 정해요.",
                   foreground="#6b7280", padding=(15, 0), wraplength=380, justify="left").pack(anchor="w")
 
-        models = self._list_category_models()
-        model_box = ttk.LabelFrame(win, text="수요예측 모델 (선택)", padding=8)
+        # 모델 세트: 지금 모델 또는 보관된 세트(자동 백업 + 이름 붙인 세트 = 예전 KJS 스냅샷)
+        model_box = ttk.LabelFrame(body, text="모델 세트 (수요 예측 + RL)", padding=8)
         model_box.pack(fill="x", padx=15, pady=6)
-        model_var = tk.StringVar(value=models[0][0])
-        ttk.Combobox(model_box, textvariable=model_var, values=[m[0] for m in models],
-                     state="readonly", width=44).pack(fill="x")
-        ttk.Label(model_box, text="rl_prepositioned 전략이 참고하는 수요예측입니다.",
-                  foreground="#6b7280").pack(anchor="w", pady=(4, 0))
-        ttk.Label(win, text="※ 비교로 생긴 로그를 학습에 쓰려면 '학습만 실행' 창에서 고르세요.",
+        set_var = tk.StringVar()
+        set_combo = ttk.Combobox(model_box, textvariable=set_var, state="readonly", width=44)
+        set_combo.pack(fill="x")
+        sets = {}
+
+        def refresh_sets(select_id=None):
+            sets.clear()
+            for st in model_sets.list_sets():
+                sets[st["title"]] = st
+            set_combo["values"] = list(sets)
+            pick = next((t for t, st in sets.items() if st["id"] == select_id), None)
+            set_var.set(pick or next(iter(sets)))
+        refresh_sets()
+
+        def selected_set():
+            return sets.get(set_var.get())
+
+        def label_selected():
+            st = selected_set()
+            if not st or st["id"] == model_sets.CURRENT:
+                messagebox.showinfo("이름 붙이기", "지금 모델은 [지금 모델 보관]으로 이름을 붙여 보관하세요.", parent=win)
+                return
+            name = simpledialog.askstring("이름 붙이기", "이 모델 세트의 이름 (비우면 이름 지우기):",
+                                          initialvalue=st["label"], parent=win)
+            if name is None:
+                return
+            model_sets.set_label(st["dir"], name)
+            refresh_sets(st["id"])
+
+        def keep_current():
+            c = self.current()
+            default = f"{datetime.now():%m%d}_택시{c.get('num_taxis')}_{c.get('rl_reward_mode')}"
+            name = simpledialog.askstring("지금 모델 보관", "지금 모델 세트를 보관할 이름:", initialvalue=default, parent=win)
+            if not name:
+                return
+            path, msg = model_sets.backup_current(label=name)
+            if path:
+                refresh_sets(os.path.basename(path))
+            self.status.config(text=msg)
+
+        btns = ttk.Frame(model_box)
+        btns.pack(fill="x", pady=(4, 0))
+        ttk.Button(btns, text="지금 모델 보관...", command=keep_current).pack(side="left", padx=(0, 4))
+        ttk.Button(btns, text="이름 붙이기...", command=label_selected).pack(side="left")
+        ttk.Label(model_box, text="★ = 이름 붙인 세트. 학습할 때마다 이전 세트가 자동으로 보관돼요.",
+                  foreground="#6b7280", wraplength=380, justify="left").pack(anchor="w", pady=(4, 0))
+        ttk.Label(body, text="※ 비교로 생긴 로그를 학습에 쓰려면 '학습만 실행' 창에서 고르세요.",
                   foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
 
         # [KJS] 실행 날짜 지정: 비우면 위 규칙(공휴일 칸)대로, 넣으면 날짜마다 한 번씩 비교 (대기열로 순서대로 실행)
-        date_box = ttk.LabelFrame(win, text="실행 날짜 (선택)", padding=8)
+        date_box = ttk.LabelFrame(body, text="실행 날짜 (선택)", padding=8)
         date_box.pack(fill="x", padx=15, pady=6)
         date_var = tk.StringVar()
         ttk.Entry(date_box, textvariable=date_var).pack(fill="x")
@@ -731,13 +810,20 @@ class ConfigGUI:
 
             win.destroy()
             self._prepare_run_config("ab")
-            model_path = dict(models)[model_var.get()]
+            st = selected_set()
+            set_dir = st["dir"] if st and st["id"] != model_sets.CURRENT else None
             for d in (sorted(set(run_dates)) or [None]):
                 batch = [dict(c, run_date=d) for c in combos] if d else combos
                 title = f"A/B 비교 {d}" if d else "A/B 비교"
-                self._launch("compare", [json.dumps(batch, ensure_ascii=False)], title=title, model=model_path)
+                self._launch("compare", [json.dumps(batch, ensure_ascii=False)], title=title, model_set=set_dir)
 
-        ttk.Button(win, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=15, fill="x", padx=15)
+        par_holder = ttk.Frame(ab_bar, padding=(15, 0))
+        par_holder.pack(fill="x")
+        par_box = self._mini_fold(par_holder, "동시 실행 설정 (대기열·워커 수)")
+        for key in AB_KEYS:
+            self._row(par_box, key, create=False)
+
+        ttk.Button(ab_bar, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=(8, 12), fill="x", padx=15)
 
     def _build_log_picker(self, parent, persist=True):
         """학습 팝업 안에 들어가는 '학습에 쓸 로그' 선택 목록. 반환값 save()를 호출하면 selected_logs.json에 저장.
@@ -855,42 +941,111 @@ class ConfigGUI:
         ttk.Button(bar, text="리포트 만들기", command=start).pack(side="right", padx=3)
 
     def open_training_dialog(self):
-        """'학습만 실행' 팝업: 학습에 쓸 로그 + 학습 전 옵션을 여기서 정하고 시작."""
+        """'학습만 실행' 팝업: 학습 범위·RL 보상·학습 데이터(실측 기간 또는 시뮬레이션 로그)·고급 학습 설정을 정하고 시작.
+        KJS 학습 창(보상 선택, 실데이터 바로 학습, 기간 타임라인, PPO 전용)을 jwy 실행 구조(main.py train)에 맞게 옮겼다."""
+        c = self.current()
         win = tk.Toplevel(self.root)
         win.title("학습만 실행")
-        win.geometry("700x560")
-        ttk.Label(win, text="이 창에서 정한 대로 학습이 시작됩니다.\n"
-                            "순서: 맵 재생성 → (시뮬레이션으로 로그 생성) → 수요 예측(demand_v2·CNN-LSTM) → 카테고리 모델 → 강화학습\n"
-                            "기존 모델은 saved_models_backups/에 백업됩니다.",
-                  padding=10, justify="left").pack(anchor="w")
+        win.geometry("780x860")
+        win.minsize(700, 560)
 
-        opt = ttk.LabelFrame(win, text="학습 전 옵션", padding=8)
-        opt.pack(fill="x", padx=12, pady=4)
+        bar = ttk.Frame(win, padding=(12, 8))
+        bar.pack(side="bottom", fill="x")
+        holder = ttk.Frame(win)
+        holder.pack(side="top", fill="both", expand=True)
+        body = _scroll_area(holder)
+        ttk.Label(body, text="이 창에서 정한 대로 학습합니다. 기존 모델은 saved_models_backups/에 백업돼요.\n"
+                             "여기서 바꾼 값은 이번 학습에만 쓰이고, 메인 화면 [적용하기]를 누르면 내 설정으로 저장돼요.",
+                  justify="left", foreground="#475569").pack(anchor="w", pady=(0, 6))
+
+        # 1. 학습 범위
+        scope = ttk.LabelFrame(body, text="1. 학습 범위", padding=8)
+        scope.pack(fill="x", pady=4)
+        scope_var = tk.StringVar(value="full")
+        ttk.Radiobutton(scope, value="full", variable=scope_var,
+                        text="전체 — 수요 예측(demand_v2·CNN-LSTM) → 장소 종류별 모델 → 강화학습").pack(anchor="w")
+        ttk.Radiobutton(scope, value="rl_only", variable=scope_var,
+                        text="RL만 — 수요 예측 모델은 지금 것 유지, 장소 종류별 모델 → 강화학습 (약 5분 절약)").pack(anchor="w")
+        if not os.path.exists(os.path.join(ROOT, "saved_models", "demand_v2.joblib")):
+            ttk.Label(scope, text="demand_v2.joblib이 아직 없어요. forecast 전략을 쓰려면 '전체'로 한 번 학습하세요.",
+                      foreground="#b45309").pack(anchor="w", pady=(2, 0))
+
+        # 2. RL 보상 방식 (설정 rl_reward_mode와 같은 변수)
+        rw = ttk.LabelFrame(body, text="2. 강화학습 보상 방식", padding=8)
+        rw.pack(fill="x", pady=4)
+        reward_var = self.choice_vars["rl_reward_mode"]
+        ttk.Radiobutton(rw, value="default", variable=reward_var,
+                        text="default — 탑승 +3 · 대기 -0.1 · 놓침 -8 · 이동거리 감점 · 핫스팟 배치 점수").pack(anchor="w")
+        ttk.Radiobutton(rw, value="gravityVer", variable=reward_var,
+                        text="gravityVer — 항목별 상한을 둔 -3~+3 보상, 예측 수요와 빈 택시 분포 일치에 비중").pack(anchor="w")
+
+        # 3. 학습 데이터
+        data = ttk.LabelFrame(body, text="3. 학습 데이터", padding=8)
+        data.pack(fill="x", pady=4)
+        src_var = tk.StringVar(value="real" if c.get("demand_source", "real") == "real" else "sim")
+        ttk.Radiobutton(data, value="real", variable=src_var,
+                        text="실측 통계로 바로 만들기 — 시뮬레이션 없이 고른 기간의 호출 로그를 만들어 학습").pack(anchor="w")
+        ttk.Radiobutton(data, value="sim", variable=src_var,
+                        text="시뮬레이션 로그 — 저장된 로그 중에서 골라 학습").pack(anchor="w")
+
+        real_box = ttk.Frame(data, padding=(0, 6, 0, 0))
+        picker = TimelineRangePicker(real_box, start=c.get("rl_train_start"), end=c.get("rl_train_end"),
+                                     eval_date=c.get("sim_date"))
+        picker.pack(fill="x")
+        ttk.Label(real_box, foreground="#64748b", wraplength=700, justify="left",
+                  text="수요 예측 · 장소 종류별 모델 · RL이 모두 이 기간으로 학습해요. "
+                       "로그는 data/real_demand_logs/train_<지역>_<시작>_<끝>/에 만들고, 같은 기간을 다시 고르면 재사용해요.").pack(
+            anchor="w", pady=(6, 0))
+
+        sim_box = ttk.Frame(data, padding=(0, 6, 0, 0))
         sim_var = self.bool_vars["run_sim_before_training"]
-        # 사용자가 기존 로그를 골라 둔 경우, 그 선택만으로 학습하는 것이 안전한 기본값이다.
-        # 추가 시뮬레이션은 선택 로그를 보완하는 것이 아니라 새 로그를 학습 목록에 섞는다.
         import module2_preprocessing.log_selection as _training_log_selection
         if _training_log_selection.load_selection() is not None:
+            # 사용자가 기존 로그를 골라 둔 경우, 그 선택만으로 학습하는 것이 안전한 기본값이다.
             sim_var.set(False)
-            ttk.Label(opt, text="선택된 로그만 학습하도록 '3회 추가 생성'을 자동 해제했습니다.",
+            ttk.Label(sim_box, text="선택된 로그만 학습하도록 '3회 추가 생성'을 자동 해제했습니다.",
                       foreground="#b45309").pack(anchor="w")
-        ttk.Checkbutton(opt, text="시뮬레이션 3회 먼저 돌려 새 로그도 학습에 추가 (선택 로그만 쓰려면 해제)", variable=sim_var).pack(anchor="w")
+        ttk.Checkbutton(sim_box, text="시뮬레이션 3회 먼저 돌려 새 로그도 학습에 추가 (선택 로그만 쓰려면 해제)",
+                        variable=sim_var).pack(anchor="w")
+        log_box = ttk.LabelFrame(sim_box, text="학습에 쓸 로그 (새로 만든 로그는 선택 목록에 자동으로 추가됩니다)", padding=8)
+        log_box.pack(fill="x", pady=(6, 0))
+        save_sel = self._build_log_picker(log_box)
 
-        box = ttk.LabelFrame(win, text="학습에 쓸 로그  (새로 만든 로그는 선택 목록에 자동으로 추가됩니다)", padding=8)
-        box.pack(fill="both", expand=True, padx=12, pady=6)
-        save_sel = self._build_log_picker(box)
+        def show_source(*_):
+            real_box.pack_forget()
+            sim_box.pack_forget()
+            (real_box if src_var.get() == "real" else sim_box).pack(fill="x")
+        src_var.trace_add("write", show_source)
+        show_source()
+
+        # 4. 고급 학습 설정 (설정값과 같은 변수 — 예전 세부 탭의 전처리·예측 모델·RL 섹션)
+        adv_holder = ttk.Frame(body)
+        adv_holder.pack(fill="x", pady=4)
+        for title, keys in TRAIN_SECTIONS:
+            content = self._section(adv_holder, f"고급 — {title}", register=False)
+            for key in keys:
+                self._row(content, key, create=False)
 
         def start():
-            if save_sel is not None and not save_sel():
+            args, overrides = [], {}
+            if scope_var.get() == "rl_only":
+                args.append("--rl-only")
+            if src_var.get() == "real":
+                s, e, n = picker.selection()
+                if picker.overlaps_eval() and not messagebox.askyesno(
+                        "학습 기간 확인", f"학습 기간({s} ~ {e})이 평가 날짜({c.get('sim_date')}) 이후까지 들어가요.\n"
+                                       "평가 날짜가 학습에 섞이면 결과가 실제보다 좋게 나와요. 그래도 학습할까요?", parent=win):
+                    return
+                args += ["--real-start", s.isoformat(), "--real-end", e.isoformat()]
+                overrides.update(rl_train_start=s.isoformat(), rl_train_end=e.isoformat(),
+                                 run_sim_before_training=False)
+            elif save_sel is not None and not save_sel():
                 return
             win.destroy()
-            self.run_training()
+            self.run_training(args, overrides)
 
-        bar = ttk.Frame(win)
-        bar.pack(fill="x", padx=12, pady=10)
         ttk.Button(bar, text="취소", command=win.destroy).pack(side="right", padx=3)
         ttk.Button(bar, text="학습 시작", command=start).pack(side="right", padx=3)
-
 
 if __name__ == "__main__":
     root = tk.Tk()
