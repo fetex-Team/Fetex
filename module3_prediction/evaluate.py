@@ -33,12 +33,14 @@ def fmt_pct(v, digits: int = 2) -> str:
     return "-" if v is None else f"{v:.{digits}f}%"
 
 
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, mape_min_count: float = 2.0) -> dict:
     """
     RMSE, MAE, MAPE, WAPE 성능 평가 지표 계산.
 
     수요 데이터는 0인 칸이 많아서 MAPE를 그대로 계산하면 0으로 나눠 수백만 %가 나온다.
     - MAPE: 실제값이 0인 칸은 제외하고 계산 (전부 0이면 None)
+    - MAPE(count>=2) [KJS]: 실제 수요가 mape_min_count(2) 이상인 칸만. 1건짜리 칸의 작은 오차가 100% 이상으로
+      부풀려지는 것을 빼고 본 MAPE (희소한 칸 단위 수요에서 비교용)
     - WAPE: 오차 절대값 합 / 실제값 절대값 합 (0이 많아도 안정적, 합이 0이면 None) — 주 지표
     """
     y_true = np.asarray(y_true, dtype=float).ravel()
@@ -48,12 +50,15 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     err = np.abs(y_true - y_pred)
     nonzero = np.abs(y_true) > 0
     mape = float(np.mean(err[nonzero] / np.abs(y_true[nonzero])) * 100) if nonzero.any() else None
+    material = np.abs(y_true) >= float(mape_min_count)
+    mape_m = float(np.mean(err[material] / np.abs(y_true[material])) * 100) if material.any() else None
     denom = float(np.sum(np.abs(y_true)))
     wape = float(np.sum(err) / denom * 100) if denom > 0 else None
     return {
         "RMSE": round(float(rmse), 4),
         "MAE": round(float(mae), 4),
         "MAPE (%)": round(mape, 4) if mape is not None else None,
+        "MAPE (count>=2) (%)": round(mape_m, 4) if mape_m is not None else None,
         "WAPE (%)": round(wape, 4) if wape is not None else None,
     }
 
@@ -124,11 +129,13 @@ def print_summary(metrics):
     print(f"[시험 구간 성능] {metrics['freq']} 칸, 타깃 {metrics['target_cols'][0]}~{metrics['target_cols'][-1]}  (WAPE가 주 지표)")
     print("-" * 78)
     wins = sorted({w for m in models.values() for w in m["windows"]})
-    head = f"{'모델':<22}{'RMSE':>8}{'MAE':>8}{'WAPE':>10}{'MAPE(0제외)':>13}" + "".join(f"{w + ' WAPE':>14}" for w in wins)
+    head = (f"{'모델':<22}{'RMSE':>8}{'MAE':>8}{'WAPE':>10}{'MAPE(0제외)':>13}{'MAPE(수요≥2)':>14}"
+            + "".join(f"{w + ' WAPE':>14}" for w in wins))
     print(head)
     for name, m in models.items():
         o = m["overall"]
-        row = f"{name:<22}{o['RMSE']:>8.3f}{o['MAE']:>8.3f}{fmt_pct(o['WAPE (%)']):>10}{fmt_pct(o['MAPE (%)']):>13}"
+        row = (f"{name:<22}{o['RMSE']:>8.3f}{o['MAE']:>8.3f}{fmt_pct(o['WAPE (%)']):>10}{fmt_pct(o['MAPE (%)']):>13}"
+               f"{fmt_pct(o.get('MAPE (count>=2) (%)')):>14}")
         row += "".join(f"{fmt_pct(m['windows'].get(w, {}).get('WAPE (%)')):>14}" for w in wins)
         print(row)
     print("=" * 78)

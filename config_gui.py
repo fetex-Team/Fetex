@@ -671,6 +671,14 @@ class ConfigGUI:
         ttk.Label(win, text="※ 비교로 생긴 로그를 학습에 쓰려면 '학습만 실행' 창에서 고르세요.",
                   foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
 
+        # [KJS] 실행 날짜 지정: 비우면 위 규칙(공휴일 칸)대로, 넣으면 날짜마다 한 번씩 비교 (대기열로 순서대로 실행)
+        date_box = ttk.LabelFrame(win, text="실행 날짜 (선택)", padding=8)
+        date_box.pack(fill="x", padx=15, pady=6)
+        date_var = tk.StringVar()
+        ttk.Entry(date_box, textvariable=date_var).pack(fill="x")
+        ttk.Label(date_box, text="예: 20260907 20260912 (공백·쉼표로 여러 개). 날짜마다 따로 비교해요.",
+                  foreground="#6b7280").pack(anchor="w", pady=(4, 0))
+
         def run_compare():
             selected = {}
             for key, (label, values) in FACTOR_OPTIONS.items():
@@ -705,14 +713,28 @@ class ConfigGUI:
                         f"그래도 실행할까요?"):
                     return
 
-            if "holiday_mode" not in selected:
+            import re
+            run_dates = []
+            for tok in re.split(r"[\s,]+", date_var.get().strip()):
+                if not tok:
+                    continue
+                try:
+                    run_dates.append(datetime.strptime(tok.replace("-", ""), "%Y%m%d").date().isoformat())
+                except ValueError:
+                    messagebox.showwarning("날짜 형식", f"'{tok}'는 날짜(YYYYMMDD)가 아니에요.")
+                    return
+
+            if "holiday_mode" not in selected and not run_dates:
                 for _c in combos:
                     _c["holiday_mode"] = "today"   # 미체크: 오늘 날짜 기준 자동 판정
 
             win.destroy()
             self._prepare_run_config("ab")
             model_path = dict(models)[model_var.get()]
-            self._launch("compare", [json.dumps(combos, ensure_ascii=False)], title="A/B 비교", model=model_path)
+            for d in (sorted(set(run_dates)) or [None]):
+                batch = [dict(c, run_date=d) for c in combos] if d else combos
+                title = f"A/B 비교 {d}" if d else "A/B 비교"
+                self._launch("compare", [json.dumps(batch, ensure_ascii=False)], title=title, model=model_path)
 
         ttk.Button(win, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=15, fill="x", padx=15)
 

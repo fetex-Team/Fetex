@@ -79,6 +79,34 @@ CATEGORY_MODEL_PATH_DEFAULT = os.path.join(
 )
 
 
+def _safe_load_vecnorm(path):
+    """[KJS] VecNormalize 통계를 NumPy 1.x/2.x 저장 형식 차이(난수 생성기 직렬화, numpy._core 경로)에 상관없이 읽는다.
+    쓰는 값은 obs_rms(mean, var), epsilon, clip_obs뿐이라 난수 생성기는 빈 객체로 대신한다."""
+    import pickle
+
+    class _Dummy:
+        def __init__(self, *a, **k):
+            pass
+
+        def __setstate__(self, state):
+            pass
+
+    class _Unpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            if module == "numpy.random._pickle" and name in ("__bit_generator_ctor", "__generator_ctor",
+                                                             "__randomstate_ctor"):
+                return lambda *a, **k: _Dummy()
+            if module.startswith("numpy._core"):
+                try:
+                    return super().find_class(module, name)
+                except (ModuleNotFoundError, AttributeError):
+                    module = module.replace("numpy._core", "numpy.core")
+            return super().find_class(module, name)
+
+    with open(path, "rb") as f:
+        return _Unpickler(f).load()
+
+
 class RLRepositionMaintainer:
     def __init__(self, model_path: str, meta: dict, category_model_path: str = None, config_dir: str = None):
         # SB3 모델에는 Gymnasium action_space의 난수 상태도 저장된다. NumPy 2에서
@@ -102,13 +130,14 @@ class RLRepositionMaintainer:
         self._obs_mean = None
         _vn_path = os.path.splitext(model_path)[0] + "_vecnorm.pkl"
         if os.path.exists(_vn_path):
-            import pickle
-            with open(_vn_path, "rb") as _f:
-                _vn = pickle.load(_f)
-            self._obs_mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
-            self._obs_var = np.asarray(_vn.obs_rms.var, dtype=np.float64)
-            self._obs_eps = float(_vn.epsilon)
-            self._obs_clip = float(_vn.clip_obs)
+            try:
+                _vn = _safe_load_vecnorm(_vn_path)
+                self._obs_mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
+                self._obs_var = np.asarray(_vn.obs_rms.var, dtype=np.float64)
+                self._obs_eps = float(_vn.epsilon)
+                self._obs_clip = float(_vn.clip_obs)
+            except Exception as _e:
+                print(f"[경고] {os.path.basename(_vn_path)}을 읽지 못해 관측 정규화 없이 진행합니다: {_e}")
         self.zones = meta["zones"]
         # 학습 환경은 reset 뒤 처음 60초를 관측한 다음 행동한다. 실제 실행도 같은
         # 경계(60초)에서 첫 결정을 내리도록 한다.

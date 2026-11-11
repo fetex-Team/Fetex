@@ -8,6 +8,11 @@ import os
 import sys
 import json
 
+# [KJS] Windows에서 워커 여러 개가 동시에 XGBoost/OpenMP DLL을 올리다 WinError 1114로 죽는 것 방지
+for _k, _v in (("OMP_NUM_THREADS", "1"), ("KMP_DUPLICATE_LIB_OK", "TRUE"),
+               ("OPENBLAS_NUM_THREADS", "1"), ("MKL_NUM_THREADS", "1")):
+    os.environ.setdefault(_k, _v)
+
 def elevate_worker_priority():
     """병렬 워커 프로세스의 CPU 우선순위를 높여 다른 작업으로 인한 시뮬레이션 지연 방지"""
     try:

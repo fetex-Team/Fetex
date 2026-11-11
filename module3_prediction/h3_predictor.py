@@ -26,9 +26,24 @@ from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor
 MODEL_PATH = os.path.join(ROOT, "saved_models", "demand_v2.joblib")
 
 
+def _load_with_retry(path, tries: int = 4):
+    """[KJS] Windows에서 여러 프로세스가 동시에 XGBoost(OpenMP) DLL을 올릴 때 나는 일시적 오류(WinError 1114)에 대비해
+    몇 번 다시 시도한다. 끝내 실패하면 원래 오류를 그대로 낸다 (조용히 예측 없이 진행하지 않음)."""
+    import time
+    for i in range(tries):
+        try:
+            return joblib.load(path)
+        except FileNotFoundError:
+            raise
+        except Exception:
+            if i == tries - 1:
+                raise
+            time.sleep(0.3 * (i + 1))
+
+
 class H3DemandPredictor:
     def __init__(self, cells: list, start_dt: _dt.datetime, model_path: str = MODEL_PATH):
-        art = joblib.load(model_path)
+        art = _load_with_retry(model_path)
         if art.get("version") != 2 or len(art.get("target_cols", [])) != 6:
             raise ValueError("module3_prediction/train.py로 만든 demand_v2(t+1~t+6) 모델이 필요합니다.")
         self.cells = list(cells)

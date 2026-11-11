@@ -52,7 +52,8 @@ def _sumo_dispatch_value(algo: str, strategy: str = None) -> str:
 
 
 def _combo_label(combo: dict) -> str:
-    return "_".join(f"{k}={v}" for k, v in combo.items())
+    # run_date는 비교 대상이 아니라 실행 조건이라 이름에서 뺀다 (날짜는 순위표의 '시뮬 날짜'에 표시)
+    return "_".join(f"{k}={v}" for k, v in combo.items() if k != "run_date")
 
 
 def decide_run_dates(combos: list) -> list:
@@ -71,6 +72,10 @@ def decide_run_dates(combos: list) -> list:
     cache = {}
     dates = []
     for combo in combos:
+        # [KJS] GUI에서 실행 날짜를 지정했으면 그 날짜를 그대로 쓴다 (날짜별로 한 번씩 비교)
+        if combo.get("run_date"):
+            dates.append(datetime.date.fromisoformat(str(combo["run_date"])))
+            continue
         mode = combo.get("holiday_mode") or cfg.get("holiday_mode", "auto")
         if mode not in cache:
             if mode == "today":
@@ -175,6 +180,10 @@ def run_queue_and_wait(combos: list, config_dir_names: list, session_dir: str,
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     env["PYTHONHASHSEED"] = "0"  # 실행 재현성: 같은 조건이면 같은 결과 (reproducibility.py)
+    # [KJS] Windows에서 워커 여러 개가 동시에 XGBoost/OpenMP DLL을 올리다 WinError 1114로 죽는 것 방지
+    for _k, _v in (("OMP_NUM_THREADS", "1"), ("KMP_DUPLICATE_LIB_OK", "TRUE"),
+                   ("OPENBLAS_NUM_THREADS", "1"), ("MKL_NUM_THREADS", "1")):
+        env.setdefault(_k, _v)
     # RL 모델 스냅샷 선택(KJS): AI_RL_MODEL_PATH가 있으면 워커(measure_wait_time.py)에 그대로 넘긴다.
     # 워커는 cwd=ROOT로 뜨므로 상대 경로는 지금 위치 기준 절대 경로로 바꿔 넘긴다.
     rl_model = os.environ.get("AI_RL_MODEL_PATH")
@@ -240,7 +249,18 @@ def save_ranking_text(ranked, results, labels_total, combos=None, request_id=Non
     요청ID가 시각으로 시작해서 예전 ab_ranking_<시각>.txt와 같은 순서로 정렬되고, 동시 실행끼리 겹치지 않는다."""
     os.makedirs(AB_RESULTS_DIR, exist_ok=True)
     now = datetime.datetime.now()
-    path = os.path.join(AB_RESULTS_DIR, f"ab_ranking_{request_id or now.strftime('%Y%m%d_%H%M%S')}.txt")
+    # [KJS] 파일 이름만 보고도 무엇을 비교했는지 알 수 있게: 날짜 종류·1위·1위 대기시간을 붙인다
+    best_v0, best_k0 = ranked[0]
+    best_r0 = results.get(best_k0, {})
+    day0 = _day_type(best_r0.get("run_date"), best_r0.get("is_holiday")) if best_r0.get("run_date") else "날짜미상"
+    short = best_k0
+    for a, b in (("taxi_strategy=", ""), ("taxi_dispatch_algorithm=", ""), ("holiday_mode=", ""),
+                 ("rl_prepositioned", "RL"), ("prepositioned", "시간표"), ("forecast", "예측"), ("patrol", "순찰")):
+        short = short.replace(a, b)
+    tag = f"{day0}_{short}1위_{best_v0:.0f}s"
+    # 파일 이름에 못 쓰는 문자 제거 ('공휴일/주말'의 / 등)
+    tag = "".join(ch for ch in tag.replace("/", "·") if ch not in '\\:*?"<>|=, ')[:60]
+    path = os.path.join(AB_RESULTS_DIR, f"ab_ranking_{request_id or now.strftime('%Y%m%d_%H%M%S')}_{tag}.txt")
 
     lines = []
     lines.append("=" * 64)
