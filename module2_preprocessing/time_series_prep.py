@@ -3,7 +3,12 @@
 
 명세 대응
 - R3 "지난 1시간 평균, 지난주 동일 시간대, 이동평균": rolling_mean_1h / same_time_last_week / rolling_mean_*
-- R5 "t까지 데이터로 t+1~t+6(5분 단위) 예측": freq=5min, y_h1..y_h6 타겟
+- R5 "t까지 데이터로 t+1~t+6 예측": freq(config, 현재 10min) 칸, y_h1..y_h6 타겟
+
+행·타깃의 의미 (학습·서빙 공통)
+- time_bucket=t 행은 '지금 진행 중인 칸'(아직 다 관측되지 않음)이다. demand(t)는 어떤 피처에도 쓰지 않는다.
+- lag_1 = demand(t-1) = 마지막으로 끝난 칸, y_hk = demand(t+k). 즉 서빙에서 지금 시각이 칸 t 안에 있으면
+  row t의 피처로 t+1..t+H(진행 중인 칸의 다음 칸부터)를 예측한다 (module3_prediction/h3_predictor.py).
 
 설계 원칙 (누수 방지)
 - 모든 피처는 shift(1) 이후에 계산 → 현재 칸(t)의 demand는 어떤 피처에도 들어가지 않음.
@@ -31,7 +36,7 @@ TARGET_PREFIX = "y_h"
 
 
 def _buckets_per(freq: str, minutes: int) -> int:
-    """freq(예: '5min') 기준으로 minutes 분이 몇 칸인지."""
+    """freq(예: '10min') 기준으로 minutes 분이 몇 칸인지."""
     step = pd.Timedelta(freq)
     return max(1, int(pd.Timedelta(minutes=minutes) / step))
 
@@ -62,7 +67,7 @@ def validate_panel(panel: pd.DataFrame, freq: str, spatial_col: str = "h3_index"
     검사 항목 (Data Spec 5장)
     - 필수 컬럼: time_bucket, h3_index, demand
     - 유일성: (time_bucket, h3_index) 중복 0건
-    - 시간 연속성 전제: time_bucket이 freq 경계(예: 5분)에 정렬
+    - 시간 연속성 전제: time_bucket이 freq 경계(예: 10분)에 정렬
     - 유효범위: demand ≥ 0 (결측 불가), precipitation이 있으면 ≥ 0
     """
     required = ["time_bucket", spatial_col, "demand"]
@@ -229,11 +234,18 @@ def target_columns(df: pd.DataFrame) -> list:
     return [c for c in df.columns if c.startswith(TARGET_PREFIX)]
 
 
-def time_based_split(feature_df: pd.DataFrame, test_size: float, val_size: float = 0.0, time_col: str = 'time_bucket'):
+def time_based_split(feature_df: pd.DataFrame, test_size: float, val_size: float = 0.0, time_col: str = 'time_bucket',
+                     purge: int = 0):
     """
     시간 순서 분할: 마지막 test_size 비율의 '시간칸'을 test, 그 앞 val_size 비율을 val.
     반환: (train, val, test, cutoffs) — val_size=0이면 val은 빈 DataFrame.
     (기존 train_test_split(shuffle=False)은 [셀, 시간] 정렬 상태에서 행을 잘라 '마지막 셀들'이 test가 되는 문제가 있었음)
+
+    purge: 각 경계(val_cut, test_cut) 직전 purge칸을 앞 구간에서 뺀다 (기본 0 = 예전과 같음).
+      행 t의 타깃 y_hk = demand(t+k)라서 경계 바로 앞 행의 타깃(y_h2..y_hH)은 다음 구간의 수요를 담는다
+      → 학습 구간이 검증·시험 구간 값을 보는 경계 누수. 타깃 수(H)만큼 purge하면 앞 구간 타깃이 경계를 넘지 않는다.
+      (경계는 '시간칸 개수' 기준으로 먼저 정하고, 그 다음 앞 구간 끝만 잘라 낸다 → 경계·시험 구간은 purge와 무관하게 같다.
+       행 t의 가장 먼 타깃이 다음 구간의 타깃 값(demand ≥ cut+1칸)이 되는 건 t ≥ cut-(H-1)칸이므로 purge=H는 1칸 여유)
     """
     buckets = np.sort(feature_df[time_col].unique())
     n = len(buckets)
@@ -242,7 +254,15 @@ def time_based_split(feature_df: pd.DataFrame, test_size: float, val_size: float
     test_cut = buckets[n - n_test]
     val_cut = buckets[max(0, n - n_test - n_val)] if n_val > 0 else test_cut
     t = feature_df[time_col]
-    train = feature_df[t < val_cut].copy()
-    val = feature_df[(t >= val_cut) & (t < test_cut)].copy()
+    if purge > 0 and n > 1:
+        # 경계 앞 purge칸(시각 기준: cut - purge×칸 ≤ t < cut)을 앞 구간에서 제외.
+        # 칸 간격은 시간칸 차이의 최솟값(= freq). 경계 앞이 이미 관측 공백이면 지울 행이 없다 (공백 너머로는 타깃이 없음).
+        step = pd.Timedelta(np.diff(buckets).min())
+        train_end = pd.Timestamp(val_cut) - step * purge
+        val_end = pd.Timestamp(test_cut) - step * purge if n_val > 0 else test_cut
+    else:
+        train_end, val_end = val_cut, test_cut
+    train = feature_df[t < train_end].copy()
+    val = feature_df[(t >= val_cut) & (t < val_end)].copy()
     test = feature_df[t >= test_cut].copy()
     return train, val, test, {'val_cut': pd.Timestamp(val_cut), 'test_cut': pd.Timestamp(test_cut)}

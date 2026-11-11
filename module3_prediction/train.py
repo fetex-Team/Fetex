@@ -50,11 +50,11 @@ MIN_RECOMMENDED_ROWS = 200
 
 # ---------------------------------------------------------------- 데이터
 def load_feature_table(log_path=None, freq=None, max_lag=None, cache=True):
-    """Module 2 피처 테이블. log_path 생략 시 data/sim_logs의 '학습 로그 선택' 로그.
+    """Module 2 피처 테이블. log_path: 글롭 문자열 또는 경로 목록(저장 모델의 source_logs). 생략 시 data/sim_logs의 '학습 로그 선택' 로그.
     같은 로그·설정이면 data/features/의 전처리 저장본을 불러온다 (cache=False면 새로 만듦).
     반환: feature_df(time_bucket·h3_index·피처·타깃, attrs['freq']), feature_cols, target_cols"""
     if log_path:
-        logs = [log_path]
+        logs = list(log_path) if isinstance(log_path, (list, tuple)) else [log_path]   # 글롭 문자열 또는 경로 목록
     else:
         logs = selected_log_paths(DEMAND_LOG_DIR)
         if not logs:
@@ -69,11 +69,14 @@ def load_feature_table(log_path=None, freq=None, max_lag=None, cache=True):
     return feature_df, list(feature_df.attrs["feature_cols"]), list(feature_df.attrs["target_cols"])
 
 
-def split_by_time(feature_df, test_size=None, val_size=None):
-    """시간 순서 분할 (학습 → 검증 → 시험). 각 구간은 시간순 정렬."""
+def split_by_time(feature_df, test_size=None, val_size=None, purge=None):
+    """시간 순서 분할 (학습 → 검증 → 시험). 각 구간은 시간순 정렬.
+    purge(기본: 타깃 수 H): 경계 직전 H칸을 앞 구간에서 뺀다 — 그 행들의 타깃 y_h2..y_hH가 다음 구간 수요라 경계 누수가 생김."""
     test_size = CFG["test_size"] if test_size is None else test_size
     val_size = CFG.get("val_size", 0.1) if val_size is None else val_size
-    train_df, val_df, test_df, cuts = time_based_split(feature_df, test_size, val_size=val_size)
+    if purge is None:
+        purge = len(feature_df.attrs.get("target_cols") or []) or int(CFG.get("forecast_horizons", 6))
+    train_df, val_df, test_df, cuts = time_based_split(feature_df, test_size, val_size=val_size, purge=purge)
     order = ["time_bucket", "h3_index"]
     return train_df.sort_values(order), val_df.sort_values(order), test_df.sort_values(order), cuts
 
@@ -85,6 +88,14 @@ def prepare_train_test(max_lag=None, log_path=None):
     fit_df = pd.concat([train_df, val_df])
     return (fit_df[feature_cols].fillna(0).values, test_df[feature_cols].fillna(0).values,
             fit_df[target_cols].fillna(0).values, test_df[target_cols].fillna(0).values, feature_cols, cuts)
+
+
+def split_sequences(feature_df, parts, values, seq_len, freq):
+    """분할 전 전체 feature_df로 시퀀스를 만든 뒤 parts(각 구간 DataFrame, feature_df의 인덱스 유지) 순서대로 잘라 반환.
+    purge로 빠진 경계 칸도 시퀀스의 '직전 칸' 이력으로는 쓰인다 (피처만 쓰고 타깃은 안 씀 → 누수 아님)."""
+    seq = build_sequences(feature_df, values, seq_len, freq)
+    pos = pd.Series(np.arange(len(feature_df)), index=feature_df.index)
+    return [seq[pos.loc[p.index].to_numpy()] for p in parts]
 
 
 def build_sequences(feature_df, values, seq_len, freq):
@@ -204,6 +215,8 @@ def run(log_path=None, freq=None, out_dir=None, report_dir=None, quick=False, ca
 
     freq = freq or CFG["freq"]
     feature_df, feature_cols, target_cols = load_feature_table(log_path, freq=freq, cache=cache)
+    if not feature_df.index.is_unique:   # split_sequences가 인덱스로 구간을 찾으므로 유일해야 함
+        feature_df = feature_df.reset_index(drop=True)
     train_df, val_df, test_df, cuts = split_by_time(feature_df)
     print(f"[분할] 학습 {len(train_df):,}행 / 검증 {len(val_df):,}행 (검증 시작 {cuts['val_cut']}) / "
           f"시험 {len(test_df):,}행 (시험 시작 {cuts['test_cut']}) | 셀 {feature_df.h3_index.nunique()}개 · "
@@ -219,21 +232,21 @@ def run(log_path=None, freq=None, out_dir=None, report_dir=None, quick=False, ca
     # 2) CNN-LSTM — 학습 구간 기준 표준화, 셀별 직전 seq_len 칸 시퀀스
     seq_len = 2 if quick else int(CFG.get("cnn_seq_len", 6))
     scaler = StandardScaler().fit(X(train_df))
-    all_df = pd.concat([train_df, val_df, test_df])
-    seq_all = build_sequences(all_df, scaler.transform(X(all_df)).astype(np.float32), seq_len, freq)
+    seq_tr, seq_va, seq_te = split_sequences(feature_df, (train_df, val_df, test_df),
+                                             scaler.transform(X(feature_df)).astype(np.float32), seq_len, freq)
     n_tr, n_va = len(train_df), len(val_df)
-    cnn, history, best_epoch = train_cnn_lstm(seq_all[:n_tr], Y(train_df), seq_all[n_tr:n_tr + n_va], Y(val_df),
-                                              epochs=3 if quick else None)
-    pred_cnn = np.maximum(0, predict_cnn(cnn, seq_all[n_tr + n_va:]))
+    cnn, history, best_epoch = train_cnn_lstm(seq_tr, Y(train_df), seq_va, Y(val_df), epochs=3 if quick else None)
+    pred_cnn = np.maximum(0, predict_cnn(cnn, seq_te))
 
     # 3) 평가·그래프
     report_dir = report_dir or os.path.join(RESULTS_DIR, freq)
     info = {"freq": freq, "logs": log_path or "data/sim_logs (학습 로그 선택)", "cuts": {k: str(v) for k, v in cuts.items()},
+            "purge_buckets": len(target_cols),
             "rows": {"train": n_tr, "val": n_va, "test": len(test_df)}, "n_features": len(feature_cols),
             "xgb_params": xgb_params, "cnn": {"seq_len": seq_len, "best_epoch": best_epoch, "history": history},
             "quick": quick}
     metrics = evaluate_predictions(test_df, target_cols, {"XGBoost": pred_xgb, "CNN-LSTM": pred_cnn},
-                                   freq, report_dir, info)
+                                   freq, report_dir, info, train_df=fit_df)
 
     # 4) 모델 저장 — 설정의 freq와 같을 때만 saved_models/에 (다른 단위 비교 실험은 결과 폴더에)
     out_dir = out_dir or (SAVED_MODELS if freq == CFG["freq"] and not quick else os.path.join(report_dir, "models"))

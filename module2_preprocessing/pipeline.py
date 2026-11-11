@@ -1,7 +1,7 @@
 """
 [Module 2 / T6] 전처리 파이프라인 단일 진입점.
 
-    호출 로그 CSV(1개 이상) ──▶ 공간 인덱싱(H3/Geohash) ──▶ (셀×5분) 집계·0채움(로그가 덮는 구간만)
+    호출 로그 CSV(1개 이상) ──▶ 공간 인덱싱(H3/Geohash) ──▶ (셀×freq 칸) 집계·0채움(로그가 덮는 구간만)
         ──▶ 외부 데이터(날씨) 병합 + 결측 처리 ──▶ 시계열/시간 피처 + t+1~t+6 타겟 ──▶ 피처 테이블
 
 사용 (CLI):
@@ -158,7 +158,7 @@ def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizo
     # 2) (공간 단위 × 칸) 집계 + 0 채움 (관측 구간 안에서만)
     agg = prep.aggregate_demands(df, spatial_col=spatial_col, all_cells=all_cells, coverage=coverage)
 
-    # 3) 외부 데이터 (5분 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
+    # 3) 외부 데이터 (freq 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
     # 학습 경로: 날씨 결측률 상한 검사 (Data Spec 5장 5% 미만). config weather_missing_max_ratio 로 조절, None이면 끔
     agg = merge_external_data(agg, weather_path=weather_path, time_col="time_bucket", verbose=verbose,
                               max_missing_ratio=max_missing_ratio if max_missing_ratio is not None else CFG.get("weather_missing_max_ratio", 0.05))

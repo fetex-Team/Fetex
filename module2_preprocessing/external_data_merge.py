@@ -2,8 +2,8 @@
 [Module 2 / T4] 외부 데이터 결합 + 결측치 처리.
 
 명세 Q3 "시공간 단위가 다른 외부 데이터(날씨 등)를 결합할 때 기준을 맞추는 병합 로직"
-- 수요 시계열은 5분 칸, 날씨 관측은 보통 1시간 단위(기상청·Open-Meteo). 관측 간격은 자료에서 추정하므로 5분 관측(합성 external.csv)도 그대로 쓴다.
-- pd.merge_asof(direction='backward'): 각 5분 칸에 "그 시각 이전 가장 최근 관측"을 붙인다.
+- 수요 시계열은 freq 칸(config, 현재 10분), 날씨 관측은 보통 1시간 단위(기상청·Open-Meteo). 관측 간격은 자료에서 추정하므로 5분 관측(합성 external.csv)도 그대로 쓴다.
+- pd.merge_asof(direction='backward'): 각 수요 칸에 "그 시각 이전 가장 최근 관측"을 붙인다.
   → 09:05~09:55 칸은 09:00 관측, 10:00 칸부터 10:00 관측. 미래 관측을 쓰지 않으므로 누수 없음.
 - tolerance=max_gap_hours: 관측이 그 이상 끊겨 있으면 붙이지 않고 결측으로 남긴다.
 
@@ -191,7 +191,7 @@ def merge_external_data(df: pd.DataFrame, weather: pd.DataFrame = None, weather_
                         time_col: str = None, max_gap_hours: int = 3, interpolate_limit_hours: int = 3,
                         verbose: bool = True, max_missing_ratio: float = None) -> pd.DataFrame:
     """
-    df(5분 칸 수요 테이블 또는 호출 로그)에 날씨 컬럼을 붙인다.
+    df(freq 칸 수요 테이블 또는 호출 로그)에 날씨 컬럼을 붙인다.
     time_col: 기준 시각 컬럼 (없으면 time_bucket → pickup_datetime → datetime 순으로 탐색)
     max_missing_ratio: 병합 후 weather_missing 비율 상한. 넘으면 ValueError (Data Spec 5장 결측률 5% 미만).
                        None이면 검사 안 함(서빙 경로). 학습 경로(pipeline)는 config weather_missing_max_ratio(기본 0.05).

@@ -9,7 +9,7 @@ train.py가 학습 직후 evaluate_predictions()를 불러 results/module3/<freq
     04_cell_error.png            셀별 WAPE (호출 많은 순 상위 15개)
 
 사용
-    python module3_prediction/evaluate.py                       # 저장된 모델을 다시 평가 (train.py와 같은 분할)
+    python module3_prediction/evaluate.py                       # 저장된 모델을 다시 평가 (학습 로그 source_logs, train.py와 같은 분할)
     python module3_prediction/evaluate.py --logs "data/real_demand_logs/demand_log_*.csv"
     python module3_prediction/evaluate.py --compare-freq 5min 10min   # 단위별 결과 비교 (30분·60분 합계 기준)
 """
@@ -68,13 +68,63 @@ def _wape(y, p):
     return None if s == 0 else round(float(np.abs(y - p).sum()) / s * 100, 3)
 
 
-def baseline_predictions(test_df, n_targets):
-    """기준 모델: 나이브(직전 칸 그대로), 계절 나이브(지난주 같은 칸). 피처가 없으면 생략."""
+NAIVE_NAME = "나이브(마지막 끝난 칸)"
+SNAIVE_NAME = "계절 나이브(지난주 t+k)"
+SLOT_NAME = "같은 시각 평균"
+
+
+def _seasonal_naive(test_df, n_targets, freq):
+    """계절 나이브: y_hk = demand(t+k) 의 예측값으로 demand(t+k-1주) = 같은 셀 (t+k) 행의 same_time_last_week.
+    test_df 안에서 (h3_index, time_bucket + k칸) 행을 찾아 정렬한다.
+    그 행이 없으면(시험 구간 끝을 넘음·관측 공백) 행 t 자신의 same_time_last_week(= demand(t-1주))로 대신한다.
+    지난주 값이 관측 밖이면 create_features가 이미 0으로 채워 두었다 (has_last_week=0)."""
+    step = pd.Timedelta(freq)
+    cells = test_df["h3_index"].to_numpy()
+    times = pd.to_datetime(test_df["time_bucket"])
+    own = test_df["same_time_last_week"].fillna(0).to_numpy(dtype=float)
+    lookup = pd.Series(own, index=pd.MultiIndex.from_arrays([cells, times.to_numpy()]))
+    lookup = lookup[~lookup.index.duplicated()]
+    out = np.empty((len(test_df), n_targets), dtype=float)
+    for k in range(1, n_targets + 1):
+        idx = pd.MultiIndex.from_arrays([cells, (times + step * k).to_numpy()])
+        v = lookup.reindex(idx).to_numpy(dtype=float)
+        out[:, k - 1] = np.where(np.isnan(v), own, v)
+    return out
+
+
+def _slot_mean(test_df, train_df, target_cols):
+    """같은 시각 평균: 학습 구간에서 (셀 × 평일/주말(is_weekend) × minute_of_day)별 타깃 y_hk 평균.
+    키가 학습에 없으면 (셀 × minute_of_day) → 셀 전체 → 학습 전체 평균 순으로 대신한다."""
+    day = "is_weekend"
+    keys_list = [["h3_index", day, "minute_of_day"], ["h3_index", "minute_of_day"], ["h3_index"]]
+    out = np.empty((len(test_df), len(target_cols)), dtype=float)
+    for j, c in enumerate(target_cols):
+        tr = train_df[["h3_index", day, "minute_of_day", c]].dropna(subset=[c])
+        v = pd.Series(np.nan, index=test_df.index)
+        for keys in keys_list:
+            m = tr.groupby(keys)[c].mean().rename("_m")
+            filled = test_df[keys].merge(m, left_on=keys, right_index=True, how="left")["_m"]
+            v = v.fillna(pd.Series(filled.to_numpy(), index=test_df.index))
+        out[:, j] = v.fillna(float(tr[c].mean()) if len(tr) else 0.0).to_numpy()
+    return out
+
+
+def baseline_predictions(test_df, n_targets, freq=None, train_df=None, target_cols=None):
+    """기준 모델 (피처가 없으면 생략). 행 t는 '진행 중인 칸', 타깃 y_hk = demand(t+k) (time_series_prep 참고).
+    - 나이브(마지막 끝난 칸): 모든 시점 = lag_1 = demand(t-1). 진행 중인 칸 t는 아직 관측 전이라 이것이 가장 최근 관측값.
+    - 계절 나이브(지난주 t+k): 시점 k마다 demand(t+k-1주) (_seasonal_naive). freq가 없으면 행 t의 지난주 값으로 근사.
+    - 같은 시각 평균: train_df(학습 구간)가 주어질 때만 (_slot_mean)."""
     out = {}
     if "lag_1" in test_df:
-        out["나이브(직전 칸)"] = np.repeat(test_df[["lag_1"]].fillna(0).values, n_targets, 1)
+        out[NAIVE_NAME] = np.repeat(test_df[["lag_1"]].fillna(0).values, n_targets, 1)
     if "same_time_last_week" in test_df:
-        out["계절 나이브(지난주)"] = np.repeat(test_df[["same_time_last_week"]].fillna(0).values, n_targets, 1)
+        if freq and {"h3_index", "time_bucket"} <= set(test_df.columns):
+            out[SNAIVE_NAME] = _seasonal_naive(test_df, n_targets, freq)
+        else:
+            out[SNAIVE_NAME] = np.repeat(test_df[["same_time_last_week"]].fillna(0).values, n_targets, 1)
+    need = {"h3_index", "is_weekend", "minute_of_day"}
+    if train_df is not None and len(train_df) and target_cols and need <= set(test_df.columns) and need <= set(train_df.columns):
+        out[SLOT_NAME] = _slot_mean(test_df, train_df, target_cols)
     return out
 
 
@@ -84,12 +134,13 @@ def _window_buckets(freq, minutes, n_targets):
     return int(nb) if nb == int(nb) and 1 <= nb <= n_targets else None
 
 
-def evaluate_predictions(test_df, target_cols, model_preds, freq, report_dir, info=None, plots=True):
-    """시험 구간 예측을 평가해 report_dir에 metrics.json·predictions.csv.gz·그래프를 저장. 반환: metrics dict"""
+def evaluate_predictions(test_df, target_cols, model_preds, freq, report_dir, info=None, plots=True, train_df=None):
+    """시험 구간 예측을 평가해 report_dir에 metrics.json·predictions.csv.gz·그래프를 저장. 반환: metrics dict
+    train_df(선택): 학습 구간 행 — 주면 '같은 시각 평균' 기준 모델을 함께 평가한다 (없으면 생략)."""
     os.makedirs(report_dir, exist_ok=True)
     Y = test_df[target_cols].fillna(0).values.astype(float)
     n_t = len(target_cols)
-    preds = {**model_preds, **baseline_predictions(test_df, n_t)}
+    preds = {**model_preds, **baseline_predictions(test_df, n_t, freq=freq, train_df=train_df, target_cols=target_cols)}
     step_min = int(pd.Timedelta(freq).total_seconds() // 60)
     hours = pd.to_datetime(test_df["time_bucket"]).dt.hour.values
     cells = test_df["h3_index"].values
@@ -223,11 +274,13 @@ def plot_report(test_df, Y, preds, model_names, metrics, freq, report_dir):
 
 # ---------------------------------------------------------------- 저장된 모델 다시 평가
 def evaluate_saved_models(log_path=None, model_dir=None):
-    """저장된 XGBoost·CNN-LSTM을 train.py와 같은 분할의 시험 구간에서 다시 평가."""
+    """저장된 XGBoost·CNN-LSTM을 train.py와 같은 분할의 시험 구간에서 다시 평가.
+    log_path 생략 시 모델이 실제로 학습한 로그(demand_v2.joblib의 source_logs)를 쓴다 — data/sim_logs의 지금 선택 목록이
+    학습 때와 달라도 같은 데이터·같은 분할로 재평가된다. --logs로 바꿀 수 있다."""
     import joblib
     import torch
     from module3_prediction.models import CNNLSTMModel
-    from module3_prediction.train import SAVED_MODELS, build_sequences, load_feature_table, split_by_time
+    from module3_prediction.train import SAVED_MODELS, load_feature_table, split_by_time, split_sequences
 
     model_dir = model_dir or SAVED_MODELS
     xgb_art = joblib.load(os.path.join(model_dir, "demand_v2.joblib"))
@@ -236,7 +289,13 @@ def evaluate_saved_models(log_path=None, model_dir=None):
     if not freq or "seq_len" not in dl_art:
         print("[오류] 예전 형식의 모델입니다. python module3_prediction/train.py로 다시 학습하세요.")
         return None
+    if not log_path:
+        log_path = xgb_art.get("source_logs") or None
+        if log_path:
+            print(f"[안내] 모델의 학습 로그(source_logs {len(log_path)}개 항목)로 재평가합니다.")
     feature_df, feature_cols, target_cols = load_feature_table(log_path, freq=freq)
+    if not feature_df.index.is_unique:
+        feature_df = feature_df.reset_index(drop=True)
     if feature_cols != xgb_art["feature_cols"] or feature_cols != dl_art["feature_cols"]:
         print(f"[오류] 저장된 모델의 피처({len(xgb_art['feature_cols'])}개)가 지금 전처리 피처({len(feature_cols)}개)와 다릅니다. "
               f"python module3_prediction/train.py로 다시 학습하세요.")
@@ -245,16 +304,16 @@ def evaluate_saved_models(log_path=None, model_dir=None):
     X = test_df[feature_cols].fillna(0).values
     pred_xgb = np.maximum(0, xgb_art["model"].predict(X))
 
-    all_df = pd.concat([train_df, val_df, test_df])
-    seq = build_sequences(all_df, dl_art["scaler"].transform(all_df[feature_cols].fillna(0).values).astype(np.float32),
-                          dl_art.get("seq_len", 1), freq)[len(train_df) + len(val_df):]
+    (seq,) = split_sequences(feature_df, (test_df,),
+                             dl_art["scaler"].transform(feature_df[feature_cols].fillna(0).values).astype(np.float32),
+                             dl_art.get("seq_len", 1), freq)
     cnn = CNNLSTMModel(input_dim=dl_art["input_dim"], output_dim=dl_art["output_dim"])
     cnn.load_state_dict(dl_art["state_dict"]); cnn.eval()
     with torch.no_grad():
         pred_cnn = np.maximum(0, cnn(torch.tensor(seq)).numpy())
     report_dir = os.path.join(RESULTS_DIR, freq, "re_evaluate")
     return evaluate_predictions(test_df, target_cols, {"XGBoost": pred_xgb, "CNN-LSTM": pred_cnn}, freq, report_dir,
-                                {"model_dir": model_dir, "logs": log_path})
+                                {"model_dir": model_dir, "logs": log_path}, train_df=pd.concat([train_df, val_df]))
 
 
 def compare_freqs(freqs):
@@ -283,7 +342,7 @@ def compare_freqs(freqs):
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser(description="Module 3 평가 (저장된 모델 재평가 / 단위 비교)")
-    ap.add_argument("--logs", default=None, help="평가 로그 글롭 (train.py --logs와 같게)")
+    ap.add_argument("--logs", default=None, help="평가 로그 글롭 (생략 시 모델의 학습 로그 source_logs)")
     ap.add_argument("--model-dir", default=None, help="모델 폴더 (기본 saved_models/)")
     ap.add_argument("--compare-freq", nargs="+", metavar="FREQ", help="예: --compare-freq 5min 10min")
     a = ap.parse_args()

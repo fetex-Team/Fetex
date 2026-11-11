@@ -1,5 +1,10 @@
 """[Module 3] H3 격자별 실시간 수요 예측기 — demand_v2.joblib으로 다음 6칸(t+1~t+6) 호출 수를 예측한다.
 
+시점 의미 (학습 피처 테이블과 같음, module2_preprocessing/time_series_prep 참고)
+- 지금 시각 now가 속한 칸 t = floor(now)는 '진행 중인 칸'이다. 피처 행은 이 칸 t로 만든다.
+- lag_1 = demand(t-1)(마지막으로 끝난 칸), 진행 중인 칸 t의 호출은 쓰지 않는다(일부만 관측된 값이라).
+- 출력 열 k(0..5) = demand(t+k+1): 진행 중인 칸의 다음 칸부터 6칸. category_predictor와 같은 기준.
+
 학습(module3_prediction/train.py)과 같은 전처리(Module 2 TimeSeriesPreprocessor·merge_external_data)로
 "지금까지 관측된 호출"만 써서 피처를 만들고, 미래 호출은 보지 않는다.
 Module 4의 예측 재배치(forecast_repositioner.py)가 이 예측값으로 빈 택시를 옮긴다.
@@ -61,8 +66,10 @@ class H3DemandPredictor:
         self.model, self.features = art["model"], art["feature_cols"]
         self.prep = TimeSeriesPreprocessor()
         self.bucket = pd.Timedelta(self.prep.freq)
-        # 지난주 같은 칸(1주 전) + lag/이동평균 여유만큼 과거 칸이 있어야 피처가 학습 때와 같아진다
-        self.history_buckets = self.prep.buckets_1w + max(CFG["max_lag"], self.prep.buckets_1h) + 3
+        # 지난주 같은 칸(1주 전) + lag/이동평균 여유만큼 과거 칸이 있어야 피처가 학습 때와 같아진다.
+        # prep.required_history_buckets(= 가장 긴 1주 + 3)보다 lag/1h 창만큼 넉넉하게 잡는다 (항상 ≥ required)
+        self.history_buckets = max(self.prep.required_history_buckets,
+                                   self.prep.buckets_1w + max(self.prep.max_lag, self.prep.buckets_1h) + 3)
         wpath = find_weather_file()
         self.weather = load_weather(wpath) if wpath and os.path.exists(wpath) else None
         self._hist = pd.DataFrame({"pickup_datetime": pd.Series(dtype="datetime64[ns]"), "h3_index": pd.Series(dtype=str)})
@@ -78,17 +85,18 @@ class H3DemandPredictor:
         self._live_c.append(cell)
 
     def predict(self, now: _dt.datetime) -> np.ndarray:
-        """(칸 수, 6) 다음 6칸 예측. 지금 시각 이전에 끝난 칸까지만 관측으로 쓴다."""
-        origin = pd.Timestamp(now).floor(self.bucket)
-        last_bucket = origin - self.bucket
+        """(칸 수, 6) 예측 — 열 k = 진행 중인 칸 t=floor(now)의 k+1칸 뒤 수요 (t+1..t+6).
+        관측은 지금 시각 이전에 끝난 칸(≤ t-1)까지만 쓴다."""
+        origin = pd.Timestamp(now).floor(self.bucket)          # 진행 중인 칸 t = 피처 행
         first = origin - self.bucket * self.history_buckets
         calls = pd.concat([self._hist, pd.DataFrame({"pickup_datetime": self._live_t, "h3_index": self._live_c})],
                           ignore_index=True)
+        # 진행 중인 칸(origin) 안의 호출은 뺀다 → 패널의 origin 행 demand는 0 (피처는 shift ≥ 1이라 쓰이지 않음)
         calls = calls[(calls.pickup_datetime >= first) & (calls.pickup_datetime < origin)]
-        panel = self.prep.aggregate_demands(calls, start=first, end=last_bucket, all_cells=self.cells)
+        panel = self.prep.aggregate_demands(calls, start=first, end=origin, all_cells=self.cells)
         panel = merge_external_data(panel, weather=self.weather, time_col="time_bucket", verbose=False)
         frame = self.prep.create_features(panel, dropna=False, add_targets=False, verbose=False)
-        cur = frame[frame.time_bucket == last_bucket].sort_values("h3_index")
+        cur = frame[frame.time_bucket == origin].sort_values("h3_index")
         missing = set(self.features) - set(cur.columns)
         if missing or len(cur) != len(self.cells):
             raise ValueError(f"예측 피처를 만들 수 없습니다: {sorted(missing)}")

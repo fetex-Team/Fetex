@@ -16,7 +16,8 @@ import os
 import sys
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# 이 파일은 <repo>/module3_prediction/tune_xgb.py → dirname 2번이 저장소 루트 (3번이면 저장소 밖을 가리켰음)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
 
@@ -56,7 +57,8 @@ def main():
     # train.py와 같은 피처 테이블 (config freq·forecast_horizons, 같은 저장본 캐시)
     feat = load_or_build_feature_table(log_paths, cache=not a.no_cache)
     fc, tc = list(feat.attrs["feature_cols"]), list(feat.attrs["target_cols"])
-    tr, va, te, cuts = time_based_split(feat, test_size=0.2, val_size=0.2)
+    # purge=타깃 수: 경계 직전 행의 타깃(y_h2..)이 다음 구간 수요라 생기는 경계 누수 방지 (train.py와 같음)
+    tr, va, te, cuts = time_based_split(feat, test_size=0.2, val_size=0.2, purge=len(tc))
     X = {k: d[fc].fillna(0).values for k, d in (("tr", tr), ("va", va), ("te", te))}
     Y = {k: d[tc].fillna(0).values.astype(float) for k, d in (("tr", tr), ("va", va), ("te", te))}
     rows = []

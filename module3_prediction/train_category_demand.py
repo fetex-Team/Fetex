@@ -12,8 +12,10 @@ create_features가 원래 spatial_col을 인자로 받게 설계돼 있어서 h3
 실행: python module3_prediction/train_category_demand.py
 출력: saved_models/category_demand_models.pkl
       {"models": {category: XGBRegressor}, "feature_cols": [...], "category_list": [...],
-       "metrics": {category: {"xgb"/"lag_1"/"slot_mean": {RMSE, MAE, MAPE, WAPE}}}, "test_cut": "..."}
-      (lag_1 = 나이브 직전 칸, slot_mean = 학습 구간 같은 시각 평균 — 모델과 비교할 기준 모델)
+       "metrics": {category: {"xgb"/"lag_1"/"slot_mean": {RMSE, MAE, MAPE, WAPE}}}, "test_cut": "...",
+       "freq", "max_lag", "rolling_short", "rolling_long"}   ← 전처리 설정 (불러올 때 지금 설정과 같은지 확인용)
+      (lag_1 = 나이브: 마지막 끝난 칸 demand(t-1), slot_mean = 학습 구간 같은 시각 평균 — 모델과 비교할 기준 모델)
+      행 t = 진행 중인 칸, 타깃 y_h1 = demand(t+1) (time_series_prep 참고).
       학습 데이터의 날짜 공백(실행 안 한 날·시간)은 공용 파이프라인(log_coverage)이 관측 밖으로 처리한다.
 """
 import glob
@@ -78,7 +80,8 @@ def main(log_glob: str = None, out_path: str = OUT_PATH, cache: bool = True):
         return
 
     # 시간 기준 분할을 전체 테이블에 한 번만 적용 → 모든 카테고리가 같은 시험 구간을 쓴다 (train.py·demand_v2와 같은 방식)
-    train_all, _val, test_all, cuts = time_based_split(feature_df, CFG["test_size"])
+    # purge=타깃 수: 경계 직전 행의 타깃(y_h2..)이 시험 구간 수요를 담는 경계 누수를 막는다 (train.py와 같음)
+    train_all, _val, test_all, cuts = time_based_split(feature_df, CFG["test_size"], purge=len(target_cols))
     print(f"[분할] 시험 구간 {cuts['test_cut']} 이후")
 
     models, metrics_by_category = {}, {}
@@ -100,7 +103,7 @@ def main(log_glob: str = None, out_path: str = OUT_PATH, cache: bool = True):
             continue
 
         # [KJS 이식] 기준 모델과 같은 시험 구간에서 비교 — 모델이 단순 규칙보다 나은지 확인
-        #   lag_1    : 나이브(직전 칸 값을 그대로) — module3_prediction/evaluate.py 기준 모델과 같은 정의
+        #   lag_1    : 나이브(마지막 끝난 칸 값 demand(t-1)을 그대로) — module3_prediction/evaluate.py 기준 모델과 같은 정의
         #   slot_mean: 학습 구간의 같은 시각(minute_of_day) 평균 타깃 (그 시각이 학습에 없으면 학습 전체 평균)
         slot_mean = train_df.groupby("minute_of_day")[TARGET].mean()
         preds = {
@@ -121,7 +124,10 @@ def main(log_glob: str = None, out_path: str = OUT_PATH, cache: bool = True):
     # metrics: {category: {"xgb"|"lag_1"|"slot_mean": {RMSE, MAE, MAPE (%), WAPE (%)}}} — 시험 구간 기준
     joblib.dump({"models": models, "feature_cols": feature_cols, "target": TARGET,
                  "category_list": list(models.keys()), "metrics": metrics_by_category,
-                 "test_cut": str(cuts["test_cut"])}, out_path)
+                 "test_cut": str(cuts["test_cut"]),
+                 # 전처리 설정 — 지금 설정과 다르면 피처 이름은 같아도 값 의미가 달라지므로 불러올 때 확인한다
+                 "freq": feature_df.attrs.get("freq", CFG["freq"]), "max_lag": CFG["max_lag"],
+                 "rolling_short": CFG["rolling_short"], "rolling_long": CFG["rolling_long"]}, out_path)
     print(f"[완료] {out_path} 에 카테고리별 모델 {len(models)}개 저장")
 
 

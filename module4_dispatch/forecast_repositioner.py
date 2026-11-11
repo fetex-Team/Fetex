@@ -5,6 +5,8 @@
 빈 택시는 평소에는 순찰(patrol)과 똑같이 움직이고, 5분마다 아래를 한 번 한다.
 
 1) 예측: 지금까지 관측된 호출(지난 7일 + 오늘)만으로 피처를 만들어 칸별 다음 30분 호출 수 λ_c를 예측한다.
+   λ_c = 진행 중인 시간 칸 t(=floor(지금))의 다음 칸부터 forecast_horizon_buckets칸(t+1..t+3, 10분 칸이면 30분) 합.
+   진행 중인 칸 t 자체는 학습 타깃에 없으므로(행 t의 타깃은 t+1..t+6) λ에 들어가지 않는다.
    예측 자체는 Module 3의 module3_prediction/h3_predictor.H3DemandPredictor가 하고, 여기서는 관측 호출을 넘겨준다.
    - 지난 7일: 학습 로그와 같은 생성기(demand_model, data/loaders/generate_demand_logs.py와 같은 시드)로 만든 과거 호출
    - 오늘: 시작 시각 이전 호출 + 시뮬레이션에서 지금까지 실제로 나온 호출. 미래 호출은 보지 않는다.
@@ -119,7 +121,7 @@ class ForecastRepositioner:
             self._sched_i += 1
 
     def predict(self, now: float) -> np.ndarray:
-        """(칸 수, 6) 다음 6칸 예측 (Module 3 예측기)."""
+        """(칸 수, 6) 예측 (Module 3 예측기) — 열 k = 진행 중인 칸 t의 k+1칸 뒤 (t+1..t+6)."""
         self._observe(now)
         return self.predictor.predict(self.start_dt + _dt.timedelta(seconds=now))
 
@@ -152,7 +154,7 @@ class ForecastRepositioner:
             if self.stats["predict_failed"] == 1:
                 print(f"[예측 재배치] 예측 실패, 이번 칸은 건너뜀: {e}", flush=True)
             return
-        lam = pred[:, :self.horizon].sum(axis=1)
+        lam = pred[:, :self.horizon].sum(axis=1)   # t+1..t+horizon (진행 중인 칸 다음부터) 예측 호출 합
         idle = sorted(idle_taxis if idle_taxis is not None else traci.vehicle.getTaxiFleet(0))
         loc = {}
         for vid in idle:

@@ -86,9 +86,10 @@ def run(logs, test_size=0.2, model_kind="auto", out=None, weather_path=None):
     # 0 예측: 희소 카운트에서 MAE의 하한선(중앙값 예측). 모델은 RMSE(평균)를 줄이므로 MAE는 이보다 클 수 있다 → RMSE·WAPE로 판단
     zeros = np.zeros_like(Y_te, dtype=float)
     rows.append(("전부 0 예측 (희소 데이터 MAE 하한)", 1, metrics(Y_te, zeros), metrics(Y_te[:, 0], zeros[:, 0])))
-    # 나이브: 모든 시점 = 직전 칸 값(lag_1) / 계절 나이브: 지난주 동일칸(t+h의 지난주 값 ≈ 여기선 현재 칸의 지난주 값으로 근사)
+    # 나이브: 모든 시점 = 마지막 끝난 칸 값(lag_1 = demand(t-1)) / 계절 나이브: 지난주 동일칸
+    # (정확히는 demand(t+h-1주)이지만 여기선 행 t의 지난주 값으로 근사 — 정렬된 버전은 module3_prediction/evaluate.py)
     naive = np.repeat(test[["lag_1"]].fillna(0).values, 6, axis=1)
-    rows.append(("나이브 (다음 30분 = 직전 5분 값)", 1, metrics(Y_te, naive), metrics(Y_te[:, 0], naive[:, 0])))
+    rows.append(("나이브 (모든 시점 = 마지막 끝난 칸 lag_1)", 1, metrics(Y_te, naive), metrics(Y_te[:, 0], naive[:, 0])))
     if test["has_last_week"].mean() > 0.5:
         snaive = np.repeat(test[["same_time_last_week"]].values, 6, axis=1)
         rows.append(("계절 나이브 (지난주 동일칸)", 1, metrics(Y_te, snaive), metrics(Y_te[:, 0], snaive[:, 0])))
@@ -105,7 +106,7 @@ def run(logs, test_size=0.2, model_kind="auto", out=None, weather_path=None):
     base_mae = next(r[2]["MAE"] for r in rows if "기존 34" in r[0])
     lines = [f"## 피처 ablation — {os.path.basename(str(logs))}",
              f"기간 {feat.time_bucket.min()} ~ {feat.time_bucket.max()}, train {len(train):,} / test {len(test):,}행 (시간순, 뒤 {int(test_size * 100)}%), "
-             f"셀 {feat.h3_index.nunique()}개, 모델 {model_name}, 타깃 y_h1~y_h6 (지표는 6개 평균, h1은 5분 뒤만)", "",
+             f"셀 {feat.h3_index.nunique()}개, 모델 {model_name}, 타깃 y_h1~y_h6 (지표는 6개 평균, h1은 진행 중인 칸 t의 다음 칸 t+1만)", "",
              "| 피처 그룹 (누적) | 피처 수 | MAE | RMSE | WAPE | 과소예측률(양수) | h1 MAE | 기존 34 대비 MAE |",
              "|---|---:|---:|---:|---:|---:|---:|---:|"]
     for name, n, m6, m1 in rows:
