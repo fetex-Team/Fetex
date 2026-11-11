@@ -523,6 +523,7 @@ class ConfigGUI:
             ("patrol", "일반 순찰 (patrol) — 빈 차 상태에서 구역 순찰", True),
             ("prepositioned", "정적 선제배치 (prepositioned) — 핫스팟 구역 고정 대기", True),
             ("rl_prepositioned", "AI 강화학습 선제배치 (rl_prepositioned) — PPO 동적 재배치", True),
+            ("forecast", "예측 기반 재배치 (forecast) — demand_v2 예측으로 빈 택시 이동", False),
         ]
         strat_vars = {}
         for key, desc, default_val in strat_defs:
@@ -555,20 +556,20 @@ class ConfigGUI:
             ttk.Radiobutton(stride_box, text=label, value=val, variable=stride_var).pack(anchor="w", pady=1)
 
         # 4. 유니티 StreamingAssets 자동 복사 연동
-        unity_default_path = r"J:\chromdowload\zip\Fetex-Unity-main\Fetex-Unity-main\Assets\StreamingAssets"
+        # 예전에는 개인 PC 경로(J:\...)가 코드에 박혀 있었다 → 설정 unity_streaming_assets_dir(세부 설정 'Unity 연동')로 지정
         unity_box = ttk.LabelFrame(body, text="4. 유니티(Unity) 연동", padding=8)
         unity_box.pack(fill="x", pady=4)
 
-        has_unity = os.path.exists(unity_default_path)
-        copy_var = tk.BooleanVar(value=has_unity)
+        unity_dir_var = tk.StringVar(value=str(self.current().get("unity_streaming_assets_dir") or ""))
+        copy_var = tk.BooleanVar(value=bool(unity_dir_var.get()) and os.path.isdir(unity_dir_var.get()))
         ttk.Checkbutton(
             unity_box,
             text="완료 후 유니티 StreamingAssets 폴더로 자동 복사",
             variable=copy_var
         ).pack(anchor="w")
-        status_txt = f"경로: {unity_default_path}" if has_unity else "※ 기본 유니티 경로를 찾을 수 없습니다."
-        ttk.Label(unity_box, text=status_txt, foreground="#059669" if has_unity else "#b45309",
-                  wraplength=460).pack(anchor="w", pady=(2, 0))
+        ttk.Entry(unity_box, textvariable=unity_dir_var).pack(fill="x", pady=(2, 0))
+        ttk.Label(unity_box, text="Unity 프로젝트의 Assets/StreamingAssets 경로 (세부 설정에 저장해 두면 다음부터 자동으로 채워져요)",
+                  foreground="#6b7280", wraplength=460).pack(anchor="w", pady=(2, 0))
 
         def run_export():
             selected_strats = [k for k, v in strat_vars.items() if v.get()]
@@ -578,8 +579,12 @@ class ConfigGUI:
 
             self._prepare_run_config("unity")
             cmd_args = ["--strategies"] + selected_strats + ["--algorithm", algo_var.get(), "--stride", stride_var.get()]
-            if copy_var.get() and has_unity:
-                cmd_args += ["--unity-dir", unity_default_path]
+            if copy_var.get():
+                unity_dir = unity_dir_var.get().strip()
+                if not unity_dir or not os.path.isdir(unity_dir):
+                    messagebox.showwarning("Unity 경로", "자동 복사할 Unity StreamingAssets 폴더를 찾을 수 없어요. 경로를 확인하세요.")
+                    return
+                cmd_args += ["--unity-dir", unity_dir]
 
             win.destroy()
             self._launch("unity", cmd_args, title="Unity 재생 생성")
@@ -650,15 +655,13 @@ class ConfigGUI:
                 value_vars[key][v] = var
                 ttk.Checkbutton(box, text=FACTOR_VALUE_LABELS.get(v, v), variable=var).pack(anchor="w")
 
-        try:
-            from module1_simulation.holiday_utils import is_holiday_date
-            from datetime import date as _date
-            _t = _date.today()
-            _today_txt = f"오늘({_t})은 {'공휴일/주말' if is_holiday_date(_t) else '평일'}"
-        except Exception:
-            _today_txt = "오늘 날짜로 평일/공휴일 자동 판정"
-        ttk.Label(win, text=f"※ 공휴일 칸을 체크 안 하면 {_today_txt}로 실행해요.",
-                  foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
+        # 예전에는 공휴일 칸을 안 고르면 '오늘' 날짜로 돌렸는데, 오늘은 대개 날씨·평가 데이터 범위 밖이라
+        # 설정의 날짜 규칙(run_date_mode: sim_date 고정 / alternate / random)을 따르게 바꿨다.
+        _rule = {"sim_date": f"설정 날짜({self.current().get('sim_date', '')}) 고정",
+                 "alternate": "과거 90일 중 평일/공휴일 번갈아", "random": "과거 90일 중 무작위"}
+        _mode = self.current().get("run_date_mode", "alternate")
+        ttk.Label(win, text=f"※ 공휴일 칸과 실행 날짜를 비우면 설정 규칙({_rule.get(_mode, _mode)})으로 날짜를 정해요.",
+                  foreground="#6b7280", padding=(15, 0), wraplength=380, justify="left").pack(anchor="w")
 
         models = self._list_category_models()
         model_box = ttk.LabelFrame(win, text="수요예측 모델 (선택)", padding=8)
@@ -724,9 +727,7 @@ class ConfigGUI:
                     messagebox.showwarning("날짜 형식", f"'{tok}'는 날짜(YYYYMMDD)가 아니에요.")
                     return
 
-            if "holiday_mode" not in selected and not run_dates:
-                for _c in combos:
-                    _c["holiday_mode"] = "today"   # 미체크: 오늘 날짜 기준 자동 판정
+            # 공휴일 칸·실행 날짜를 비우면 holiday_mode를 넣지 않는다 → 오케스트레이터가 설정의 날짜 규칙으로 1개를 정해 전 조합에 공유
 
             win.destroy()
             self._prepare_run_config("ab")

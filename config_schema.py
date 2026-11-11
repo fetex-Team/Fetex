@@ -165,6 +165,7 @@ TEXTS = [
     ("sim_date", "시뮬레이션 기준 날짜 (YYYY-MM-DD)"),
     ("taxi_respawn_prefix", "택시 재생성 ID 접두어"),
     ("edge_speed_output", "도로 속도 기록 폴더 (비우면 안 씀)"),
+    ("unity_streaming_assets_dir", "Unity StreamingAssets 폴더 (재생 파일 자동 복사, 비우면 안 함)"),
 ]
 HOLIDAY_MULT_ITEMS = [
     ("school", "등교 (0=공휴일 등교 없음)"),
@@ -225,6 +226,7 @@ DETAIL_SECTIONS = [
                    "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets"]),
     ("학습 실행 옵션", ["run_sim_before_training", "taxi_respawn_prefix"]),
     ("A/B 비교 실행", ["ab_max_parallel_compares", "ab_max_parallel_workers", "ab_queue_stale_sec", "ab_keep_work_dirs"]),
+    ("Unity 연동", ["unity_streaming_assets_dir"]),
 ]
 
 # 항목 설명 — GUI에서 마우스를 올리면 뜬다. GUI에 없는 항목도 설명은 여기에 둔다 (기본.json에는 주석 불가).
@@ -254,6 +256,7 @@ TIPS = {
     "ab_max_parallel_workers": "(KJS) 한 A/B 비교 안에서 동시에 띄우는 조합(워커 창) 수.",
     "ab_queue_stale_sec": "A/B 대기표가 이 시간(초) 동안 갱신되지 않으면 죽은 요청으로 보고 지운다.",
     "ab_keep_work_dirs": "A/B 비교가 끝나도 조합별 작업 폴더(module1_simulation/sumo_config_ab_*)를 지우지 않는다 (디버깅용).",
+    "unity_streaming_assets_dir": "Unity 재생 생성기가 만든 재생 파일을 복사할 Unity 프로젝트의 Assets/StreamingAssets 경로. 사람마다 다르니 config.json(내 설정)에 저장하세요.",
     "suppress_sumo_warnings": "SUMO 경고 로그를 숨긴다. 출력이 줄어 조금 빨라진다.",
     "demand_source": "real=TIMS 2025 격자 승차 + 서울시 2025 통계로 보정한 수요, synthetic=학교·회사·음식점 가정 모델.",
     "real_demand_scale": "실측 호출량 중 이 시뮬레이션이 맡는 비율. 기본 0.77 = 앱 호출 80% × 카카오 점유율 96%. 영역 전체는 1.0.",
