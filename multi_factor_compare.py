@@ -85,6 +85,11 @@ def decide_run_dates(combos: list) -> list:
     cache = {}
     dates = []
     for combo in combos:
+        # GUI의 날짜 대기열에서 넣은 날짜는 절대 다시 뽑지 않는다. 이 값은
+        # patch_combo -> runtime_meta.run_date -> measure_wait_time.py까지 전달된다.
+        if combo.get("run_date"):
+            dates.append(datetime.date.fromisoformat(str(combo["run_date"])))
+            continue
         mode = combo.get("holiday_mode") or cfg.get("holiday_mode", "auto")
         if mode not in cache:
             if mode == "today":
@@ -283,6 +288,11 @@ def run_queue_and_wait(combos: list, config_dir_names: list, result_prefix: str,
     env["PYTHONIOENCODING"] = "utf-8"
     env["PYTHONUTF8"] = "1"
     env["PYTHONHASHSEED"] = "0"
+    # Windows 서브프로세스 동시 실행 시 XGBoost/OpenMP DLL 초기화 충돌(WinError 1114) 방지
+    env["OMP_NUM_THREADS"] = "1"
+    env["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+    env["OPENBLAS_NUM_THREADS"] = "1"
+    env["MKL_NUM_THREADS"] = "1"
     category_model = os.environ.get("AI_CATEGORY_MODEL_PATH")
     if category_model:
         env["AI_CATEGORY_MODEL_PATH"] = category_model
@@ -338,23 +348,56 @@ def run_queue_and_wait(combos: list, config_dir_names: list, result_prefix: str,
             running[idx] = (label, result_path, proc, time.time())
             print(f"  ▶ [슬롯 투입] 조합 #{idx+1}/{total} '{label}' 시작! (현재 가동 중: {len(running)}/{max_slots})")
 
-        # 2. 실행 중인 프로세스 완료 여부 확인
+        # 2. 실행 중인 프로세스 완료 및 오류 실패 여부 점검
         just_finished = []
         for idx, (label, result_path, proc, st) in list(running.items()):
             full_res = os.path.join(ROOT, result_path)
             if os.path.exists(full_res):
                 elapsed = time.time() - st
-                print(f"  ✓ [완료] 조합 #{idx+1}/{total} '{label}' 완료! ({elapsed:.1f}초 소요)")
+                try:
+                    with open(full_res, "r", encoding="utf-8") as _rf:
+                        _data = json.load(_rf)
+                except Exception:
+                    _data = {}
+
+                if _data.get("failed"):
+                    err_msg = _data.get("error_msg", "알 수 없는 오류")
+                    print(f"  ❌ [실패 감지] 조합 #{idx+1}/{total} '{label}' 오류로 중단! ({elapsed:.1f}초 경과 | 사유: {err_msg})")
+                else:
+                    print(f"  ✔ [완료] 조합 #{idx+1}/{total} '{label}' 완료! ({elapsed:.1f}초 소요)")
+
                 just_finished.append(idx)
                 finished.add(idx)
+
             elif proc.poll() is not None:
                 time.sleep(1)
+                elapsed = time.time() - st
                 if os.path.exists(full_res):
-                    elapsed = time.time() - st
-                    print(f"  ✓ [완료] 조합 #{idx+1}/{total} '{label}' 완료! ({elapsed:.1f}초 소요)")
-                    just_finished.append(idx)
-                    finished.add(idx)
-
+                    try:
+                        with open(full_res, "r", encoding="utf-8") as _rf:
+                            _data = json.load(_rf)
+                    except Exception:
+                        _data = {}
+                    if _data.get("failed"):
+                        err_msg = _data.get("error_msg", "알 수 없는 오류")
+                        print(f"  ❌ [실패 감지] 조합 #{idx+1}/{total} '{label}' 오류로 중단! ({elapsed:.1f}초 경과 | 사유: {err_msg})")
+                    else:
+                        print(f"  ✔ [완료] 조합 #{idx+1}/{total} '{label}' 완료! ({elapsed:.1f}초 소요)")
+                else:
+                    print(f"  ❌ [비정상 종료] 조합 #{idx+1}/{total} '{label}' 결과 파일 없이 프로세스 강제 종료됨! (exit code: {proc.returncode})")
+                    err_obj = {
+                        "label": label,
+                        "failed": True,
+                        "error_msg": f"프로세스 강제 종료 (exit={proc.returncode})",
+                        "true_avg_wait_sec_with_penalty": 999999.0,
+                    }
+                    try:
+                        with open(full_res, "w", encoding="utf-8") as _wf:
+                            json.dump(err_obj, _wf, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+                just_finished.append(idx)
+                finished.add(idx)
         for idx in just_finished:
             del running[idx]
             if pending_queue:
@@ -427,6 +470,73 @@ def _day_type(iso: str, is_holiday=None) -> str:
     return "공휴일/주말" if is_holiday else "평일"
 
 
+def _make_readable_alias(session_dir: str, ranked: list, results: dict):
+    """
+    비교 완료 후 ab_results/ 아래에 사람이 읽을 수 있는 별칭 폴더를 만들고
+    그 안에 session_id와 1위 정보를 담은 info.txt를 저장합니다.
+
+    별칭 폴더 이름 형식:
+        YYYYMMDD_HHMM_<날짜유형>_<1위전략>_<1위대기시간>초
+    예시:
+        20261109_1154_공휴일_rl1위_67초
+        20261111_1430_평일_rl1위_72초
+    """
+    import shutil
+
+    best_wait, best_key = ranked[0]
+    best_result = results.get(best_key, {})
+    run_date = best_result.get("run_date", "")
+    is_holiday = best_result.get("is_holiday", False)
+    n_pax = best_result.get("n_total_passengers", 0)
+
+    day_type = "공휴일" if is_holiday else "평일"
+    # 전략명 단축 (taxi_strategy= 접두사 제거 및 _prepositioned 등 단축)
+    strategy_short = best_key
+    for prefix in ["taxi_strategy=", "taxi_dispatch_algorithm=", "holiday_mode="]:
+        strategy_short = strategy_short.replace(prefix, "")
+    strategy_short = (strategy_short
+                      .replace("rl_prepositioned", "RL")
+                      .replace("prepositioned", "고정")
+                      .replace("forecast", "예측")
+                      .replace("patrol", "순찰")
+                      .replace("hungarian", "")
+                      .replace("today", "")
+                      .strip("_"))
+
+    now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+    alias_name = f"{now_str}_{day_type}_{strategy_short}1위_{best_wait:.0f}초_pax{n_pax}"
+    # 파일 시스템에서 사용할 수 없는 문자 제거
+    for ch in r'\/:*?"<>|':
+        alias_name = alias_name.replace(ch, "")
+
+    ab_root = os.path.join(ROOT, "ab_results")
+    alias_path = os.path.join(ab_root, alias_name)
+    os.makedirs(alias_path, exist_ok=True)
+
+    # info.txt 작성
+    session_folder = os.path.basename(session_dir)
+    info_lines = [
+        f"=== A/B 비교 결과 요약 ===",
+        f"실행 시각  : {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+        f"시뮬 날짜  : {run_date} ({day_type})",
+        f"총 승객 수 : {n_pax}명",
+        f"",
+        f"[순위]",
+    ]
+    for rank, (v, k) in enumerate(ranked, 1):
+        marker = " ← 최적" if rank == 1 else f" (+{(v - best_wait) / best_wait * 100:.1f}%)"
+        info_lines.append(f"  {rank}위: {k}  —  평균 대기 {v:.0f}초{marker}")
+    info_lines += [
+        f"",
+        f"[상세 데이터 폴더]",
+        f"  ab_results/{session_folder}/",
+    ]
+    with open(os.path.join(alias_path, "info.txt"), "w", encoding="utf-8") as f:
+        f.write("\n".join(info_lines) + "\n")
+
+    print(f"[A/B 별칭 폴더] ab_results/{alias_name}/  (info.txt 포함)")
+
+
 def save_ranking_text(ranked, results, labels_total, combos=None, session_dir: str = None):
     """최종 순위를 ab_results/<session_id>/ab_ranking_<시각>.txt 로 저장하고 경로를 반환.
     session_dir: ROOT 기준 상대경로. None 이면 ab_results/ 바로 아래에 저장 (구버전 호환)."""
@@ -495,22 +605,35 @@ def compare(result_paths: list, session_dir: str = None):
         metrics[label] = result.get("true_avg_wait_sec_with_penalty")
 
     print(f"\n===== [최종 비교 - 병렬 실행, 전체 {len(result_paths)}개 조합] =====")
-    ranked = sorted(((v, k) for k, v in metrics.items() if v is not None))
-    if not ranked:
-        print(" - 모든 조합에서 측정 실패 (탑승자 없음). 시간대/승객 설정을 확인하세요.")
-        return
+    failed_items = [k for k, r in results.items() if r.get("failed")]
+    ranked = sorted(((v, k) for k, v in metrics.items() if v is not None and k not in failed_items))
 
-    best_v = ranked[0][0]
-    for rank, (v, k) in enumerate(ranked, 1):
-        diff_pct = (v - best_v) / best_v * 100 if best_v else 0
-        marker = " ← 최적" if rank == 1 else f" (+{diff_pct:.1f}%)"
-        print(f" {rank}위: {k} — 평균 대기(타임아웃 포함) {v}초{marker}")
+    if ranked:
+        best_v = ranked[0][0]
+        for rank, (v, k) in enumerate(ranked, 1):
+            diff_pct = (v - best_v) / best_v * 100 if best_v else 0
+            marker = " ← 최적" if rank == 1 else f" (+{diff_pct:.1f}%)"
+            print(f" {rank}위: {k} — 평균 대기(타임아웃 포함) {v}초{marker}")
+    else:
+        print(" - 정상 완료된 유효 조합이 없습니다.")
 
+    if failed_items:
+        print("\n [실패한 조합 목록]")
+        for fk in failed_items:
+            fr = results[fk]
+            print(f"  ❌ {fk}: {fr.get('error_msg', '알 수 없는 오류')}")
     try:
         saved = save_ranking_text(ranked, results, len(result_paths), session_dir=session_dir)
         print(f"\n[오케스트레이터] 최종 순위를 텍스트로 저장했습니다: {saved}")
     except Exception as e:
         print(f"\n[경고] 순위 텍스트 저장 실패: {e}")
+
+    # 사람이 읽을 수 있는 별칭 폴더 (또는 info.txt) 생성
+    if session_dir and ranked:
+        try:
+            _make_readable_alias(session_dir, ranked, results)
+        except Exception as e:
+            print(f"[경고] 별칭 폴더 생성 실패: {e}")
 
 
 def main():
@@ -547,10 +670,20 @@ def main():
             patch_combo(idx, combo, run_dates[idx], config_dir_names)
 
         # 최대 4개 슬롯 생산 큐 방식으로 순차 투입 및 완료 대기
-        # ab_results/<session_id>/ 하위 폴더를 미리 생성 — 모든 JSON/txt 여기에 모임
-        session_dir = os.path.join("ab_results", session_id)
+        # 폴더 이름: ab_ranking_생성일자_시뮬날짜 (사람이 읽기 쉬운 형식)
+        # 같은 이름이 이미 있으면 (2), (3) ... 붙임
+        created_str = datetime.datetime.now().strftime("%Y%m%d_%H%M")
+        sim_dates_sorted = sorted({d.strftime("%Y%m%d") for d in run_dates})
+        sim_date_str = "_".join(sim_dates_sorted)
+        base_folder = f"ab_ranking_{created_str}_{sim_date_str}"
+        readable_folder = base_folder
+        n = 2
+        while os.path.exists(os.path.join(ROOT, "ab_results", readable_folder)):
+            readable_folder = f"{base_folder}({n})"
+            n += 1
+        session_dir = os.path.join("ab_results", readable_folder)
         os.makedirs(os.path.join(ROOT, session_dir), exist_ok=True)
-        print(f"[A/B 결과 폴더] ab_results/{session_id}/")
+        print(f"[A/B 결과 폴더] ab_results/{readable_folder}/")
 
         result_paths = run_queue_and_wait(
             combos, config_dir_names, result_prefix,

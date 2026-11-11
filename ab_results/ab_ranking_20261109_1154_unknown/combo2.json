@@ -1,0 +1,13 @@
+{
+  "label": "taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_holiday_mode=today",
+  "failed": true,
+  "error_type": "TypeError",
+  "error_msg": "state must be a dict",
+  "traceback": "Traceback (most recent call last):\n  File \"C:\\Users\\skrkt\\Desktop\\고급인공지능\\2학기\\12\\20260916verMergeFinish\\20260916verMergeFinish\\parallel_dispatch_worker.py\", line 59, in main\n    result = run_and_measure(sumo_cfg_path=sumo_cfg_path, meta_path=meta_path)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\skrkt\\Desktop\\고급인공지능\\2학기\\12\\20260916verMergeFinish\\20260916verMergeFinish\\measure_wait_time.py\", line 151, in run_and_measure\n    rl_maintainer = RLRepositionMaintainer(RL_MODEL_PATH, meta, category_model_path=CATEGORY_MODEL_PATH)\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"C:\\Users\\skrkt\\Desktop\\고급인공지능\\2학기\\12\\20260916verMergeFinish\\20260916verMergeFinish\\module4_dispatch\\rl_reposition_maintainer.py\", line 104, in __init__\n    _vn = pickle.load(_f)\n          ^^^^^^^^^^^^^^^\n  File \"bit_generator.pyx\", line 543, in numpy.random.bit_generator.BitGenerator.__setstate__\n  File \"_pcg64.pyx\", line 225, in numpy.random._pcg64.PCG64.state.__set__\nTypeError: state must be a dict\n",
+  "n_total_passengers": 0,
+  "n_measured": 0,
+  "n_unpicked": 0,
+  "n_timeout_removed": 0,
+  "avg_wait_sec": null,
+  "true_avg_wait_sec_with_penalty": 999999.0
+}

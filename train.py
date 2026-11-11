@@ -156,7 +156,8 @@ if __name__ == "__main__":
     # 성능 평가 (calculate_metrics 활용)
     xgb_preds = best_xgb.predict(X_test)
     xgb_metrics = calculate_metrics(y_test, xgb_preds)
-    print(f"[XGBoost Test 평가 지표] RMSE: {xgb_metrics['RMSE']:.4f} | MAE: {xgb_metrics['MAE']:.4f} | MAPE: {fmt_pct(xgb_metrics['MAPE (%)'])} | WAPE: {fmt_pct(xgb_metrics['WAPE (%)'])}")
+    print(f"[XGBoost Test 평가 지표] RMSE: {xgb_metrics['RMSE']:.4f} | MAE: {xgb_metrics['MAE']:.4f} | "
+          f"MAPE(참고): {fmt_pct(xgb_metrics['MAPE (%)'])} | MAPE(수요≥2): {fmt_pct(xgb_metrics['MAPE (count>=2) (%)'])} | WAPE: {fmt_pct(xgb_metrics['WAPE (%)'])}")
 
     joblib.dump({'model': best_xgb, 'feature_cols': feature_cols}, 'saved_models/xgboost_demand.pkl')
 
@@ -205,7 +206,8 @@ if __name__ == "__main__":
     with torch.no_grad():
         dl_preds = dl_model(X_test_seq).numpy().flatten()
     dl_metrics = calculate_metrics(y_test, dl_preds)
-    print(f"[CNN-LSTM Test 평가 지표] RMSE: {dl_metrics['RMSE']:.4f} | MAE: {dl_metrics['MAE']:.4f} | MAPE: {fmt_pct(dl_metrics['MAPE (%)'])} | WAPE: {fmt_pct(dl_metrics['WAPE (%)'])}")
+    print(f"[CNN-LSTM Test 평가 지표] RMSE: {dl_metrics['RMSE']:.4f} | MAE: {dl_metrics['MAE']:.4f} | "
+          f"MAPE(참고): {fmt_pct(dl_metrics['MAPE (%)'])} | MAPE(수요≥2): {fmt_pct(dl_metrics['MAPE (count>=2) (%)'])} | WAPE: {fmt_pct(dl_metrics['WAPE (%)'])}")
 
     torch.save({
         'state_dict': dl_model.state_dict(),

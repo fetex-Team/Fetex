@@ -7,12 +7,15 @@ def fmt_pct(v, digits: int = 2) -> str:
     return "-" if v is None else f"{v:.{digits}f}%"
 
 
-def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
+def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray, mape_min_count: float = 2.0) -> dict:
     """
-    RMSE, MAE, MAPE, WAPE 성능 평가 지표 계산.
+    RMSE, MAE, MAPE, 저수요-제외 MAPE, WAPE 성능 평가 지표 계산.
 
     수요 데이터는 0인 칸이 많아서 MAPE를 그대로 계산하면 0으로 나눠 수백만 %가 나온다.
-    - MAPE: 실제값이 0인 칸은 제외하고 계산 (전부 0이면 None)
+    - MAPE: 실제값이 0인 칸은 제외하고 계산 (전부 0이면 None). 1분 단위
+      수요에서는 실제값 1건의 작은 오차가 100% 이상으로 과장되므로 참고용이다.
+    - MAPE(count>=2): 실제 수요가 ``mape_min_count`` 이상인 칸만 평가한다.
+      희소한 분 단위 수요에서는 이 값을 MAPE의 비교용 지표로 사용한다.
     - WAPE: 오차 절대값 합 / 실제값 절대값 합 (0이 많아도 안정적, 합이 0이면 None)
     """
     y_true = np.asarray(y_true, dtype=float)
@@ -23,6 +26,9 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
     err = np.abs(y_true - y_pred)
     nonzero = np.abs(y_true) > 0
     mape = float(np.mean(err[nonzero] / np.abs(y_true[nonzero])) * 100) if nonzero.any() else None
+    material = np.abs(y_true) >= float(mape_min_count)
+    mape_material = (float(np.mean(err[material] / np.abs(y_true[material])) * 100)
+                     if material.any() else None)
     denom = float(np.sum(np.abs(y_true)))
     wape = float(np.sum(err) / denom * 100) if denom > 0 else None
 
@@ -30,6 +36,7 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> dict:
         "RMSE": round(float(rmse), 4),
         "MAE": round(float(mae), 4),
         "MAPE (%)": round(mape, 4) if mape is not None else None,
+        "MAPE (count>=2) (%)": round(mape_material, 4) if mape_material is not None else None,
         "WAPE (%)": round(wape, 4) if wape is not None else None,
     }
 

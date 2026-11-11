@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-11-10 10:05:21",
+  "folder_name": "1110_taxi61",
+  "num_taxis": 61,
+  "demand_source": "real",
+  "real_demand_scale": 0.7,
+  "rl_reward_mode": "gravityVer",
+  "files": [
+    "category_demand_from_v2.pkl",
+    "category_demand_models.pkl",
+    "category_demand_models_new.pkl",
+    "cnn_lstm_demand.pt",
+    "demand_v2.joblib",
+    "xgboost_demand.pkl",
+    "rl_reposition_model.zip",
+    "rl_reposition_model_vecnorm.pkl"
+  ]
+}

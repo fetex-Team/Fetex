@@ -1,5 +1,5 @@
 """AI Mobility 전체 설정 GUI. GUI의 모든 실험/시뮬레이션 파라미터는 config.json으로 저장됩니다."""
-import json, os, shutil, subprocess, sys, tkinter as tk, zipfile
+import json, os, re, shutil, subprocess, sys, tkinter as tk, zipfile
 
 # 이 스크립트(GUI) 자신이 print()로 콘솔에 직접 찍는 한글이, 컴퓨터/콘솔의 기본
 # 코드페이지(cp949 등)에 걸려 깨지는 걸 방지. _run()이 자식 프로세스에 넣어주는
@@ -1485,8 +1485,13 @@ class ConfigGUI:
     def open_ab_compare_dialog(self):
         win = tk.Toplevel(self.root)
         win.title("A/B 다중비교 설정")
-        win.geometry("460x730")
+        win.geometry("460x820")
         win.resizable(False, False)
+
+        # 날짜 목록이 길어져도 시작 버튼이 창 밖으로 밀리지 않도록, 하단 실행
+        # 영역을 먼저 고정한다. 나머지 설정은 이 영역 위의 남은 공간만 사용한다.
+        action_bar = ttk.Frame(win, padding=(15, 10))
+        action_bar.pack(side="bottom", fill="x")
 
         ttk.Label(
             win,
@@ -1497,6 +1502,48 @@ class ConfigGUI:
 
         value_vars = {}
 
+        fixed_dates = []
+        date_list_frame = None
+        date_input_box = None
+
+        def refresh_fixed_dates():
+            """공휴일 선택 영역 아래의 날짜 대기 목록을 다시 그린다."""
+            for child in date_list_frame.winfo_children():
+                child.destroy()
+            for date_text in fixed_dates:
+                row = ttk.Frame(date_list_frame)
+                row.pack(fill="x", pady=1)
+                ttk.Label(row, text=f"실행 날짜: {date_text}").pack(side="left")
+                ttk.Button(
+                    row, text="삭제", width=5,
+                    command=lambda d=date_text: (fixed_dates.remove(d), refresh_fixed_dates()),
+                ).pack(side="right")
+
+        def add_fixed_date():
+            raw = date_input_box.get("1.0", "end-1c").strip()
+            # 한 줄·여러 줄 모두 지원한다. 예: 20261013 20261014 또는
+            # 2026-10-13\n2026-10-14. 날짜 내부의 공백·하이픈은 무시한다.
+            tokens = re.findall(r"(?<!\d)(\d{4}\s*-?\s*\d{2}\s*-?\s*\d{2})(?!\d)", raw)
+            remainder = re.sub(r"(?<!\d)\d{4}\s*-?\s*\d{2}\s*-?\s*\d{2}(?!\d)", "", raw)
+            if not tokens or remainder.strip(" \t\r\n,;"):
+                messagebox.showwarning(
+                    "날짜 형식",
+                    "YYYYMMDD 날짜를 공백·줄바꿈·쉼표로 구분해 입력하세요. 하이픈과 날짜 내부 공백은 자동으로 무시합니다.",
+                )
+                return
+            try:
+                dates = [datetime.strptime(re.sub(r"[\s-]", "", token), "%Y%m%d").date().isoformat()
+                         for token in tokens]
+            except ValueError:
+                messagebox.showwarning("날짜 형식", "존재하지 않는 날짜가 포함되어 있습니다.")
+                return
+            for date_text in dates:
+                if date_text not in fixed_dates:
+                    fixed_dates.append(date_text)
+                fixed_dates.sort()
+            date_input_box.delete("1.0", "end")
+            refresh_fixed_dates()
+
         for key, (label, values) in FACTOR_OPTIONS.items():
             box = ttk.LabelFrame(win, text=label, padding=8)
             box.pack(fill="x", padx=15, pady=4)
@@ -1505,6 +1552,19 @@ class ConfigGUI:
                 var = tk.BooleanVar(value=False)
                 value_vars[key][v] = var
                 ttk.Checkbutton(box, text=FACTOR_VALUE_LABELS.get(v, v), variable=var).pack(anchor="w")
+            if key == "holiday_mode":
+                # 지정 날짜는 평일/공휴일 체크보다 우선한다. 선택한 날짜의 실제
+                # 달력 판정을 쓰므로, 여러 날짜 A/B도 날짜별로 공정하게 비교된다.
+                date_row = ttk.Frame(box)
+                date_row.pack(fill="x", pady=(6, 1))
+                ttk.Label(date_row, text="실행 날짜:").pack(side="left")
+                date_input_box = tk.Text(date_row, height=2, width=22, wrap="word")
+                date_input_box.pack(side="left", padx=(5, 4))
+                ttk.Button(date_row, text="추가하기", command=add_fixed_date).pack(side="left")
+                ttk.Label(box, text="YYYYMMDD를 공백·줄바꿈으로 구분해 한 번에 넣을 수 있습니다. 하이픈과 날짜 내부 공백은 자동으로 무시됩니다. 날짜별 A/B 묶음은 순서대로 대기열에 들어갑니다.",
+                          foreground="#6b7280", wraplength=390, justify="left").pack(anchor="w")
+                date_list_frame = ttk.Frame(box)
+                date_list_frame.pack(fill="x", pady=(2, 0))
 
         try:
             from holiday_utils import is_holiday_date
@@ -1582,17 +1642,32 @@ class ConfigGUI:
             keys = list(selected.keys())
             combos = [dict(zip(keys, combo)) for combo in itertools.product(*[selected[k] for k in keys])]
 
-            if len(combos) > 4:
+            # 날짜를 여러 개 넣으면 각 날짜가 독립적인 A/B 묶음이다. 묶음 내부의
+            # 조합만 순위화하고, 묶음들은 기존 전역 대기열에서 차례대로 실행한다.
+            date_batches = []
+            if fixed_dates:
+                for date_text in fixed_dates:
+                    batch = []
+                    for combo in combos:
+                        item = dict(combo)
+                        item["run_date"] = date_text
+                        item["holiday_mode"] = "auto"  # 실제 지정 날짜로 공휴일 자동 판정
+                        batch.append(item)
+                    date_batches.append((date_text, batch))
+            else:
+                if "holiday_mode" not in selected:
+                    for _c in combos:
+                        _c["holiday_mode"] = "today"
+                date_batches.append((None, combos))
+
+            total_jobs = sum(len(batch) for _, batch in date_batches)
+            if total_jobs > 4:
                 if not messagebox.askyesno(
-                        "조합 수 확인",
-                        f"선택하신 조합이 총 {len(combos)}개입니다.\n"
-                        f"PC 리소스에 따라 시간이 많이 걸릴 수 있습니다.\n\n"
+                        "대기열 작업 수 확인",
+                        f"선택하신 날짜·조합 작업이 총 {total_jobs}개입니다.\n"
+                        "날짜별 A/B 묶음은 최대 4개씩 실행되고, 다음 묶음은 대기합니다.\n\n"
                         f"계속하시겠습니까?"):
                     return
-
-            if "holiday_mode" not in selected:
-                for _c in combos:
-                    _c["holiday_mode"] = "today"
 
             win.destroy()
             self.save_config_only()
@@ -1618,11 +1693,14 @@ class ConfigGUI:
                     extra_env["AI_CATEGORY_MODEL_PATH"] = model_path
 
             config_snapshot = self.current()
-            self._run("multi_factor_compare.py", [json.dumps(combos, ensure_ascii=False),
-                                                    json.dumps(config_snapshot, ensure_ascii=False)],
-                      env_extra=extra_env)
+            for date_text, batch in date_batches:
+                if date_text:
+                    print(f"[A/B 날짜 대기열] {date_text}: 조합 {len(batch)}개를 추가합니다.")
+                self._run("multi_factor_compare.py", [json.dumps(batch, ensure_ascii=False),
+                                                        json.dumps(config_snapshot, ensure_ascii=False)],
+                          env_extra=extra_env)
 
-        ttk.Button(win, text="🚀 A/B 다중비교 실행", command=run_compare).pack(pady=12, fill="x", padx=15)
+        ttk.Button(action_bar, text="🚀 A/B 다중비교 실행", command=run_compare).pack(fill="x")
 
     def _build_log_picker(self, parent, persist=True, allow_copy=False):
         """학습 팝업 안에 들어가는 '학습에 쓸 로그' 선택 목록. 반환값 save()를 호출하면 selected_logs.json에 저장.

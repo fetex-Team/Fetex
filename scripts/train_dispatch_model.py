@@ -91,7 +91,8 @@ def main(log_paths=None, external_csv=None):
     pred = np.maximum(0, model.predict(X_te))
     per_h = {t: calculate_metrics(Y_te[:, i], pred[:, i]) for i, t in enumerate(targets)}
     overall = calculate_metrics(Y_te.ravel(), pred.ravel())
-    print(f"[테스트 전체] RMSE {overall['RMSE']:.4f} | MAE {overall['MAE']:.4f} | MAPE {fmt_pct(overall['MAPE (%)'])} | WAPE {fmt_pct(overall['WAPE (%)'])}")
+    print(f"[테스트 전체] RMSE {overall['RMSE']:.4f} | MAE {overall['MAE']:.4f} | "
+          f"MAPE(참고) {fmt_pct(overall['MAPE (%)'])} | MAPE(수요≥2) {fmt_pct(overall['MAPE (count>=2) (%)'])} | WAPE {fmt_pct(overall['WAPE (%)'])}")
     for t, m in per_h.items():
         print(f"  {t}: RMSE {m['RMSE']:.4f}  MAE {m['MAE']:.4f}")
 

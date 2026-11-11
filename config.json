@@ -81,7 +81,7 @@
   "rolling_short": 3,
   "rolling_long": 6,
   "forecast_horizons": 6,
-  "sim_date": "2026-09-07",
+  "sim_date": "2026-09-10",
   "xgb_n_estimators": 80,
   "xgb_max_depth": 3,
   "xgb_learning_rate": 0.05,
@@ -99,7 +99,7 @@
   "incentive_weight": 0.1,
   "target_hotspot_ratio": 0.8,
   "rl_reward_mode": "gravityVer",
-  "rl_max_decisions": 60,
+  "rl_max_decisions": 780,
   "rl_total_timesteps": 50000,
   "rl_rollout_steps": 128,
   "rl_batch_size": 128,
@@ -137,7 +137,7 @@
   "weather_typhoon_wind_threshold_kmh": 61.2,
   "weather_typhoon_taxi_bonus": 0.0,
   "holiday_mode": "auto",
-  "run_date_mode": "alternate",
+  "run_date_mode": "sim_date",
   "holiday_multipliers": {
     "school": 0.0,
     "company": 0.25,
@@ -158,5 +158,6 @@
   "force_regenerate_demand_v2": true,
   "xgb_reg_lambda": 5.0,
   "taxi_avoid_dead_ends": true,
-  "taxi_rl_keepalive": true
+  "taxi_rl_keepalive": true,
+  "run_date": "2026-10-18"
 }

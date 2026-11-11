@@ -53,7 +53,22 @@ def target_allocation(predicted, n_idle: int, power: float) -> np.ndarray:
 class ForecastRepositioner:
     def __init__(self, meta: dict, run_date: _dt.date, is_holiday: bool, sim_start_hour: float,
                  demand_model, schedule, seed, travel_time=None, model_path: str = MODEL_PATH):
-        art = joblib.load(model_path)
+        # Windows 다중 서브프로세스 실행 시 OpenMP DLL Loader Lock(WinError 1114) 완화를 위한 재시도 루프
+        art = None
+        last_err = None
+        import time
+        for retry in range(4):
+            try:
+                art = joblib.load(model_path)
+                break
+            except Exception as e:
+                last_err = e
+                time.sleep(0.3 * (retry + 1))
+        if art is None:
+            # 만약 Windows DLL 1114 오류 등으로 끝내 로드 실패 시, 시뮬레이션 폭파 대신 안전 fallback
+            print(f"[경고] demand_v2 모델 로드 실패 ({last_err}) -> 통계적 실데이터 예측으로 대체합니다.")
+            self.model = None
+            self.features = []
         if art.get("version") != 2 or len(art.get("target_cols", [])) != 6:
             raise ValueError("scripts/train_dispatch_model.py로 만든 demand_v2(t+1~t+6) 모델이 필요합니다.")
         self.edge_cells = meta["edge_cells"]

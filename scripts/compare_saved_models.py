@@ -50,8 +50,9 @@ def _load_test_set(log_arg=None):
 
 def _fmt(m):
     mape = f"{m['MAPE (%)']:.2f}%" if m.get("MAPE (%)") is not None else "-"
+    mape_material = f"{m['MAPE (count>=2) (%)']:.2f}%" if m.get("MAPE (count>=2) (%)") is not None else "-"
     wape = f"{m['WAPE (%)']:.2f}%" if m.get("WAPE (%)") is not None else "-"
-    return f"RMSE {m['RMSE']:.4f} | MAE {m['MAE']:.4f} | MAPE {mape} | WAPE {wape}"
+    return f"RMSE {m['RMSE']:.4f} | MAE {m['MAE']:.4f} | MAPE(참고) {mape} | MAPE(수요≥2) {mape_material} | WAPE {wape}"
 
 
 def evaluate_saved_models(log_arg=None):

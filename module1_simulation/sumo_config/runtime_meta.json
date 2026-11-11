@@ -100,7 +100,7 @@
     "incentive_weight": 0.1,
     "target_hotspot_ratio": 0.8,
     "rl_reward_mode": "gravityVer",
-    "rl_max_decisions": 60,
+    "rl_max_decisions": 780,
     "rl_total_timesteps": 50000,
     "rl_rollout_steps": 128,
     "rl_batch_size": 128,
@@ -165,10 +165,7 @@
     "lng_min": 127.021306,
     "lng_max": 127.032629,
     "temp_min": 15.0,
-    "temp_max": 25.0,
-    "current_temperature": 5.3,
-    "current_precipitation": 0.0,
-    "current_wind_speed": 7.1
+    "temp_max": 25.0
   },
   "edge_cells": {
     "-1011529829#3": "8730e1ca2ffffff",

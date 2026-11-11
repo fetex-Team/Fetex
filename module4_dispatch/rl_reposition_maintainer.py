@@ -76,6 +76,31 @@ CATEGORY_MODEL_PATH_DEFAULT = os.path.join(
 )
 
 
+def _safe_load_vecnorm(path):
+    """
+    NumPy 1.x / 2.x 간의 PCG64 / BitGenerator 직렬화 비호환성을 무시하고
+    VecNormalize에서 obs_rms(mean, var), epsilon, clip_obs만 안전하게 로드합니다.
+    """
+    import pickle
+    class _DummyGenerator:
+        def __init__(self, *args, **kwargs):
+            pass
+        def __setstate__(self, state):
+            pass
+
+    class _CompatibleUnpickler(pickle.Unpickler):
+        def find_class(self, module, name):
+            if module == "numpy.random._pickle":
+                if name in ("__bit_generator_ctor", "__generator_ctor", "__randomstate_ctor"):
+                    return lambda *args, **kwargs: _DummyGenerator()
+            if module.startswith("numpy._core"):
+                module = module.replace("numpy._core", "numpy.core")
+            return super().find_class(module, name)
+
+    with open(path, "rb") as _f:
+        return _CompatibleUnpickler(_f).load()
+
+
 class RLRepositionMaintainer:
     def __init__(self, model_path: str, meta: dict, category_model_path: str = None):
         # SB3 모델에는 Gymnasium action_space의 난수 상태도 저장된다. NumPy 2에서
@@ -99,13 +124,14 @@ class RLRepositionMaintainer:
         self._obs_mean = None
         _vn_path = os.path.splitext(model_path)[0] + "_vecnorm.pkl"
         if os.path.exists(_vn_path):
-            import pickle
-            with open(_vn_path, "rb") as _f:
-                _vn = pickle.load(_f)
-            self._obs_mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
-            self._obs_var = np.asarray(_vn.obs_rms.var, dtype=np.float64)
-            self._obs_eps = float(_vn.epsilon)
-            self._obs_clip = float(_vn.clip_obs)
+            try:
+                _vn = _safe_load_vecnorm(_vn_path)
+                self._obs_mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
+                self._obs_var = np.asarray(_vn.obs_rms.var, dtype=np.float64)
+                self._obs_eps = float(_vn.epsilon)
+                self._obs_clip = float(_vn.clip_obs)
+            except Exception as _e:
+                print(f"[경고] vecnorm.pkl 로드 실패 ({_e}), 관측값 정규화 없이 진행합니다.")
         self.zones = meta["zones"]
         # 학습 환경은 reset 뒤 처음 60초를 관측한 다음 행동한다. 실제 실행도 같은
         # 경계(60초)에서 첫 결정을 내리도록 한다.
