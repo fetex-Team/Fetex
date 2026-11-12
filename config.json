@@ -100,11 +100,11 @@
   "target_hotspot_ratio": 0.8,
   "rl_reward_mode": "gravityVer",
   "rl_max_decisions": 780,
-  "rl_total_timesteps": 50000,
+  "rl_total_timesteps": 90000,
   "rl_rollout_steps": 128,
   "rl_batch_size": 128,
   "rl_seed": 42,
-  "rl_n_envs": 4,
+  "rl_n_envs": 5,
   "rl_learning_rate": 0.0003,
   "rl_gamma": 0.995,
   "rl_randomize_passenger_seed": true,
@@ -159,5 +159,5 @@
   "xgb_reg_lambda": 5.0,
   "taxi_avoid_dead_ends": true,
   "taxi_rl_keepalive": true,
-  "run_date": "2026-10-18"
+  "run_date": "2026-10-24"
 }

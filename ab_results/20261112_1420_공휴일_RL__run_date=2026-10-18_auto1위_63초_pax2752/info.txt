@@ -1,0 +1,13 @@
+=== A/B 비교 결과 요약 ===
+실행 시각  : 2026-11-12 14:20:39
+시뮬 날짜  : 2026-10-18 (공휴일)
+총 승객 수 : 2752명
+
+[순위]
+  1위: taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_run_date=2026-10-18_holiday_mode=auto  —  평균 대기 63초 ← 최적
+  2위: taxi_strategy=forecast_taxi_dispatch_algorithm=hungarian_run_date=2026-10-18_holiday_mode=auto  —  평균 대기 78초 (+23.8%)
+  3위: taxi_strategy=patrol_taxi_dispatch_algorithm=hungarian_run_date=2026-10-18_holiday_mode=auto  —  평균 대기 79초 (+26.3%)
+  4위: taxi_strategy=prepositioned_taxi_dispatch_algorithm=hungarian_run_date=2026-10-18_holiday_mode=auto  —  평균 대기 83초 (+32.2%)
+
+[상세 데이터 폴더]
+  ab_results/ab_ranking_20261112_1210_20261018/
