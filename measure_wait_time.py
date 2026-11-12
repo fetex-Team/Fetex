@@ -199,22 +199,49 @@ def _edge_speed_args(run_date, strategy, sim_start_hour):
 
 
 def _create_forecast_repositioner(meta, run_date, spawn_manager, dispatcher, sim_start_hour, sumo_cfg):
-    """taxi_strategy="forecast"일 때 수요 예측(demand_v2) 기반 재배치기를 만든다 (아니면 None).
-    module4_dispatch/forecast_repositioner.py"""
-    if meta.get("taxi_strategy") != "forecast":
-        return None
+    """수요 예측(demand_v2)을 5분마다 쓰는 재배치기 + 동적 호출비 게시판을 만든다.
+    - taxi_strategy="forecast": 예측 비율로 빈 택시 재배치 (+ 호출비 계산)
+    - taxi_strategy="surge"   : 호출비(기사 인센티브)가 높은 칸으로 빈 택시 이동
+    - 그 밖의 전략            : surge_enabled면 택시는 그대로 두고 호출비만 계산 (요금 비교용)
+    반환: (재배치기 또는 None, CallFeeBoard 또는 None)
+    module4_dispatch/forecast_repositioner.py, module4_dispatch/surge_pricing.py"""
+    strategy = meta.get("taxi_strategy")
+    pricing = bool(CFG.get("surge_enabled", True))
+    if strategy not in ("forecast", "surge") and not pricing:
+        return None, None
     if spawn_manager._real_model is None:
-        raise SystemExit("forecast 전략은 실데이터 수요 모드(demand_source=real)에서만 쓸 수 있습니다.")
+        if strategy in ("forecast", "surge"):
+            raise SystemExit(f"{strategy} 전략은 실데이터 수요 모드(demand_source=real)에서만 쓸 수 있습니다.")
+        print("[안내] 동적 호출비는 실데이터 수요 모드에서만 계산합니다 (이번 실행은 생략).")
+        return None, None
     from module4_dispatch.forecast_repositioner import ForecastRepositioner
     from module4_dispatch.network_cost import NetworkTravelTime, net_file_from_sumocfg
+    from module4_dispatch.surge_pricing import CallFeeBoard
+    mode = strategy if strategy in ("forecast", "surge") else "observe"
     _tt = getattr(dispatcher, "travel_time", None) or NetworkTravelTime.cached(net_file_from_sumocfg(sumo_cfg))
-    repositioner = ForecastRepositioner(
-        meta, run_date, bool(spawn_manager.is_holiday), sim_start_hour, spawn_manager._real_model,
-        spawn_manager.schedule, meta.get("passenger_seed") if meta.get("passenger_seed") is not None else 42,
-        travel_time=_tt)
-    print(f"[안내] 예측 기반 재배치: {repositioner.tick_sec:.0f}초마다 칸별 "
-          f"{repositioner.horizon * 10}분 수요 예측 -> 빈 택시 λ^{repositioner.power:.2f} 비율 배치")
-    return repositioner
+    cells = sorted(set(meta["edge_cells"].values()))
+    board = CallFeeBoard(cells, mean_fare_won=getattr(spawn_manager, "mean_fare_won", None))         if (pricing or mode == "surge") else None
+    try:
+        repositioner = ForecastRepositioner(
+            meta, run_date, bool(spawn_manager.is_holiday), sim_start_hour, spawn_manager._real_model,
+            spawn_manager.schedule, meta.get("passenger_seed") if meta.get("passenger_seed") is not None else 42,
+            travel_time=_tt, mode=mode, fee_board=board)
+    except (ValueError, FileNotFoundError, SystemExit) as e:
+        if mode != "observe":
+            raise
+        print(f"[경고] 수요 예측 모델을 쓸 수 없어 동적 호출비를 계산하지 않습니다: {e}")
+        return None, None
+    if mode == "forecast":
+        print(f"[안내] 예측 기반 재배치: {repositioner.tick_sec:.0f}초마다 칸별 "
+              f"{repositioner.horizon * 10}분 수요 예측 -> 빈 택시 λ^{repositioner.power:.2f} 비율 배치")
+    elif mode == "surge":
+        print(f"[안내] 동적 호출비 재배치: {repositioner.tick_sec:.0f}초마다 칸별 호출비 -> "
+              f"기사 인센티브 {board.settings['min_incentive']:.0f}원 이상인 칸으로 빈 택시 이동")
+    if board is not None:
+        st = board.settings
+        print(f"[안내] 동적 호출비: {st['unit']:.0f}원 x (수요/(빈 택시+1) - 1), {st['step']:.0f}원 단위, "
+              f"최대 {st['max']:.0f}원, 기사 몫 {st['driver_share']:.0%}")
+    return repositioner, board
 
 
 class PassengerTracker:
@@ -311,7 +338,7 @@ def _save_demand_logs(tracker, log_recorder, meta, spawn_manager, run_date):
 
 def _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end_seconds,
                strategy, algorithm, dispatcher, away_model, forecast_repositioner,
-               signal_ctrl=None, speed_ctrl=None):
+               signal_ctrl=None, speed_ctrl=None, fee_board=None):
     """대기시간 지표와 실행 정보를 결과 dict로 정리한다.
 
     규칙: 차에 못 탄 채 wait_timeout이 지나면 소멸(확정). 탑승한 사람은 소멸 기한이 사라진다.
@@ -372,6 +399,9 @@ def _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end
                             if getattr(spawn_manager, "mean_fare_won", None) else None),
         "external_away": away_model.summary() if away_model is not None else None,
         "forecast_reposition": forecast_repositioner.summary() if forecast_repositioner is not None else None,
+        # 동적 호출비: 미터 요금(TIMS 평균) + 호출 시점 칸별 호출비, 탑승한 손님만 (module4_dispatch/surge_pricing.py)
+        "surge_pricing": (fee_board.summary([p for p in pickup_time if p not in timeout_pids])
+                          if fee_board is not None else None),
         "signal_plans": signal_ctrl.summary() if signal_ctrl else None,
         "speed_profile": speed_ctrl.summary() if speed_ctrl else None,
         "dispatch_cost": getattr(dispatcher, "cost_mode", None),  # 헝가리안만 비용 방식이 있음
@@ -459,8 +489,8 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
     away_model = ExternalTripAwayModel.from_config(CFG, manager, spawn_manager, seed=meta.get("passenger_seed"))
     # [현실화] 신호·속도 보정 — 예측 재배치가 같은 시간대별 이동 시간 표를 쓰도록 재배치기보다 먼저 만든다
     signal_ctrl, speed_ctrl = _create_road_realism(run_date, sim_start_hour, spawn_manager, dispatcher, _sumo_cfg)
-    forecast_repositioner = _create_forecast_repositioner(meta, run_date, spawn_manager, dispatcher,
-                                                          sim_start_hour, _sumo_cfg)
+    forecast_repositioner, fee_board = _create_forecast_repositioner(meta, run_date, spawn_manager, dispatcher,
+                                                                     sim_start_hour, _sumo_cfg)
 
     sim_end_seconds = (sim_end_hour - sim_start_hour) * 3600 if sim_end_hour is not None else None
     if sim_end_seconds is None:
@@ -527,7 +557,16 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
                                              current_vids, current_pids, _wall0, _wall_prev)
 
             # 승객 등장·탑승(riding_map: 택시 대수만큼만 TraCI 호출). 하차 감지는 배차보다 먼저 한다 (루프 위쪽 [하차 감지])
+            _n_seen = len(tracker.seen_persons)
             tracker.observe(now, current_pids, riding_map(now, current_vids))
+            if fee_board is not None and len(tracker.seen_persons) != _n_seen:
+                # 새로 호출한 손님: 그 순간 출발 칸의 호출비를 확정 (동적 호출비)
+                for pid in current_pids:
+                    if pid not in fee_board.fee_of_pid:
+                        try:
+                            fee_board.quote(pid, meta["edge_cells"].get(traci.person.getRoadID(pid)))
+                        except traci.exceptions.TraCIException:
+                            fee_board.quote(pid, None)
 
             if recorder is not None:
                 teleport_count += traci.simulation.getStartingTeleportNumber()
@@ -561,7 +600,7 @@ def run_and_measure(sumo_binary: str = "sumo", max_steps: int = 100000,
 
     result = _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end_seconds,
                         strategy, algorithm, dispatcher, away_model, forecast_repositioner,
-                        signal_ctrl=signal_ctrl, speed_ctrl=speed_ctrl)
+                        signal_ctrl=signal_ctrl, speed_ctrl=speed_ctrl, fee_board=fee_board)
     _save_demand_logs(tracker, log_recorder, meta, spawn_manager, run_date)
     if recorder is not None:
         recorder.finish(result)

@@ -290,10 +290,10 @@ def main():
     parser.add_argument('--stride', type=int, default=5,
                         help='N초 간격으로 프레임 저장 (기본 5). 차선 경로는 매 스텝 추적하므로 간격이 커도 도로를 벗어나지 않는다.')
     parser.add_argument('--strategies', nargs='+', default=['patrol', 'prepositioned', 'rl_prepositioned'],
-                        choices=['patrol', 'prepositioned', 'rl_prepositioned', 'forecast'],
+                        choices=['patrol', 'prepositioned', 'rl_prepositioned', 'forecast', 'surge'],
                         help='실행할 전략 목록 (기본: patrol prepositioned rl_prepositioned)')
     parser.add_argument('--algorithm', type=str, default='hungarian', help='배차 알고리즘 (기본: hungarian)')
-    parser.add_argument('--only', choices=['patrol', 'prepositioned', 'rl_prepositioned', 'forecast'],
+    parser.add_argument('--only', choices=['patrol', 'prepositioned', 'rl_prepositioned', 'forecast', 'surge'],
                         help='(하위호환) 단일 전략만 실행')
     parser.add_argument('--no-gzip', action='store_true',
                         help='재생 파일을 압축하지 않고 .json으로 저장 (기본: .json.gz, Unity가 둘 다 읽음)')

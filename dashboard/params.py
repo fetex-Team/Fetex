@@ -20,6 +20,7 @@ STRATEGIES = {
     "prepositioned": "시간표 선배치",
     "rl_prepositioned": "RL (강화학습)",
     "forecast": "예측 재배치",
+    "surge": "동적 호출비 재배치",
 }
 # 평가 7일 (예측·RL 학습 기간 2026-07-13~09-06 이후, 월~일 하루씩). module4_dispatch/experiments/repeat_experiments.DEFAULT_DATES와 같다.
 EVAL_DATES = ["2026-09-07", "2026-10-13", "2026-10-14", "2026-09-10", "2026-09-18", "2026-10-24", "2026-10-18"]

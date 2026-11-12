@@ -7,5 +7,5 @@
   "num_normal_cars": 40,
   "taxi_strategy": "forecast",
   "taxi_dispatch_algorithm": "hungarian",
-  "max_multiplier": 3.0
+  "surge_fee_max_won": 3000
 }

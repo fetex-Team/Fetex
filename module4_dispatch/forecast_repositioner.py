@@ -1,5 +1,10 @@
 """
-예측 기반 빈 택시 재배치 (taxi_strategy = "forecast").
+예측 기반 빈 택시 재배치 (taxi_strategy = "forecast") + 동적 호출비 갱신 (surge_pricing.CallFeeBoard).
+
+mode:
+- "forecast": 아래 1)~3) (예측 비율 배치)
+- "surge"   : 1) 예측 → 칸별 호출비 → 호출비(기사 인센티브)가 높은 칸으로 빈 택시 이동 (기사가 인센티브를 보고 움직임)
+- "observe" : 1) 예측 → 칸별 호출비만 갱신, 택시는 움직이지 않음 (순찰·시간표·RL 전략에서 요금만 계산)
 
 수요 예측 모델(saved_models/demand_v2.joblib, H3 res 8 칸별 10분 x 6칸 앞)을 배차에 직접 쓰는 전략.
 빈 택시는 평소에는 순찰(patrol)과 똑같이 움직이고, 5분마다 아래를 한 번 한다.
@@ -26,6 +31,7 @@ forecast_max_move_sec(180), reposition_fraction(0.3)
 from __future__ import annotations
 
 import datetime as _dt
+import math
 import random
 from collections import Counter, defaultdict
 
@@ -38,6 +44,21 @@ from config_loader import CFG
 from module3_prediction.h3_predictor import MODEL_PATH, H3DemandPredictor
 from module4_dispatch.forecast_dispatcher import allocate_targets
 from module4_dispatch.network_cost import UNREACHABLE
+from module4_dispatch.surge_pricing import taxis_to_clear
+
+
+def expected_calls(pred, bucket_sec: float, horizon_sec: float) -> np.ndarray:
+    """다음 horizon_sec 동안의 칸별 예상 호출 수. pred 열 k = t+(k+1)칸 예측, 칸 길이 bucket_sec.
+    예: 10분 칸, 5분 → t+1 예측의 절반."""
+    out = np.zeros(pred.shape[0])
+    left = float(horizon_sec)
+    for k in range(pred.shape[1]):
+        if left <= 0:
+            break
+        part = min(left, bucket_sec) / bucket_sec
+        out += pred[:, k] * part
+        left -= bucket_sec
+    return out
 
 
 def target_allocation(predicted, n_idle: int, power: float) -> np.ndarray:
@@ -50,7 +71,10 @@ def target_allocation(predicted, n_idle: int, power: float) -> np.ndarray:
 
 class ForecastRepositioner:
     def __init__(self, meta: dict, run_date: _dt.date, is_holiday: bool, sim_start_hour: float,
-                 demand_model, schedule, seed, travel_time=None, model_path: str = MODEL_PATH):
+                 demand_model, schedule, seed, travel_time=None, model_path: str = MODEL_PATH,
+                 mode: str = "forecast", fee_board=None):
+        self.mode = mode
+        self.fee_board = fee_board   # surge_pricing.CallFeeBoard (없으면 호출비 계산 안 함)
         self.edge_cells = meta["edge_cells"]
         self.cells = sorted(set(self.edge_cells.values()))
         self.start_dt = _dt.datetime.combine(run_date, _dt.time(0)) + _dt.timedelta(hours=sim_start_hour)
@@ -174,19 +198,65 @@ class ForecastRepositioner:
         supply = Counter(self.committed.get(v, cell_of[v]) for v in loc if cell_of[v] is not None
                          or v in self.committed)
         n = sum(supply.values())
-        target = target_allocation(lam, n, self.power)
-        desired = dict(zip(self.cells, target))
+
+        # 동적 호출비: D = 지금 기다리는 손님 + 다음 갱신까지(surge_horizon_sec, 기본 5분) 들어올 예측 호출,
+        # S = 빈 택시. 같은 시간 구간끼리 비교해야 "지금 빈 택시로 곧 올 손님을 감당할 수 있나"가 된다.
+        fees, demand = {}, {}
+        if self.fee_board is not None:
+            waiting = self._waiting_by_cell()
+            soon = expected_calls(pred, self.bucket.total_seconds(), self.fee_board.settings["horizon_sec"])
+            demand = {c: float(soon[i]) + waiting.get(c, 0) for i, c in enumerate(self.cells)}
+            fees = self.fee_board.update(now, demand, supply)
+
+        if self.mode == "surge":
+            target = None
+        else:
+            target = target_allocation(lam, n, self.power)
+        desired = dict(zip(self.cells, target)) if target is not None else {}
         for i, c in enumerate(self.cells):
             self.records.append({"time_sec": now, "h3_index": c, "predicted_demand": float(lam[i]),
-                                 "available_taxis": int(supply[c]), "target_taxis": int(target[i]),
-                                 "surge_multiplier": 1.0,
+                                 "available_taxis": int(supply[c]),
+                                 "target_taxis": int(desired.get(c, supply[c])),
+                                 "surge_multiplier": self.fee_board.multiplier(c) if self.fee_board else 1.0,
+                                 "call_fee_won": int(fees.get(c, 0)),
                                  **{f"forecast_{k + 1}": float(pred[i, k]) for k in range(6)}})
-        surplus = {c: supply[c] - desired[c] for c in self.cells if supply[c] > desired[c]}
-        deficit = {c: desired[c] - supply[c] for c in self.cells if desired[c] > supply[c]}
+        if self.mode == "observe":
+            return
+        if self.mode == "surge":
+            # 기사 인센티브(호출비 x 기사 몫)가 기준 이상인 칸만 택시를 부른다. 필요한 대수 = 호출비가 0원이 되는 대수
+            share, min_inc = self.fee_board.settings["driver_share"], self.fee_board.settings["min_incentive"]
+            deficit = {c: taxis_to_clear(demand[c], supply[c]) for c in self.cells
+                       if fees.get(c, 0) * share >= min_inc}
+            deficit = {c: k for c, k in deficit.items() if k > 0}
+            # 호출비 0원인 칸에서, 그 칸 수요를 채우고 남는 택시만 보낸다
+            surplus = {c: supply[c] - max(math.ceil(demand[c] - 1e-9) - 1, 0) for c in self.cells
+                       if fees.get(c, 0) == 0}
+            surplus = {c: k for c, k in surplus.items() if k > 0}
+        else:
+            surplus = {c: supply[c] - desired[c] for c in self.cells if supply[c] > desired[c]}
+            deficit = {c: desired[c] - supply[c] for c in self.cells if desired[c] > supply[c]}
         budget = int(len(loc) * self.fraction)
         if fleet and len(loc) < self.min_idle_ratio * fleet:
             self.stats["skipped_low_supply"] += 1
             return
+        self._move(now, loc, cell_of, surplus, deficit, budget)
+
+    def _waiting_by_cell(self) -> Counter:
+        """지금 차에 안 탄 채 기다리는 손님 수 (칸별)."""
+        out = Counter()
+        try:
+            for pid in traci.person.getIDList():
+                if traci.person.getVehicle(pid):
+                    continue
+                cell = self.edge_cells.get(traci.person.getRoadID(pid))
+                if cell is not None:
+                    out[cell] += 1
+        except traci.exceptions.TraCIException:
+            pass
+        return out
+
+    def _move(self, now, loc, cell_of, surplus, deficit, budget):
+        """남는 칸의 빈 택시를 모자란 칸으로 (도로 이동시간 헝가리안 매칭, max_move_sec 이내, budget 대까지)."""
         if not surplus or not deficit or budget <= 0 or self.travel_time is None:
             return
         movers = [v for v in loc if v not in self.committed and cell_of[v] in surplus]
@@ -225,4 +295,4 @@ class ForecastRepositioner:
                 "move_failed": int(self.stats["move_failed"]), "predict_failed": int(self.stats["predict_failed"]),
                 "skipped_low_supply": int(self.stats["skipped_low_supply"]),
                 "mean_idle_ratio": round(self.stats["idle_ratio_sum"] / max(self.stats["ticks"], 1), 3),
-                "min_idle_ratio": self.min_idle_ratio, "alloc_power": self.power, "horizon_buckets": self.horizon, "max_move_sec": self.max_move_sec}
+                "mode": self.mode, "min_idle_ratio": self.min_idle_ratio, "alloc_power": self.power, "horizon_buckets": self.horizon, "max_move_sec": self.max_move_sec}

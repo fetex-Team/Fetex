@@ -589,6 +589,7 @@ class ConfigGUI:
             ("prepositioned", "정적 선제배치 (prepositioned) — 핫스팟 구역 고정 대기", True),
             ("rl_prepositioned", "AI 강화학습 선제배치 (rl_prepositioned) — PPO 동적 재배치", True),
             ("forecast", "예측 기반 재배치 (forecast) — demand_v2 예측으로 빈 택시 이동", False),
+            ("surge", "동적 호출비 재배치 (surge) — 호출비가 높은 칸으로 빈 택시 이동", False),
         ]
         strat_vars = {}
         for key, desc, default_val in strat_defs:

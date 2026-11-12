@@ -255,7 +255,7 @@ def save_ranking_text(ranked, results, labels_total, combos=None, request_id=Non
     day0 = _day_type(best_r0.get("run_date"), best_r0.get("is_holiday")) if best_r0.get("run_date") else "날짜미상"
     short = best_k0
     for a, b in (("taxi_strategy=", ""), ("taxi_dispatch_algorithm=", ""), ("holiday_mode=", ""),
-                 ("rl_prepositioned", "RL"), ("prepositioned", "시간표"), ("forecast", "예측"), ("patrol", "순찰")):
+                 ("rl_prepositioned", "RL"), ("prepositioned", "시간표"), ("forecast", "예측"), ("surge", "호출비"), ("patrol", "순찰")):
         short = short.replace(a, b)
     tag = f"{day0}_{short}1위_{best_v0:.0f}s"
     # 파일 이름에 못 쓰는 문자 제거 ('공휴일/주말'의 / 등)

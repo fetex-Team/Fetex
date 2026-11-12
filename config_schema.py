@@ -9,7 +9,7 @@
 """
 
 FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
-STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
+STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast", "surge"]
 
 FACTOR_OPTIONS = {
     "taxi_strategy": ("택시 전략 (체크)", STRATEGIES),
@@ -93,8 +93,12 @@ NUMERIC_GROUPS = {
         ("cnn_patience", "CNN 조기 종료 patience", 1, 100, 0, 1),
     ],
     "Module 4 — 배차/인센티브": [
-        ("base_fare", "기본 요금", 0, 100000, 0, 1), ("min_multiplier", "최소 요금 배수", 0.1, 10, 2, 0),
-        ("max_multiplier", "최대 요금 배수", 0.1, 10, 2, 0), ("surge_coefficient", "수급 불균형 요금 계수", 0, 5, 3, 0),
+        ("surge_fee_unit_won", "호출비 단위(원, 수급 비율 1 초과분당)", 0, 10000, 0, 1),
+        ("surge_fee_step_won", "호출비 내림 단위(원)", 0, 5000, 0, 1),
+        ("surge_fee_max_won", "호출비 상한(원)", 0, 20000, 0, 1),
+        ("surge_driver_share", "기사 몫(0~1)", 0, 1, 2, 0),
+        ("surge_min_incentive_won", "surge 전략 이동 기준 인센티브(원)", 0, 10000, 0, 1),
+        ("surge_horizon_sec", "호출비 수요 구간(초, 이 동안 들어올 호출과 빈 택시 비교)", 60, 3600, 0, 1),
         ("reposition_fraction", "규칙 기반 선배치 비율", 0, 1, 2, 0), ("incentive_weight", "인센티브 리워드 가중치", 0, 5, 2, 0),
         ("target_hotspot_ratio", "목표 핫스팟 택시 비율(0~1)", 0, 1, 2, 0),
         ("rl_max_decisions", "RL 에피소드 결정 횟수(분)", 1, 1440, 0, 1),
@@ -114,6 +118,7 @@ NUMERIC_GROUPS = {
 }
 
 BOOLS = [
+    ("surge_enabled", "동적 호출비 계산 (모든 전략에서 요금·매출 기록, 택시 이동은 surge 전략만)"),
     ("use_real_map", "실제 OSM 지도 사용"),
     ("dispatch_use_euclidean", "Module 4 테스트 거리: 유클리드 사용"),
     ("suppress_sumo_warnings", "SUMO 경고 로그 숨기기 (속도 향상)"),
@@ -213,8 +218,8 @@ DETAIL_SECTIONS = [
                    "taxi_remaining_edges_threshold", "taxi_target_pick_attempts", "taxi_fail_threshold",
                    "taxi_primary_prob", "dispatch_use_euclidean", "taxi_stuck_reroute_sec",
                    "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders", "taxi_respawn_prefix"]),
-    ("요금·인센티브", ["base_fare", "min_multiplier", "max_multiplier", "surge_coefficient", "incentive_weight",
-                  "target_hotspot_ratio"]),
+    ("동적 호출비 (Module 4)", ["surge_enabled", "surge_fee_unit_won", "surge_fee_max_won", "surge_fee_step_won",
+                           "surge_driver_share", "surge_min_incentive_won", "surge_horizon_sec"]),
 ]
 
 # 수요 출처가 real(실측 보정)이면 숨기는 섹션 — 가정 모델(synthetic)에서만 쓰는 값
@@ -227,7 +232,7 @@ ADVANCED_KEYS = {
     "real_internal_trip_km", "passenger_mode", "edge_speed_output",
     "taxi_remaining_edges_threshold", "taxi_target_pick_attempts", "taxi_fail_threshold", "taxi_primary_prob",
     "dispatch_use_euclidean", "taxi_stuck_reroute_sec", "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders",
-    "taxi_respawn_prefix",
+    "taxi_respawn_prefix", "surge_fee_step_won", "surge_horizon_sec",
 }
 
 # '학습만 실행' 창의 "고급 학습 설정" (전처리·예측 모델·RL 하이퍼파라미터)
@@ -239,7 +244,8 @@ TRAIN_SECTIONS = [
                           "xgb_random_state", "train_random_state"]),
     ("강화학습 (RL)", ["rl_total_timesteps", "rl_max_decisions", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
                    "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed",
-                   "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets"]),
+                   "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets", "incentive_weight",
+                   "target_hotspot_ratio"]),
 ]
 # 학습 창 위쪽에 따로 보이는 값
 TRAIN_TOP_KEYS = ["rl_reward_mode", "run_sim_before_training"]
@@ -365,7 +371,17 @@ TIPS = {
     "weather_typhoon_wind_threshold_kmh": "태풍급 판정 풍속(km/h). 61.2 = 17m/s. 강풍보다 우선.",
     "weather_typhoon_taxi_bonus": "태풍급일 때 더하는 값 (음수면 감소).",
     "taxi_strategy": "빈 택시 운영 전략. patrol=순찰, prepositioned=시간대 규칙 선배치, "
-                     "rl_prepositioned=RL 선배치, forecast=수요 예측(demand_v2) 기반 재배치.",
+                     "rl_prepositioned=RL 선배치, forecast=수요 예측(demand_v2) 기반 재배치, "
+                     "surge=동적 호출비(기사 인센티브)가 높은 칸으로 빈 택시 이동.",
+    "surge_enabled": "켜면 모든 전략에서 5분마다 칸별 호출비를 계산해 손님 요금·매출을 기록한다 (미터 요금은 그대로). "
+                     "호출비 = 단위 x (수요/(빈 택시+1) - 1), 수요 = 지금 기다리는 손님 + 다음 5분 예측 호출(demand_v2). "
+                     "택시를 움직이는 건 surge 전략만. 실데이터 수요 모드에서만 동작.",
+    "surge_fee_unit_won": "수급 비율(수요/(빈 택시+1))이 1을 넘는 만큼에 곱하는 금액. 1,000원이면 비율 2.0일 때 1,000원.",
+    "surge_fee_step_won": "호출비를 이 단위로 내림 (500원 단위 등).",
+    "surge_horizon_sec": "호출비 수요 D에 넣을 예측 구간. 기본 300초 = 갱신 주기와 같은 5분: '다음 갱신까지 들어올 호출을 지금 빈 택시가 감당할 수 있나'.",
+    "surge_fee_max_won": "호출비 상한. 블루 탄력 호출비처럼 수천 원 수준으로 둔다.",
+    "surge_driver_share": "호출비 중 기사 인센티브로 가는 비율 (나머지는 플랫폼 몫).",
+    "surge_min_incentive_won": "surge 전략에서 빈 택시가 이동할 기준: 그 칸의 기사 인센티브(호출비 x 기사 몫)가 이 금액 이상일 때만 이동.",
     "taxi_dispatch_algorithm": "손님-택시 매칭. greedy/routeExtension=SUMO 내장, hungarian=최적 할당(권장), "
                                "custom_*=파이썬 직접 배정.",
     "dispatch_cost": "헝가리안 비용. network=도로망 최단 이동시간(권장), euclidean=직선 거리.",
@@ -376,10 +392,6 @@ TIPS = {
     "taxi_fail_threshold": "목적지 찾기가 이만큼 연속 실패하면 고립된 택시로 보고 다시 생성.",
     "taxi_primary_prob": "선배치 때 1순위 핫스팟으로 보내는 비율.",
     "dispatch_use_euclidean": "배차 단위 테스트에서 거리를 유클리드로 계산 (시뮬레이션 배차에는 dispatch_cost 사용).",
-    "base_fare": "택시 기본 요금(원).",
-    "min_multiplier": "할증 배수 하한.",
-    "max_multiplier": "할증 배수 상한.",
-    "surge_coefficient": "수요/공급 불균형이 할증 배수로 바뀌는 계수.",
     "incentive_weight": "RL 보상에 더하는 '예측 수요 분포 일치도' 가중치. 0이어도 기본 보상(픽업·대기·타임아웃·이동거리)에 '사전 배치 분포 점수'(0.5배)는 항상 들어가며, 0보다 크면 예측 수요 일치도가 이 가중치만큼 추가된다.",
     "target_hotspot_ratio": "빈 택시 중 핫스팟에 있어야 하는 목표 비율(0~1).",
     "freq": "수요 집계 시간 칸. 저장된 예측 모델(10분)과 같아야 예측 재배치가 동작한다.",

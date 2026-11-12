@@ -63,7 +63,7 @@ def main():
         return
     ap = argparse.ArgumentParser()
     ap.add_argument("--taxis", nargs="+", type=int, default=[50, 70, 90])
-    ap.add_argument("--strategy", default="prepositioned", choices=["patrol", "prepositioned", "rl_prepositioned", "forecast"])
+    ap.add_argument("--strategy", default="prepositioned", choices=["patrol", "prepositioned", "rl_prepositioned", "forecast", "surge"])
     ap.add_argument("--date", default=None, help="기본: config의 sim_date")
     ap.add_argument("--jobs", type=int, default=2)
     a = ap.parse_args()

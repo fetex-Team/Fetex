@@ -36,7 +36,7 @@ def main():
         return _worker(sys.argv[2], sys.argv[3])
     ap = argparse.ArgumentParser()
     ap.add_argument("--hours", type=float, default=1.0)
-    ap.add_argument("--strategy", default="prepositioned", choices=["patrol", "prepositioned", "rl_prepositioned", "forecast"])
+    ap.add_argument("--strategy", default="prepositioned", choices=["patrol", "prepositioned", "rl_prepositioned", "forecast", "surge"])
     ap.add_argument("--random-hash", action="store_true", help="해시 시드를 고정하지 않고 돌려 비교")
     a = ap.parse_args()
     src = ROOT / "module1_simulation" / "sumo_config" / "runtime_meta.json"

@@ -7,5 +7,5 @@
   "num_normal_cars": 5,
   "taxi_strategy": "patrol",
   "taxi_dispatch_algorithm": "greedy",
-  "max_multiplier": 1.5
+  "surge_fee_max_won": 1500
 }
