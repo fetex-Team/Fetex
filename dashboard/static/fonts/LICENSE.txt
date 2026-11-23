@@ -1,0 +1,5 @@
+Pretendard 1.3.9 (KS X 1001 subset: Regular, Medium, SemiBold)
+Author: Kil Hyung-jin <orioncactus@gmail.com> — https://github.com/orioncactus/pretendard
+Source: npm package "pretendard@1.3.9", dist/web/static/woff2-subset/
+License: SIL Open Font License 1.1 (OFL-1.1) — https://openfontlicense.org
+Redistribution and modification are permitted; the fonts may not be sold by themselves.

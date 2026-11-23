@@ -1,0 +1,10 @@
+{
+  "label": "KJS_90240steps_best",
+  "trained_at": "2026-11-11 16:04:33",
+  "num_taxis": 61,
+  "rl_reward_mode": "gravityVer",
+  "demand_source": "real",
+  "real_demand_scale": 0.7,
+  "rl_total_timesteps": 90240,
+  "description": "KJS 복원 90,240 steps 베스트 모델 (VecNormalize 적용)"
+}

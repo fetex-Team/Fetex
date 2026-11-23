@@ -1,0 +1,6 @@
+person_id,pickup_datetime,latitude,longitude,destination_latitude,destination_longitude,from_edge,to_edge,demand_type,coordinate_mapping
+passenger_0,2026-09-18T07:00:00,37.50161833333333,127.02982,37.49821333333333,127.0300725,B2C2,C0C1,fixed,synthetic bbox mapping
+passenger_1,2026-09-18T07:01:00,37.49838166666667,127.02018,37.50178666666667,127.0299275,B1A1,C3C2,fixed,synthetic bbox mapping
+passenger_2,2026-09-18T07:02:00,37.49838166666667,127.02018,37.495086666666666,127.0349275,B1A1,D1D0,fixed,synthetic bbox mapping
+passenger_3,2026-09-18T07:03:00,37.495086666666666,127.0349275,37.50154666666667,127.0300725,D1D0,C1C2,fixed,synthetic bbox mapping
+passenger_4,2026-09-18T07:04:00,37.50178666666667,127.0199275,37.50154666666667,127.0250725,A3A2,B1B2,fixed,synthetic bbox mapping

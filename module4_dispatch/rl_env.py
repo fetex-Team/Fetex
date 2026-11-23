@@ -7,25 +7,22 @@ module4_dispatch/rl_env.py
 
 import os
 import random
-import sys
 import numpy as np
 import traci
-import vehicle_subscriptions
-
+import module1_simulation.vehicle_subscriptions as vehicle_subscriptions
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, PROJECT_ROOT)
 
 import gymnasium as gym
 from gymnasium import spaces
 
-from taxi_manager import TaxiFleetManager, CATEGORY_PEAK_HOURS
-from passenger_manager import PassengerTimeoutManager
-from passenger_spawn_manager import PassengerSpawnManager
+from module1_simulation.taxi_manager import TaxiFleetManager, CATEGORY_PEAK_HOURS
+from module1_simulation.passenger_manager import PassengerTimeoutManager
+from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from config_loader import CFG
-from holiday_utils import pick_run_date
-from module4_dispatch.hungarian_dispatcher import HungarianDispatcher, build_hungarian_dispatcher
-from poi_extractor import CATEGORIES as ZONE_CATEGORIES
+from module1_simulation.holiday_utils import pick_run_date
+from module4_dispatch.custom_dispatchers import make_dispatcher
+from module4_dispatch.forecast_dispatcher import weighted_edge_order
+from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
 
 N_ZONES = len(ZONE_CATEGORIES)
 DECISION_INTERVAL_SEC = 60.0
@@ -66,6 +63,7 @@ class TaxiRepositionEnv(gym.Env):
         self.target_hotspot_ratio = target_hotspot_ratio
         self.randomize_passenger_seed = randomize_passenger_seed
         self.training_seed_base = training_seed_base + worker_index * 100_000
+        # [KJS] 보상 항목별 진단 로그 (10분마다 콘솔 + training_logs/reward_breakdown.csv)
         self.worker_index = worker_index
         self._log_file_path = os.path.join(PROJECT_ROOT, "module4_dispatch", "training_logs", "reward_breakdown.csv")
         self._interval_stats = {
@@ -91,6 +89,8 @@ class TaxiRepositionEnv(gym.Env):
         self.fleet_manager = None
         self.pax_manager = None
         self.spawn_manager = None
+        self.signal_ctrl = None      # 평가(measure_wait_time.py)와 같은 도로 현실화: 실제 신호 계획
+        self.speed_ctrl = None       # 〃 시간대별 실측 속도 보정 (TOPIS)
         self._decision_count = 0
         self._sumo_started = False
         self._depart_time = {}
@@ -98,26 +98,44 @@ class TaxiRepositionEnv(gym.Env):
         self._last_reposition_distance_m = 0.0
         self._episode_index = 0
         self._seen_request_ids = set()
-        self.committed = {}          # 재배치 명령을 받고 아직 이동 중인 택시 {taxi_id: 목표 edge}
-        self._last_riding = set()    # 직전 결정 시점의 탑승 승객 (매 스텝 중복 조회 방지)
+        self.committed = {}          # [KJS] 재배치 명령을 받고 아직 이동 중인 택시 {taxi_id: 목표 edge}
+        self._last_riding = set()    # [KJS] 직전 결정 시점의 탑승 승객 (매 스텝 중복 조회 방지)
+        # 새 호출을 카테고리 수요로 셀 때의 기준 = 학습과 같은 '승차 위치 -> 가장 가까운 POI 구역'
+        self._edge_weights = {}       # 재배치 목표 도로 가중치 {도로: 과거 호출 수} (reset에서 채움)
+        self._picked_targets = set()  # 이번 결정에서 이미 택시를 보낸 도로
+        self._request_category = {}
+        if demand_predictor is not None and hasattr(demand_predictor, "record_new_requests"):
+            from module3_prediction.category_predictor import edge_request_categories
+            self._request_category = edge_request_categories(os.path.dirname(os.path.abspath(sumo_cfg_path)))
 
     def _pick_episode_date(self):
         """학습 에피소드 날짜. rl_train_start~rl_train_end가 있으면 그 기간 안에서만 뽑는다
         (평가 날짜(sim_date 이후)와 겹치지 않게 시간 순서로 분리 — 수요예측 학습 기간과 같은 8주).
-        없으면 예전처럼 최근 90일에서 평일/공휴일을 번갈아 뽑는다."""
+        [KJS] rl_train_day_type: "weekday"(기본)=평일만, "holiday"=공휴일·주말만, "mixed"=둘 다.
+        평일/공휴일이 섞이면 에피소드 보상 분산의 대부분이 '그날이 무슨 날이냐'로 결정돼 정책 개선이 안 보인다."""
+        import datetime as _dt
+        from module1_simulation.holiday_utils import is_holiday_date
         rng = random.Random(self.training_seed_base + self._episode_index)
+        day_type = str(CFG.get("rl_train_day_type", "weekday")).lower()
         start, end = CFG.get("rl_train_start"), CFG.get("rl_train_end")
         if start and end:
-            import datetime as _dt
             d0, d1 = _dt.date.fromisoformat(str(start)), _dt.date.fromisoformat(str(end))
-            return d0 + _dt.timedelta(days=rng.randint(0, max(0, (d1 - d0).days)))
+            days = [d0 + _dt.timedelta(days=i) for i in range((d1 - d0).days + 1)]
+            if day_type in ("weekday", "holiday"):
+                want = day_type == "holiday"
+                days = [d for d in days if bool(is_holiday_date(d)) == want] or days
+            return rng.choice(days)
+        if day_type == "weekday":
+            return pick_run_date(CFG, index=2 * self._episode_index, rng=rng, mode="alternate")
+        if day_type == "holiday":
+            return pick_run_date(CFG, index=2 * self._episode_index + 1, rng=rng, mode="alternate")
         return pick_run_date(CFG, index=self._episode_index, rng=rng)
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self._close_sumo()
 
-        vehicle_subscriptions.reset()
+        vehicle_subscriptions.reset()   # 새 SUMO 실행: 구독 기록 초기화
         traci.start([
             self.sumo_binary, "-c", self.sumo_cfg_path,
             "--no-step-log", "true", "--no-warnings", "true",
@@ -130,25 +148,16 @@ class TaxiRepositionEnv(gym.Env):
         self._seen_request_ids.clear()
         self.committed = {}
         self._episode_index += 1
-        for k in self._interval_stats:
-            self._interval_stats[k] = 0.0
+        for key in self._interval_stats:
+            self._interval_stats[key] = 0.0
         passenger_seed = self.meta.get("passenger_seed")
         if self.randomize_passenger_seed:
             passenger_seed = self.training_seed_base + self._episode_index
 
-        # 평일/공휴일이 섞이면 에피소드 보상 분산의 대부분이 "그날이 무슨 날이냐"로 결정돼
-        # 정책 개선이 안 보인다. 기본은 평일 고정. "mixed"면 예전처럼 번갈아 학습.
-        day_type = str(CFG.get("rl_train_day_type", "weekday")).lower()
-        date_rng = random.Random(self.training_seed_base + self._episode_index)
-        if day_type == "weekday":
-            episode_date = pick_run_date(CFG, index=2 * self._episode_index, rng=date_rng, mode="alternate")
-        elif day_type == "holiday":
-            episode_date = pick_run_date(CFG, index=2 * self._episode_index + 1, rng=date_rng, mode="alternate")
-        else:
-            episode_date = pick_run_date(CFG, index=self._episode_index, rng=date_rng)
+        episode_date = self._pick_episode_date()
 
         dispatch_algo = self.meta.get("taxi_dispatch_algorithm", "greedy")
-        self.dispatcher = build_hungarian_dispatcher(self.sumo_cfg_path) if dispatch_algo == "hungarian" else None
+        self.dispatcher = make_dispatcher(dispatch_algo, self.sumo_cfg_path)  # hungarian/custom_* (SUMO 내장이면 None)
         
         sim_start_hour = self.meta.get("sim_start_hour", 0)
         
@@ -179,8 +188,36 @@ class TaxiRepositionEnv(gym.Env):
             meta=self.meta,
         )
 
+        # [디지털 트윈 일치] 학습 환경도 평가 환경과 같은 도로 현실화를 쓴다 (예전엔 신호·정체 보정 없이 학습 → 평가와 달랐음)
+        from module1_simulation.signal_plans import SignalPlanController
+        from module1_simulation.speed_profile import SpeedProfileController
+        from module4_dispatch.network_cost import TimeVaryingTravelTime, net_file_from_sumocfg
+        is_hol = bool(getattr(self.spawn_manager, "is_holiday", False))
+        net_file = net_file_from_sumocfg(self.sumo_cfg_path)
+        self.signal_ctrl = SignalPlanController.from_config(CFG, episode_date, sim_start_hour, is_hol)
+        shared_tt = None
+        if self.dispatcher is not None and getattr(self.dispatcher, "travel_time", None) is not None \
+                and CFG.get("speed_profile", "topis") == "topis":
+            shared_tt = TimeVaryingTravelTime(net_file)
+            self.dispatcher.travel_time = shared_tt
+        self.speed_ctrl = SpeedProfileController.from_config(CFG, net_file, episode_date, sim_start_hour, is_hol,
+                                                             travel_time=shared_tt)
+
         if self.demand_predictor is not None and hasattr(self.demand_predictor, "reset"):
             self.demand_predictor.reset(episode_date)
+        # 시작 전 호출(지난 8일 + 오늘 시작 전)로 예측기의 lag·어제·지난주 피처를 학습 때처럼 채운다 (실측 수요 모드)
+        self._edge_weights = {}
+        if (hasattr(self.demand_predictor, "set_past_requests")
+                and getattr(self.spawn_manager, "_real_model", None) is not None and self._request_category):
+            from collections import Counter
+            from module3_prediction.category_predictor import build_past_requests
+            past = build_past_requests(self.spawn_manager._real_model, episode_date, sim_start_hour,
+                                       passenger_seed, self._request_category,
+                                       is_holiday_today=is_hol)   # 실제 승객 생성과 같은 공휴일 판정
+            self.demand_predictor.set_past_requests(past, sim_start_hour * 3600.0)
+            # 재배치 목표 도로 가중치 = 그 도로의 과거 호출 수 (rl_weighted_targets)
+            if CFG.get("rl_weighted_targets", True):
+                self._edge_weights = Counter(r[2] for r in past)
 
         self._advance_sim(DECISION_INTERVAL_SEC)
         self._last_riding = self._riding_passenger_ids()
@@ -324,6 +361,10 @@ class TaxiRepositionEnv(gym.Env):
         ):
             traci.simulationStep()
             now = traci.simulation.getTime()
+            if self.signal_ctrl:
+                self.signal_ctrl.maintain(now)
+            if self.speed_ctrl:
+                self.speed_ctrl.maintain(now)
             current_pids = set(traci.person.getIDList())
 
             if int(now) % THROTTLE_SEC == 0:
@@ -332,8 +373,7 @@ class TaxiRepositionEnv(gym.Env):
             
             self.spawn_manager.maintain(now, timeout_removed_pids=self.pax_manager.removed_pids, current_pids=current_pids)
 
-            # spawn_manager가 이번 틱에 넣은 승객도 current_pids에 반영한다. 실제
-            # measure_wait_time.py와 같은 순서로, 생성 후 신규 요청을 수집한다.
+            # [KJS] spawn_manager가 이번 틱에 넣은 승객까지 포함해 신규 요청을 수집
             self._record_new_requests(now, current_pids)
 
             if self.dispatcher is not None:
@@ -344,16 +384,16 @@ class TaxiRepositionEnv(gym.Env):
                     self._depart_time[pid] = now
 
     def _record_new_requests(self, now: float, current_pids: set):
-        """수요예측에는 현재 대기 인원이 아니라 새로 등장한 승객만 전달한다."""
+        """[KJS] 수요예측에는 현재 대기 인원이 아니라 새로 등장한 승객(호출)만 전달한다.
+        카테고리는 학습(train_category_demand.py)과 같은 기준 — 승차 도로 위치의 가장 가까운 POI 구역."""
         if self.demand_predictor is None or not hasattr(self.demand_predictor, "record_new_requests"):
             return
         counts = {category: 0 for category in ZONE_CATEGORIES}
-        dest_categories = getattr(self.spawn_manager, "_dest_category", {}) if self.spawn_manager is not None else {}
         for pid in current_pids - self._seen_request_ids:
-            # 수요예측 카테고리는 요청이 발생한 edge의 POI 구역(origin_zone)이 아니라
-            # PassengerSpawnManager가 생성할 때 정한 목적지 카테고리를 사용한다.
-            # 한 edge가 여러 POI에 겹치는 문제와 학습/실행 라벨 불일치를 피한다.
-            category = dest_categories.get(pid)
+            try:
+                category = self._request_category.get(traci.person.getRoadID(pid))
+            except traci.exceptions.TraCIException:
+                category = None
             if category in counts:
                 counts[category] += 1
         self._seen_request_ids.update(current_pids)
@@ -393,6 +433,7 @@ class TaxiRepositionEnv(gym.Env):
 
     def _apply_action(self, action):
         self._last_reposition_distance_m = 0.0
+        self._picked_targets = set()
         weights = np.asarray(action, dtype=np.int64).reshape(-1)
         if weights.size != N_ZONES or not np.any(weights):
             return
@@ -440,8 +481,8 @@ class TaxiRepositionEnv(gym.Env):
                     deficit -= 1
 
     def _move_taxi_to_zone(self, taxi_id: str, current_edge: str, target_edges: list) -> bool:
-        candidates = list(target_edges)
-        np.random.shuffle(candidates)
+        # 과거 호출이 많았던 도로일수록 먼저 시도 (기록이 없으면 예전처럼 균등 무작위)
+        candidates = weighted_edge_order(target_edges, self._edge_weights, self._picked_targets)
 
         for target_edge in candidates:
             if target_edge == current_edge or (current_edge, target_edge) in self._unreachable_edges:
@@ -453,6 +494,7 @@ class TaxiRepositionEnv(gym.Env):
                     continue
                 traci.vehicle.changeTarget(taxi_id, target_edge)
                 self.committed[taxi_id] = target_edge
+                self._picked_targets.add(target_edge)
                 self._last_reposition_distance_m += max(float(route.length), 0.0)
                 return True
             except traci.exceptions.TraCIException:

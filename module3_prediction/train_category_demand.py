@@ -7,29 +7,34 @@ H3 기준 train.py와 나란히 두는 "카테고리 기준" 버전.
 
 train.py와 다른 점은 spatial_col='category' 하나뿐 — TimeSeriesPreprocessor.aggregate_demands /
 create_features가 원래 spatial_col을 인자로 받게 설계돼 있어서 h3_index용 로직을 그대로 재사용함.
-(H3용 saved_models/xgboost_demand.pkl, cnn_lstm_demand.pt는 이 스크립트가 손대지 않음 — 완전 별도 파일)
+(H3 셀용 saved_models/demand_v2.joblib, cnn_lstm_demand.pt는 train.py가 만든다 — 이 스크립트는 손대지 않음)
 
 실행: python module3_prediction/train_category_demand.py
 출력: saved_models/category_demand_models.pkl
-      {"models": {category: XGBRegressor}, "feature_cols": [...], "category_list": [...]}
+      {"models": {category: XGBRegressor}, "feature_cols": [...], "category_list": [...],
+       "metrics": {category: {"xgb"/"lag_1"/"slot_mean": {RMSE, MAE, MAPE, WAPE}}}, "test_cut": "...",
+       "freq", "max_lag", "rolling_short", "rolling_long"}   ← 전처리 설정 (불러올 때 지금 설정과 같은지 확인용)
+      (lag_1 = 나이브: 마지막 끝난 칸 demand(t-1), slot_mean = 학습 구간 같은 시각 평균 — 모델과 비교할 기준 모델)
+      행 t = 진행 중인 칸, 타깃 y_h1 = demand(t+1) (time_series_prep 참고).
+      학습 데이터의 날짜 공백(실행 안 한 날·시간)은 공용 파이프라인(log_coverage)이 관측 밖으로 처리한다.
 """
+import glob
 import os
 import sys
-import argparse
-import glob 
+
 import joblib
 import numpy as np
-import pandas as pd
-from xgboost import XGBRegressor
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 from config_loader import CFG
-from log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
-from module2_preprocessing.category_indexing import CategoryIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, time_based_split
+from module2_preprocessing.log_selection import selected_log_paths  # config_gui '학습 로그 선택' 반영
+from module2_preprocessing.time_series_prep import time_based_split
+from module2_preprocessing.feature_cache import load_or_build_feature_table
+from module3_prediction.xgb_factory import build_xgboost_model
+from module3_prediction.evaluate import calculate_metrics
 
 # [2026-09-21 중복 집계 수정] train.py와 같은 이유로 레거시 소스는 더 이상 합치지 않음.
 #   data/sim_logs/demand_log_*.csv        : measure_wait_time.py / 병렬 워커가 남기는 새 로그 (사용)
@@ -47,108 +52,19 @@ OUT_PATH = os.path.join(PROJECT_ROOT, "saved_models", "category_demand_models.pk
 CATEGORY_LIST = ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]
 
 
-def _load_all_demand_logs(log_glob: str = None):
-    """train.py의 _load_all_demand_logs()와 동일한 로직 (여기서도 그대로 필요해서 복제).
-    log_glob을 주면 그 파일들만 쓴다 (예: 실데이터 보정 로그 data/real_demand_logs/demand_log_*.csv)."""
+def main(log_glob: str = None, out_path: str = OUT_PATH, cache: bool = True):
+    # 학습 로그: --logs 글롭, 없으면 config_gui '학습 로그 선택'(data/sim_logs)
     paths = sorted(glob.glob(log_glob)) if log_glob else selected_log_paths(DEMAND_LOG_DIR)
     if not paths:
-        return None
-    frames = []
-    for path in paths:
-        frame = pd.read_csv(path, parse_dates=["pickup_datetime"])
-        # 서로 다른 실행 파일 사이의 날짜 공백은 '수요 0'이 아니다. 아래에서 파일별
-        # 독립 시계열을 만들 수 있도록 출처를 보존한다.
-        frame["source_log"] = os.path.basename(path)
-        frames.append(frame)
-    merged = pd.concat(frames, ignore_index=True)
-    # 같은 시각·같은 좌표의 서로 다른 요청은 유효한 별도 수요다. 로그가 중복으로
-    # 선택된 경우만 제거할 수 있도록 승객 식별자까지 포함한다.
-    dedup_cols = [c for c in ("source_log", "person_id", "pickup_datetime", "edge_id") if c in merged.columns]
-    merged = merged.drop_duplicates(subset=dedup_cols or None)
-    print(f"[안내] 로그 {len(paths)}개에서 총 {len(merged)}건 로드")
-    return merged
-
-
-def _assign_logged_categories(df: pd.DataFrame) -> pd.DataFrame:
-    """수요 예측용 category는 승객의 목적지 카테고리(dest_category)로 통일한다.
-
-    origin_zone은 출발 edge의 POI 중첩 정보라서 한 승객이 여러 카테고리에 걸리거나
-    출발지와 목적지 의미가 섞일 수 있으므로 학습 분류에 사용하지 않는다.
-    구형 로그에는 dest_category가 없으므로 해당 행은 안전하게 제외한다.
-    """
-    df = df.copy()
-    raw = df.get("dest_category", pd.Series("", index=df.index)).fillna("").astype(str).str.strip()
-    valid = raw.isin(CATEGORY_LIST)
-    df["category"] = raw.where(valid)
-
-    # 진단용: 기존 origin_zone은 참고만 하고 학습 분류에는 절대 사용하지 않는다.
-    origin = df.get("origin_zone", pd.Series("", index=df.index)).fillna("").astype(str)
-    print(f"[안내] dest_category 유효 {int(valid.sum()):,}건, "
-          f"미기록/지원외 {int((~valid).sum()):,}건, 최종 사용 {int(valid.sum()):,}건")
-    if int(valid.sum()) == 0:
-        print("[경고] 현재 선택된 로그에는 dest_category가 없습니다. "
-              "dest_category가 기록된 새 시뮬레이션 로그를 생성한 뒤 다시 학습하세요.")
-    print("[안내] origin_zone은 사용하지 않습니다. 목적지 카테고리 기준으로 학습 데이터의 의미를 통일합니다.")
-    return df.loc[valid].copy()
-
-def _build_episode_features(df: pd.DataFrame, prep: TimeSeriesPreprocessor) -> pd.DataFrame:
-    """각 로그 파일을 독립 에피소드로 전처리한다.
-
-    이전 구현처럼 여러 실행일을 합쳐 최소~최대 날짜 전체를 reindex하면, 실행하지
-    않은 날이 거대한 0수요 구간으로 바뀐다. 파일 안에서는 실제 0수요 시간칸을
-    보존하되, 파일과 파일 사이에는 lag/rolling이 이어지지 않게 한다.
-    """
-    parts = []
-    for source_log, episode in df.groupby("source_log", sort=False):
-        agg = prep.aggregate_demands(
-            episode, timestamp_col="pickup_datetime", spatial_col="category",
-            all_cells=CATEGORY_LIST,
-        )
-        features = prep.create_features(agg, spatial_col="category", verbose=False)
-        if features.empty:
-            print(f"[경고] {source_log}: lag/rolling 뒤 남은 행이 없어 건너뜁니다.")
-            continue
-        features["source_log"] = source_log
-        parts.append(features)
-
-    if not parts:
-        return pd.DataFrame()
-    out = pd.concat(parts, ignore_index=True)
-    out.attrs["feature_cols"] = list(parts[0].attrs["feature_cols"])
-    out.attrs["target_cols"] = list(parts[0].attrs["target_cols"])
-    print(f"[안내] 로그 {len(parts)}개를 독립 에피소드로 전처리: "
-          f"{len(out):,}행, 실제 시간칸 {out['time_bucket'].nunique():,}개")
-    return out
-
-
-def _evaluate(name: str, y_true, y_pred) -> dict:
-    y_true = np.asarray(y_true, dtype=float)
-    y_pred = np.maximum(0.0, np.asarray(y_pred, dtype=float))
-    err = y_true - y_pred
-    return {
-        "rmse": float(np.sqrt(np.mean(err ** 2))),
-        "mae": float(np.mean(np.abs(err))),
-        "wape": float(np.abs(err).sum() / max(float(y_true.sum()), 1e-9)),
-    }
-
-
-def _print_metrics(category: str, name: str, metrics: dict):
-    print(f"[{category} / {name}] RMSE {metrics['rmse']:.4f} | "
-          f"MAE {metrics['mae']:.4f} | WAPE {metrics['wape']:.2%}")
-
-
-def main(out_path: str = None, log_glob: str = None):
-    out_path = out_path or OUT_PATH
-    df = _load_all_demand_logs(log_glob)
-    if df is None:
         print("[에러] data/sim_logs/demand_log_*.csv 로그가 없습니다. "
               "먼저 `python measure_wait_time.py`를 한 번 이상 돌려주세요.")
         return
 
-    df = _assign_logged_categories(df)
-
-    prep = TimeSeriesPreprocessor(max_lag=CFG["max_lag"])
-    feature_df = _build_episode_features(df, prep)
+    # H3 모델(train.py·demand_v2)과 같은 공용 파이프라인을 카테고리 단위로 실행
+    # (로그 검증, 시뮬 시작 시각, 칸 집계 후 날씨 병합 → 날씨 피처가 학습에 들어감)
+    # 같은 로그·설정·지도 구역이면 data/features/의 전처리 저장본을 불러온다
+    feature_df = load_or_build_feature_table(paths, cache=cache, max_lag=CFG["max_lag"], spatial_col="category",
+                                             all_cells=CATEGORY_LIST)
 
     if feature_df.empty:
         print("[에러] lag/rolling 생성 후 데이터가 하나도 안 남았습니다. 로그를 더 쌓아주세요.")
@@ -163,58 +79,63 @@ def main(out_path: str = None, log_glob: str = None):
         print(f"[에러] TARGET={TARGET!r}이 피처 테이블의 target_cols({target_cols})에 없습니다.")
         return
 
-    # 모든 카테고리에 동일한 실제 시점 경계를 적용한다. 특정 카테고리의 행 개수만
-    # 기준으로 자르면 서로 다른 날짜를 평가하게 되어 비교가 불가능해진다.
-    train_df, _, test_df, cuts = time_based_split(feature_df, CFG["test_size"])
-    print(f"[시간 분할] Train < {cuts['test_cut']}, Test >= {cuts['test_cut']} "
-          f"(train {len(train_df):,} / test {len(test_df):,})")
+    # 시간 기준 분할을 전체 테이블에 한 번만 적용 → 모든 카테고리가 같은 시험 구간을 쓴다 (train.py·demand_v2와 같은 방식)
+    # purge=타깃 수: 경계 직전 행의 타깃(y_h2..)이 시험 구간 수요를 담는 경계 누수를 막는다 (train.py와 같음)
+    train_all, _val, test_all, cuts = time_based_split(feature_df, CFG["test_size"], purge=len(target_cols))
+    print(f"[분할] 시험 구간 {cuts['test_cut']} 이후")
 
     models, metrics_by_category = {}, {}
     for category in CATEGORY_LIST:
-        cat_train = train_df[train_df["category"] == category]
-        cat_test = test_df[test_df["category"] == category]
-        if len(cat_train) < 20 or cat_test.empty:
-            print(f"[경고] '{category}' train={len(cat_train)}, test={len(cat_test)}라 건너뜁니다.")
+        train_df = train_all[train_all["category"] == category]
+        test_df = test_all[test_all["category"] == category]
+        if len(train_df) + len(test_df) < 20:
+            print(f"[경고] '{category}' 샘플이 {len(train_df) + len(test_df)}건뿐이라 건너뜁니다 (최소 20건 권장).")
             continue
 
-        X_train, y_train = cat_train[feature_cols].fillna(0), cat_train[TARGET].fillna(0)
-        X_test, y_test = cat_test[feature_cols].fillna(0), cat_test[TARGET].fillna(0)
-        model = XGBRegressor(
-            n_estimators=int(CFG["xgb_n_estimators"]),
-            max_depth=int(CFG["xgb_max_depth"]),
-            learning_rate=float(CFG["xgb_learning_rate"]),
-            reg_lambda=float(CFG.get("xgb_reg_lambda", 5.0)),
-            random_state=int(CFG["xgb_random_state"]),
-        )
+        # [병합 수정] y를 현재 칸 demand -> t+1 예측(y_h1)로 교체: train.py / RL의 예측 지평과 일치.
+        X_train, y_train = train_df[feature_cols].fillna(0), train_df[TARGET].fillna(0)
+        X_test, y_test = test_df[feature_cols].fillna(0), test_df[TARGET].fillna(0)
+        model = build_xgboost_model()
         model.fit(X_train, y_train)
-        category_metrics = {
-            "lag_1": _evaluate("lag_1", y_test, X_test["lag_1"]),
-            "slot_mean": _evaluate(
-                "slot_mean", y_test,
-                X_test["minute_of_day"].map(cat_train.groupby("minute_of_day")[TARGET].mean()).fillna(y_train.mean()),
-            ),
-            "xgb": _evaluate("xgb", y_test, model.predict(X_test)),
-        }
-        for name, metric in category_metrics.items():
-            _print_metrics(category, name, metric)
-        if category_metrics["xgb"]["mae"] >= min(category_metrics["lag_1"]["mae"], category_metrics["slot_mean"]["mae"]):
-            print(f"[경고] '{category}' XGBoost가 MAE 기준 베이스라인을 이기지 못했습니다. PPO 재학습 전 검토하세요.")
         models[category] = model
-        metrics_by_category[category] = category_metrics
+        if X_test.empty:
+            print(f"[{category}] Train {len(X_train)} / Test 0 — 시험 구간 행이 없어 평가 생략")
+            continue
 
-    os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        # [KJS 이식] 기준 모델과 같은 시험 구간에서 비교 — 모델이 단순 규칙보다 나은지 확인
+        #   lag_1    : 나이브(마지막 끝난 칸 값 demand(t-1)을 그대로) — module3_prediction/evaluate.py 기준 모델과 같은 정의
+        #   slot_mean: 학습 구간의 같은 시각(minute_of_day) 평균 타깃 (그 시각이 학습에 없으면 학습 전체 평균)
+        slot_mean = train_df.groupby("minute_of_day")[TARGET].mean()
+        preds = {
+            "xgb": np.maximum(0.0, model.predict(X_test)),
+            "lag_1": X_test["lag_1"].to_numpy(dtype=float),
+            "slot_mean": X_test["minute_of_day"].map(slot_mean).fillna(float(y_train.mean())).to_numpy(dtype=float),
+        }
+        cat_metrics = {name: calculate_metrics(y_test.to_numpy(dtype=float), p) for name, p in preds.items()}
+        metrics_by_category[category] = cat_metrics
+        print(f"[{category}] Train {len(X_train)} / Test {len(X_test)}")
+        for name, m in cat_metrics.items():
+            wape = "-" if m["WAPE (%)"] is None else f"{m['WAPE (%)']:.2f}%"
+            print(f"    {name:<9} RMSE {m['RMSE']:.4f} | MAE {m['MAE']:.4f} | WAPE {wape}")
+        if cat_metrics["xgb"]["MAE"] >= min(cat_metrics["lag_1"]["MAE"], cat_metrics["slot_mean"]["MAE"]):
+            print(f"[경고] '{category}' XGBoost가 MAE 기준으로 기준 모델(lag_1/slot_mean)을 이기지 못했습니다. RL 재학습 전 검토하세요.")
+
+    os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
+    # metrics: {category: {"xgb"|"lag_1"|"slot_mean": {RMSE, MAE, MAPE (%), WAPE (%)}}} — 시험 구간 기준
     joblib.dump({"models": models, "feature_cols": feature_cols, "target": TARGET,
                  "category_list": list(models.keys()), "metrics": metrics_by_category,
-                 "test_cut": str(cuts["test_cut"])}, out_path)
+                 "test_cut": str(cuts["test_cut"]),
+                 # 전처리 설정 — 지금 설정과 다르면 피처 이름은 같아도 값 의미가 달라지므로 불러올 때 확인한다
+                 "freq": feature_df.attrs.get("freq", CFG["freq"]), "max_lag": CFG["max_lag"],
+                 "rolling_short": CFG["rolling_short"], "rolling_long": CFG["rolling_long"]}, out_path)
     print(f"[완료] {out_path} 에 카테고리별 모델 {len(models)}개 저장")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="카테고리별 수요예측 모델 학습")
-    parser.add_argument(
-        "--out", default=OUT_PATH,
-        help="저장할 모델 파일 경로 (기본: saved_models/category_demand_models.pkl)",
-    )
-    parser.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 config_gui에서 고른 data/sim_logs 로그)")
-    args = parser.parse_args()
-    main(args.out, args.logs)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--logs", default=None, help="학습 로그 글롭 (생략 시 config_gui에서 고른 data/sim_logs 로그)")
+    ap.add_argument("--out", default=OUT_PATH, help="저장 경로 (기본 saved_models/category_demand_models.pkl)")
+    ap.add_argument("--no-cache", action="store_true", help="전처리 저장본(data/features/)을 쓰지 않고 새로 전처리")
+    a = ap.parse_args()
+    main(a.logs, a.out, cache=not a.no_cache)

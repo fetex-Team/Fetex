@@ -1,0 +1,350 @@
+{
+  "dates": [
+    "2026-09-07",
+    "2026-09-10",
+    "2026-09-18",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-18",
+    "2026-10-24"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "forecast_v2": {
+      "service_rate": {
+        "mean": 0.9952,
+        "n": 7,
+        "diff_mean": 0.0010428571428571073,
+        "diff_ci95": [
+          -0.0007520256320276955,
+          0.00283773991774191
+        ],
+        "sign_test_p": 0.6875,
+        "days_better": 4,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 17.428571428571427,
+        "n": 7,
+        "diff_mean": -5.428571428571429,
+        "diff_ci95": [
+          -13.594388404915955,
+          2.7372455477730977
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 5,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 59.371428571428574,
+        "n": 7,
+        "diff_mean": -0.7285714285714268,
+        "diff_ci95": [
+          -2.471761387816718,
+          1.0146185306738644
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 109.42857142857143,
+        "n": 7,
+        "diff_mean": -1.8571428571428572,
+        "diff_ci95": [
+          -6.076205954771133,
+          2.361920240485419
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 6,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 61.0,
+        "n": 7,
+        "diff_mean": -1.1857142857142864,
+        "diff_ci95": [
+          -3.2568573954207043,
+          0.8854288239921315
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 5,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 76428732.14285715,
+        "n": 7,
+        "diff_mean": 93112.0,
+        "diff_ci95": [
+          -60014.157588072616,
+          246238.15758807262
+        ],
+        "sign_test_p": 0.6875,
+        "days_better": 4,
+        "days": 7
+      }
+    },
+    "patrol": {
+      "service_rate": {
+        "mean": 0.9941571428571429,
+        "n": 7
+      },
+      "n_timeout_removed": {
+        "mean": 22.857142857142858,
+        "n": 7
+      },
+      "avg_wait_sec": {
+        "mean": 60.1,
+        "n": 7
+      },
+      "p90_wait_sec": {
+        "mean": 111.28571428571429,
+        "n": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 62.18571428571429,
+        "n": 7
+      },
+      "est_revenue_won": {
+        "mean": 76335620.14285715,
+        "n": 7
+      }
+    },
+    "rl_prepositioned": {
+      "service_rate": {
+        "mean": 0.9932285714285715,
+        "n": 7,
+        "diff_mean": -0.0009285714285714373,
+        "diff_ci95": [
+          -0.0029320356033766524,
+          0.0010748927462337775
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 25.714285714285715,
+        "n": 7,
+        "diff_mean": 2.857142857142857,
+        "diff_ci95": [
+          -7.2098669104030115,
+          12.924152624688727
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 3,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 75.54285714285713,
+        "n": 7,
+        "diff_mean": 15.442857142857141,
+        "diff_ci95": [
+          11.310169760033508,
+          19.575544525680776
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 141.71428571428572,
+        "n": 7,
+        "diff_mean": 30.428571428571427,
+        "diff_ci95": [
+          17.187856562036814,
+          43.66928629510604
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 77.72857142857143,
+        "n": 7,
+        "diff_mean": 15.542857142857141,
+        "diff_ci95": [
+          11.036231961357064,
+          20.049482324357218
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 76263458.28571428,
+        "n": 7,
+        "diff_mean": -72161.85714285714,
+        "diff_ci95": [
+          -242412.04556453554,
+          98088.33127882124
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      }
+    },
+    "prepositioned": {
+      "service_rate": {
+        "mean": 0.9915857142857144,
+        "n": 7,
+        "diff_mean": -0.0025714285714285895,
+        "diff_ci95": [
+          -0.005559667978665911,
+          0.0004168108358087318
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 34.285714285714285,
+        "n": 7,
+        "diff_mean": 11.428571428571429,
+        "diff_ci95": [
+          -3.6638486016075262,
+          26.520991458750384
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 69.64285714285714,
+        "n": 7,
+        "diff_mean": 9.542857142857144,
+        "diff_ci95": [
+          6.304522319385123,
+          12.781191966329166
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 129.57142857142858,
+        "n": 7,
+        "diff_mean": 18.285714285714285,
+        "diff_ci95": [
+          7.74433390391696,
+          28.82709466751161
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 72.7,
+        "n": 7,
+        "diff_mean": 10.514285714285714,
+        "diff_ci95": [
+          6.426840410451456,
+          14.601731018119972
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 76135429.14285715,
+        "n": 7,
+        "diff_mean": -200191.0,
+        "diff_ci95": [
+          -462913.9086843394,
+          62531.908684339374
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      }
+    },
+    "forecast": {
+      "service_rate": {
+        "mean": 0.9942000000000001,
+        "n": 7,
+        "diff_mean": 4.285714285712228e-05,
+        "diff_ci95": [
+          -0.0020140769087646205,
+          0.002099791194478865
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 23.714285714285715,
+        "n": 7,
+        "diff_mean": 0.8571428571428571,
+        "diff_ci95": [
+          -9.720883180371898,
+          11.435168894657613
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 3,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 59.699999999999996,
+        "n": 7,
+        "diff_mean": -0.3999999999999986,
+        "diff_ci95": [
+          -3.0203093303399617,
+          2.2203093303399646
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 110.14285714285714,
+        "n": 7,
+        "diff_mean": -1.1428571428571428,
+        "diff_ci95": [
+          -7.051200323145032,
+          4.765486037430746
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 61.84285714285714,
+        "n": 7,
+        "diff_mean": -0.3428571428571437,
+        "diff_ci95": [
+          -3.74981885576166,
+          3.0641045700473724
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 3,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 76340275.71428572,
+        "n": 7,
+        "diff_mean": 4655.571428571428,
+        "diff_ci95": [
+          -165340.1491971412,
+          174651.29205428404
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-07": true,
+    "2026-09-10": true,
+    "2026-09-18": true,
+    "2026-10-13": true,
+    "2026-10-14": true,
+    "2026-10-18": true,
+    "2026-10-24": true
+  },
+  "scenario": "network_dispatch",
+  "overrides": {
+    "dispatch_cost": "network",
+    "forecast_min_idle_ratio": 0.3
+  }
+}

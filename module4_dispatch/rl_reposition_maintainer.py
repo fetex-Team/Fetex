@@ -4,30 +4,22 @@ module4_dispatch/rl_reposition_maintainer.py
 학습된 RL 정책을 measure_wait_time.py 루프 안에 Random/Hungarian과 같은 방식으로 끼우기 위한 wrapper.
 HungarianDispatcher가 "maintain(now)"로 매 스텝 불리는 것과 동일한 인터페이스를 맞춤.
 
-기존 measure_wait_time.py에서:
-    hungarian_dispatcher = HungarianDispatcher() if meta.get("taxi_dispatch_algorithm") == "hungarian" else None
+measure_wait_time.py에서는 taxi_strategy가 "rl_prepositioned"일 때만 켜진다
+(taxi_dispatch_algorithm은 매칭 알고리즘 선택이고, RL 재배치 on/off와는 별개):
+    rl_maintainer = RLRepositionMaintainer(RL_MODEL_PATH, meta, ...) if meta.get("taxi_strategy") == "rl_prepositioned" else None
     ...
-    if hungarian_dispatcher:
-        hungarian_dispatcher.maintain(now)
-
-이걸 다음처럼 바꾸면 RL도 같은 A/B 비교 플로우에 들어감:
-    reposition_maintainer = (
-        RLRepositionMaintainer(MODEL_PATH, meta) if meta.get("taxi_dispatch_algorithm") == "rl_reposition" else None
-    )
-    ...
-    if hungarian_dispatcher:
-        hungarian_dispatcher.maintain(now)      # 매칭은 그대로 Hungarian이 담당
-    if reposition_maintainer:
-        reposition_maintainer.maintain(now)     # RL은 재배치만 별도로 담당 (둘이 같이 켜도 됨)
+    if dispatcher:
+        dispatcher.maintain(now)          # 매칭은 고른 배차 알고리즘(hungarian 등)이 그대로 담당
+    if rl_maintainer:
+        rl_maintainer.maintain(now, ...)  # RL은 재배치만 별도로 담당
 
 즉 RL을 "배차 알고리즘 자체의 대체재"가 아니라 "기존 배차 위에 얹는 재배치 보조 정책"으로 넣는 구조.
-test_matching_comparison.py / multi_factor_compare.py의 taxi_dispatch_algorithm 값에
-"rl_reposition"을 새 옵션으로 추가하면 기존 비교 스크립트 그대로 재사용 가능.
 
-예측수요는 module4_dispatch/category_demand_predictor.py의 CategoryDemandPredictor를 그대로 씀
+예측수요는 module3_prediction/category_predictor.py의 CategoryDemandPredictor(Module 3)를 그대로 씀
 (rl_env.py 학습 때와 동일한 피처 구성 - 모델 없으면 자동으로 0 대체, 에러 안 남).
 """
 import os
+import zlib
 
 import numpy as np
 import sys
@@ -66,43 +58,49 @@ import traci
 from gymnasium import spaces
 from stable_baselines3 import PPO
 
-from poi_extractor import CATEGORIES as ZONE_CATEGORIES
-from module4_dispatch.category_demand_predictor import CategoryDemandPredictor
+from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
+from config_loader import CFG
+from module3_prediction.category_predictor import CategoryDemandPredictor
+from module4_dispatch.forecast_dispatcher import weighted_edge_order
 
 DECISION_INTERVAL_SEC = 60.0
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CATEGORY_MODEL_PATH_DEFAULT = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    PROJECT_ROOT,
     "saved_models", "category_demand_models.pkl"
 )
 
 
 def _safe_load_vecnorm(path):
-    """
-    NumPy 1.x / 2.x 간의 PCG64 / BitGenerator 직렬화 비호환성을 무시하고
-    VecNormalize에서 obs_rms(mean, var), epsilon, clip_obs만 안전하게 로드합니다.
-    """
+    """[KJS] VecNormalize 통계를 NumPy 1.x/2.x 저장 형식 차이(난수 생성기 직렬화, numpy._core 경로)에 상관없이 읽는다.
+    쓰는 값은 obs_rms(mean, var), epsilon, clip_obs뿐이라 난수 생성기는 빈 객체로 대신한다."""
     import pickle
-    class _DummyGenerator:
-        def __init__(self, *args, **kwargs):
+
+    class _Dummy:
+        def __init__(self, *a, **k):
             pass
+
         def __setstate__(self, state):
             pass
 
-    class _CompatibleUnpickler(pickle.Unpickler):
+    class _Unpickler(pickle.Unpickler):
         def find_class(self, module, name):
-            if module == "numpy.random._pickle":
-                if name in ("__bit_generator_ctor", "__generator_ctor", "__randomstate_ctor"):
-                    return lambda *args, **kwargs: _DummyGenerator()
+            if module == "numpy.random._pickle" and name in ("__bit_generator_ctor", "__generator_ctor",
+                                                             "__randomstate_ctor"):
+                return lambda *a, **k: _Dummy()
             if module.startswith("numpy._core"):
-                module = module.replace("numpy._core", "numpy.core")
+                try:
+                    return super().find_class(module, name)
+                except (ModuleNotFoundError, AttributeError):
+                    module = module.replace("numpy._core", "numpy.core")
             return super().find_class(module, name)
 
-    with open(path, "rb") as _f:
-        return _CompatibleUnpickler(_f).load()
+    with open(path, "rb") as f:
+        return _Unpickler(f).load()
 
 
 class RLRepositionMaintainer:
-    def __init__(self, model_path: str, meta: dict, category_model_path: str = None):
+    def __init__(self, model_path: str, meta: dict, category_model_path: str = None, config_dir: str = None):
         # SB3 모델에는 Gymnasium action_space의 난수 상태도 저장된다. NumPy 2에서
         # 저장된 이 상태는 NumPy 1.26에서 역직렬화가 호환되지 않는다. 공간의 정의는
         # 이 프로젝트에서 고정(구역당 waiting/idle/predicted + time, 구역별 0~3 action)
@@ -120,19 +118,39 @@ class RLRepositionMaintainer:
             },
         )
         # 학습 때 VecNormalize를 썼다면 같은 통계로 obs를 정규화해야 정책이 학습한 대로 동작한다.
-        # 통계 파일(<모델이름>_vecnorm.pkl)이 없으면(예전 모델) 정규화 없이 그대로 쓴다.
+        # 모델의 실제 학습 이력(_last_original_obs 존재 여부)을 확인하여 정규화 적용 여부를 판단한다.
+        model_was_normalized = getattr(self.model, "_last_original_obs", None) is not None
         self._obs_mean = None
-        _vn_path = os.path.splitext(model_path)[0] + "_vecnorm.pkl"
-        if os.path.exists(_vn_path):
+        _vn_path = self._find_vecnorm_path(model_path)
+        if _vn_path is None:
+            import re
+            _base_name = os.path.splitext(os.path.basename(model_path))[0]
+            if model_was_normalized:
+                msg = (f"[경고] 모델({os.path.basename(model_path)})은 학습 시 VecNormalize를 사용했으나 "
+                       f"통계 파일({_base_name}_vecnorm.pkl)을 찾지 못했습니다! "
+                       f"관측치 정규화 없이 실행하면 정책이 비정상적으로 동작할 수 있습니다.")
+                print(msg)
+            else:
+                print(f"[안내] 모델({os.path.basename(model_path)})은 관측 정규화(VecNormalize) 없이 학습된 모델입니다. "
+                      f"정규화 통계 없이 원래 관측 스케일로 추론을 진행합니다.")
+        elif os.path.exists(_vn_path):
             try:
                 _vn = _safe_load_vecnorm(_vn_path)
-                self._obs_mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
+                mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
+                # 모델 observation_space와 통계 차원 호환성 검증
+                expected_dim = n_zones * 3 + 1
+                if mean.shape[0] != expected_dim:
+                    raise ValueError(f"통계 차원 불일치: 기대={expected_dim}, 실제={mean.shape[0]}")
+                self._obs_mean = mean
                 self._obs_var = np.asarray(_vn.obs_rms.var, dtype=np.float64)
                 self._obs_eps = float(_vn.epsilon)
                 self._obs_clip = float(_vn.clip_obs)
+                print(f"[안내] 관측 정규화 통계 로드 완료: {os.path.basename(_vn_path)}")
             except Exception as _e:
-                print(f"[경고] vecnorm.pkl 로드 실패 ({_e}), 관측값 정규화 없이 진행합니다.")
+                print(f"[경고] {os.path.basename(_vn_path)} 로드 실패 또는 호환되지 않아 관측 정규화 없이 진행합니다: {_e}")
         self.zones = meta["zones"]
+        # 재배치 후보 섞기·목표 도로 가중 추첨용 난수 (set_run_date에서 실행 날짜·시드로 다시 만든다 → 재현 가능)
+        self._rng = np.random.RandomState(42)
         # 학습 환경은 reset 뒤 처음 60초를 관측한 다음 행동한다. 실제 실행도 같은
         # 경계(60초)에서 첫 결정을 내리도록 한다.
         self._last_decision_time = 0.0
@@ -162,11 +180,54 @@ class RLRepositionMaintainer:
         for cat, edges in self.zones.items():
             for e in edges:
                 self._edge_to_zone[e] = cat
+        # 새 호출을 카테고리 수요로 세는 기준 = 학습·rl_env와 같은 '승차 위치 -> 가장 가까운 POI 구역'
+        self._edge_weights = {}       # 재배치 목표 도로 가중치 {도로: 과거 호출 수} (set_run_date에서 채움)
+        self._picked_targets = set()
+        self._request_category = {}
+        if self.demand_predictor is not None:
+            from module3_prediction.category_predictor import edge_request_categories
+            self._request_category = edge_request_categories(
+                config_dir or os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config"))
 
-    def set_run_date(self, run_date):
-        """이번 실행의 날짜를 예측 모델에 알려준다 (요일·공휴일 피처, 수요 이력 초기화)."""
+    @staticmethod
+    def _find_vecnorm_path(model_path):
+        """VecNormalize 통계 파일 경로. 없으면 None.
+        - 최종 모델: <모델이름>_vecnorm.pkl (rl_train.py가 저장)
+        - SB3 CheckpointCallback 체크포인트: rl_reposition_model_<N>_steps.zip 옆의
+          rl_reposition_model_vecnormalize_<N>_steps.pkl"""
+        import re
+        base = os.path.splitext(model_path)[0]
+        candidates = [base + "_vecnorm.pkl"]
+        d, name = os.path.split(base)
+        m = re.match(r"^(.*)_(\d+)_steps$", name)
+        if m:
+            candidates.append(os.path.join(d, f"{m.group(1)}_vecnormalize_{m.group(2)}_steps.pkl"))
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+        return None
+
+    def set_run_date(self, run_date, demand_model=None, sim_start_hour: float = None, seed=None,
+                     is_holiday=None):
+        """이번 실행의 날짜를 예측 모델에 알려준다 (요일·공휴일 피처, 수요 이력 초기화).
+        demand_model(실측 보정 수요 모델)을 주면 시작 전 호출(지난 8일 + 오늘 시작 전)로
+        lag·어제·지난주 피처를 학습 때처럼 채운다 (RL 학습 환경 rl_env와 같은 방식).
+        is_holiday: 실제 승객 생성에 쓴 오늘 공휴일 여부(holiday_mode로 강제될 수 있음). None이면 날짜로 판정."""
+        # 실행마다 같은 날짜·시드면 같은 재배치가 나오도록 난수를 다시 만든다 (Python hash()는 실행마다 달라 안 씀)
+        _key = f"{run_date.isoformat() if hasattr(run_date, 'isoformat') else run_date}|{42 if seed is None else seed}"
+        self._rng = np.random.RandomState(zlib.crc32(_key.encode("utf-8")) & 0xFFFFFFFF)
         if self.demand_predictor is not None:
             self.demand_predictor.reset(run_date)
+            if (demand_model is not None and sim_start_hour is not None and self._request_category
+                    and hasattr(self.demand_predictor, "set_past_requests")):
+                from collections import Counter
+                from module3_prediction.category_predictor import build_past_requests
+                past = build_past_requests(demand_model, run_date, sim_start_hour, seed, self._request_category,
+                                           is_holiday_today=is_holiday)
+                self.demand_predictor.set_past_requests(past, sim_start_hour * 3600.0)
+                # 재배치 목표 도로 가중치 = 그 도로의 과거 호출 수 (학습 환경 rl_env와 같은 방식)
+                if CFG.get("rl_weighted_targets", True):
+                    self._edge_weights = Counter(r[2] for r in past)
         self._seen_request_ids.clear()
         self._last_decision_time = 0.0
 
@@ -177,10 +238,10 @@ class RLRepositionMaintainer:
         counts = {c: 0 for c in ZONE_CATEGORIES}
         for pid in pids - self._seen_request_ids:
             try:
-                category = self._edge_to_zone.get(traci.person.getRoadID(pid))
+                category = self._request_category.get(traci.person.getRoadID(pid))
             except traci.exceptions.TraCIException:
                 category = None
-            if category:
+            if category in counts:
                 counts[category] += 1
         self._seen_request_ids.update(pids)
         self.demand_predictor.record_new_requests(counts, sim_start_hour * 3600.0 + now)
@@ -287,7 +348,8 @@ class RLRepositionMaintainer:
         # 목표 대수를 넘긴 구역의 택시만 이동 후보로 삼는다. 이 때문에 이미
         # 적정 위치에 있는 택시가 매분 다시 목적지를 받는 일이 없다.
         movable = []
-        np.random.shuffle(eligible_taxis)
+        self._picked_targets = set()
+        self._rng.shuffle(eligible_taxis)
         for taxi_id, edge, source in eligible_taxis:
             if source is not None:
                 source_index = ZONE_CATEGORIES.index(source)
@@ -345,8 +407,8 @@ class RLRepositionMaintainer:
 
     def _move_taxi(self, taxi_id: str, current_edge: str, target_edges: list, zone: str = None) -> bool:
         """도달 가능한 도로만 선택해 SUMO 재배치 충돌을 피한다."""
-        candidates = list(target_edges)
-        np.random.shuffle(candidates)
+        # 과거 호출이 많았던 도로일수록 먼저 시도 (학습 환경과 같은 방식, 기록이 없으면 균등 무작위)
+        candidates = weighted_edge_order(target_edges, self._edge_weights, self._picked_targets, rng=self._rng)
         for target_edge in candidates:
             if target_edge == current_edge or (current_edge, target_edge) in self._unreachable_edges:
                 continue
@@ -356,6 +418,7 @@ class RLRepositionMaintainer:
                     continue
                 traci.vehicle.changeTarget(taxi_id, target_edge)
                 self.committed[taxi_id] = target_edge
+                self._picked_targets.add(target_edge)
                 self.moves.append({'t': float(self._now), 'taxi': taxi_id, 'from': current_edge,
                                    'to': target_edge, 'zone': zone})
                 return True

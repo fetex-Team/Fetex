@@ -1,0 +1,2 @@
+﻿person_id,request_sec,pickup_datetime,edge_id,origin_zone,dest_category,x,y,latitude,longitude,pickup_sec,wait_sec,taxi_id,status
+pax_1,22.0,2026-09-07 09:00:22,472042764,none,external,577.7437729939726,686.7924980534689,37.497724087886205,127.02735567138434,,,,unpicked

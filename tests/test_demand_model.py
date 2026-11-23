@@ -18,7 +18,7 @@ sys.path.insert(0, ROOT)
 for m in ("geo_lookup", "weather_lookup"):          # config_loader가 외부 API를 부르지 않게 차단
     sys.modules.setdefault(m, types.ModuleType(m))
 
-import demand_model as dm  # noqa: E402
+import module1_simulation.demand_model as dm  # noqa: E402
 
 GANGNAM = (37.4979, 127.0276)
 # pyproj (EPSG:4326 -> EPSG:5179) 기준값
@@ -44,6 +44,8 @@ def _fixture(tmp):
     _write(hourly, ["hour", "weekday_trips", "weekend_trips"], [[h, 1, 1 if h < 12 else 3] for h in range(24)])
     dow = os.path.join(tmp, "dow.csv")
     _write(dow, ["dow", "trips"], [[k, 100] for k in dm.DOW_KEYS])
+    gangnam = os.path.join(tmp, "gangnam.csv")   # 평일 1.1배, 주말 0.8배
+    _write(gangnam, ["month", "all_daily", "weekday_daily", "weekend_daily"], [[m, 100, 110, 80] for m in range(1, 13)])
     # 칸 중심 근처에 도로 2개씩
     def cell_center(code):
         x0, y0, x1, y1 = dm.grid_bounds(code)
@@ -57,7 +59,7 @@ def _fixture(tmp):
     meta = {"edges": list(edge_latlng), "edge_latlng": {k: list(v) for k, v in edge_latlng.items()},
             "boundary_edges": ["a2", "b2"], "zones": {"subway_entrance": ["a1"]}, "department_store_edges": [],
             "config": {"lat_min": lat_min, "lat_max": lat_max, "lng_min": lng_min, "lng_max": lng_max}}
-    return meta, dict(tims_path=tims, hourly_path=hourly, dow_path=dow)
+    return meta, dict(tims_path=tims, hourly_path=hourly, dow_path=dow, gangnam_path=gangnam)
 
 
 def test_projection_matches_pyproj():
@@ -76,10 +78,10 @@ def test_grid_code():
 def test_volume_shares_and_determinism():
     with tempfile.TemporaryDirectory() as tmp:
         meta, paths = _fixture(tmp)
-        model = dm.RealDemandModel(meta, {"real_demand_scale": 1.0}, **paths)
+        model = dm.RealDemandModel(meta, {"real_demand_scale": 1.0, "real_internal_source": "exp_distance"}, **paths)
         date = dt.date(2025, 9, 1)          # 월요일, 평일 시간대는 균등(1/24)
         expected = model.area_daily_calls(date)
-        assert 3900 < expected < 4001       # 두 칸 모두 영역 안에 거의 다 들어감
+        assert 4290 < expected < 4401       # 두 칸 하루 약 4000건 x 평일 배율 1.1
         random.seed(1)
         s1 = model.build_schedule(date, 9, 23, seed=7)
         random.random(); random.shuffle(list(range(100)))   # 전역 난수를 건드려도
@@ -100,6 +102,16 @@ def test_volume_shares_and_determinism():
         assert all(c.origin != c.dest for c in s1)
 
 
+def test_internal_share_from_taxi_od():
+    """기본(taxi_od): 칸별 구역 안 하차 비율 = 기종점 자료 실측 (다사116089 -> 다사58a44b, 7.6%)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        meta, paths = _fixture(tmp)
+        model = dm.RealDemandModel(meta, {}, **paths)
+        assert dm.od_grid_code("다사116089") == "다사58a44b"
+        assert abs(model.internal_share("다사116089") - dm.load_od_internal()["다사58a44b"]) < 1e-12
+        assert 0.03 < model.internal_share("다사116089") < 0.09
+
+
 def test_weekend_profile_and_scale():
     with tempfile.TemporaryDirectory() as tmp:
         meta, paths = _fixture(tmp)
@@ -108,17 +120,51 @@ def test_weekend_profile_and_scale():
         rates = model.hourly_calls(sat)
         assert abs(rates[15] / rates[3] - 3.0) < 1e-9        # 주말 프로파일 사용
         assert abs(sum(rates) - model.area_daily_calls(sat) * 0.5) < 1e-6
+        assert abs(model.area_daily_calls(sat) / model.area_daily_calls(dt.date(2025, 9, 3)) - 0.8 / 1.1) < 1e-9
         # 평일 공휴일은 일요일 배율 + 주말 프로파일
         assert model.hourly_calls(dt.date(2025, 9, 3), is_holiday=True)[15] > model.hourly_calls(dt.date(2025, 9, 3))[15]
+
+
+def test_hourly_weather_factor():
+    with tempfile.TemporaryDirectory() as tmp:
+        meta, paths = _fixture(tmp)
+        model = dm.RealDemandModel(meta, {"weather_precip_coef_per_mm": 0.02, "weather_precip_cap_mm": 10}, **paths)
+        d = dt.date(2025, 9, 1)
+        precip = [0.0] * 24
+        precip[10], precip[11] = 5.0, 50.0                    # 50mm는 상한 10mm로 자름
+        dry, wet = model.hourly_calls(d), model.hourly_calls(d, hourly_precip_mm=precip)
+        assert abs(wet[10] / dry[10] - 1.10) < 1e-9 and abs(wet[11] / dry[11] - 1.20) < 1e-9
+        assert wet[9] == dry[9]
+        s_wet = model.build_schedule(d, 0, 24, seed=1, hourly_precip_mm=precip)
+        assert s_wet == model.build_schedule(d, 0, 24, seed=1, hourly_precip_mm=precip)
 
 
 def test_poi_weight_concentrates_within_cell():
     with tempfile.TemporaryDirectory() as tmp:
         meta, paths = _fixture(tmp)
-        model = dm.RealDemandModel(meta, {}, **paths)
+        model = dm.RealDemandModel(meta, {"real_spatial_weights": "poi"}, **paths)
         calls = [c for c in model.build_schedule(dt.date(2025, 9, 1), 0, 24, seed=3) if c.cell == "다사116089"]
         a1 = sum(c.origin == "a1" for c in calls) / len(calls)
         assert abs(a1 - 0.75) < 0.04, a1                      # 지하철 출구 가중치 3 : 1
+
+
+def test_living_pop_weight_follows_measured_population():
+    """기본(living_pop_250m): 칸 안 배분이 그 시각 250m 격자 생활인구에 비례 (도로 a1을 다른 250m 격자로 옮겨 3:1)."""
+    with tempfile.TemporaryDirectory() as tmp:
+        meta, paths = _fixture(tmp)
+        x, y = dm.latlng_to_utmk(*meta["edge_latlng"]["a2"])
+        meta["edge_latlng"]["a1"] = list(dm.utmk_to_latlng(x - 250.0, y))        # 서쪽 옆 250m 격자
+        g1 = dm.grid250_code_of(*dm.latlng_to_utmk(*meta["edge_latlng"]["a1"]))
+        g2 = dm.grid250_code_of(x, y)
+        assert g1 != g2 and dm.grid_code_of(x - 250.0, y) == dm.grid_code_of(x, y) == "다사116089"
+        lp = os.path.join(tmp, "lp.csv")
+        days = ("20261026", "20261031", "20261101")                               # 월 토 일
+        _write(lp, ["date", "hour", "adm_code", "grid250", "pop"],
+               [[d, f"{h:02d}", 1, g, 300 if g == g1 else 100] for d in days for h in range(24) for g in (g1, g2)])
+        model = dm.RealDemandModel(meta, {"real_living_pop_file": lp}, **paths)
+        calls = [c for c in model.build_schedule(dt.date(2025, 9, 1), 0, 24, seed=3) if c.cell == "다사116089"]
+        a1 = sum(c.origin == "a1" for c in calls) / len(calls)
+        assert abs(a1 - 0.75) < 0.04, a1
 
 
 if __name__ == "__main__":

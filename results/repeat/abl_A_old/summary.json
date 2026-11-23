@@ -1,0 +1,44 @@
+{
+  "dates": [
+    "2026-09-08"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "patrol": {
+      "service_rate": {
+        "mean": 0.9902,
+        "n": 1
+      },
+      "n_timeout_removed": {
+        "mean": 32.0,
+        "n": 1
+      },
+      "avg_wait_sec": {
+        "mean": 62.7,
+        "n": 1
+      },
+      "p90_wait_sec": {
+        "mean": 115.0,
+        "n": 1
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 65.4,
+        "n": 1
+      },
+      "est_revenue_won": {
+        "mean": 85286020.0,
+        "n": 1
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-08": true
+  },
+  "scenario": "base",
+  "overrides": {
+    "map_bus_lanes": "open",
+    "map_speed_limits": "osm_default",
+    "signal_plans": "guess",
+    "speed_profile": "free_flow"
+  }
+}

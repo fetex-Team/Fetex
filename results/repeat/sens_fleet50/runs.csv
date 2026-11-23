@@ -1,0 +1,4 @@
+﻿date,strategy,demand_fingerprint,is_holiday,n_total_passengers,n_measured,service_rate,n_timeout_removed,avg_wait_sec,p90_wait_sec,true_avg_wait_sec_with_penalty,est_revenue_won,wall_min
+2026-09-10,patrol,27a1e3ee8785c117,False,5506,3762,0.6833,1701,246.6,448.0,356.6,61300345,12.0
+2026-10-13,patrol,cbe6d26bc162ff43,False,5042,3745,0.7428,1272,253.3,455.0,341.2,61023337,7.7
+2026-10-14,patrol,c8de70c60ffeaf99,False,4898,3872,0.7905,994,255.6,457.0,325.9,63092753,6.4

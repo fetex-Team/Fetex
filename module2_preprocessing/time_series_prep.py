@@ -3,7 +3,12 @@
 
 명세 대응
 - R3 "지난 1시간 평균, 지난주 동일 시간대, 이동평균": rolling_mean_1h / same_time_last_week / rolling_mean_*
-- R5 "t까지 데이터로 t+1~t+6(5분 단위) 예측": freq=5min, y_h1..y_h6 타겟
+- R5 "t까지 데이터로 t+1~t+6 예측": freq(config, 현재 10min) 칸, y_h1..y_h6 타겟
+
+행·타깃의 의미 (학습·서빙 공통)
+- time_bucket=t 행은 '지금 진행 중인 칸'(아직 다 관측되지 않음)이다. demand(t)는 어떤 피처에도 쓰지 않는다.
+- lag_1 = demand(t-1) = 마지막으로 끝난 칸, y_hk = demand(t+k). 즉 서빙에서 지금 시각이 칸 t 안에 있으면
+  row t의 피처로 t+1..t+H(진행 중인 칸의 다음 칸부터)를 예측한다 (module3_prediction/h3_predictor.py).
 
 설계 원칙 (누수 방지)
 - 모든 피처는 shift(1) 이후에 계산 → 현재 칸(t)의 demand는 어떤 피처에도 들어가지 않음.
@@ -13,13 +18,16 @@
 [수정 이력] 2026-09-10 윤세빈
 - 기존: 호출 있던 칸만 행 생성(lag가 '직전 호출 칸'을 가리킴), rolling이 셀 경계를 넘어 계산됨, 단일 타겟
 - 수정: 위 설계 원칙 반영 + 다중 시점 타겟 + 지난주 동일 시간대 + 시간 피처 모듈 분리(time_features.py)
+[수정 이력] 2026-09-17 윤세빈 — 피처 강화: same_time_yesterday/has_yesterday(일 주기), required_history_buckets(서빙 이력 창 기준)
+[수정 이력] 2026-09-17 윤세빈 — Data Specification v1.0 5장(품질 기준) 반영
+- 유효범위: 수요·강수 ≥ 0, 시각은 tz 없는 현지 시각 단일 기준(config timezone, 기본 KST), time_bucket은 freq 경계 정렬 → 위반 시 ValueError로 즉시 중단
+- 유일성: (time_bucket, h3_index) 중복 → ValueError
+- 검사 함수 validate_panel()은 create_features 입구에서 항상 호출된다 (학습·온라인 추론 공통 경로).
 """
-import sys
 import os
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config_loader import CFG
 from module2_preprocessing.time_features import add_time_features, TIME_FEATURE_COLS
 
@@ -28,9 +36,65 @@ TARGET_PREFIX = "y_h"
 
 
 def _buckets_per(freq: str, minutes: int) -> int:
-    """freq(예: '5min') 기준으로 minutes 분이 몇 칸인지."""
+    """freq(예: '10min') 기준으로 minutes 분이 몇 칸인지."""
     step = pd.Timedelta(freq)
     return max(1, int(pd.Timedelta(minutes=minutes) / step))
+
+
+# ---------- 유효범위·유일성 검사 (Data Spec 5장) ----------
+def to_naive_kst(ts: pd.Series, name: str = "시각", tz: str = None) -> pd.Series:
+    """시각 컬럼을 tz 없는 '대상 지역 현지 시각' datetime으로 통일한다.
+    기준 시간대는 config.json의 timezone (기본 Asia/Seoul = KST).
+    - 문자열/naive datetime: 그대로 현지 시각으로 간주
+    - tz-aware(단일 tz): 기준 시간대로 변환 후 tz 제거
+    - 파싱 실패(NaT)·tz 혼재: ValueError (잘못된 시각으로 학습 진행 금지)
+    """
+    tz = tz or CFG.get("timezone", "Asia/Seoul")
+    t = pd.to_datetime(ts, errors="coerce")
+    if t.dtype == object:  # tz가 섞여 있으면 pandas가 object로 남긴다
+        raise ValueError(f"{name}: 시간대(tz)가 혼재되어 있습니다. {tz} 단일 기준으로 맞춰 주세요.")
+    if getattr(t.dt, "tz", None) is not None:
+        t = t.dt.tz_convert(tz).dt.tz_localize(None)
+    n_bad = int(t.isna().sum())
+    if n_bad:
+        raise ValueError(f"{name}: 파싱할 수 없는 시각이 {n_bad}건 있습니다.")
+    return t
+
+
+def validate_panel(panel: pd.DataFrame, freq: str, spatial_col: str = "h3_index") -> None:
+    """(셀 × 시간칸) 수요 패널의 유효범위·유일성 검사. 위반 시 ValueError.
+
+    검사 항목 (Data Spec 5장)
+    - 필수 컬럼: time_bucket, h3_index, demand
+    - 유일성: (time_bucket, h3_index) 중복 0건
+    - 시간 연속성 전제: time_bucket이 freq 경계(예: 10분)에 정렬
+    - 유효범위: demand ≥ 0 (결측 불가), precipitation이 있으면 ≥ 0
+    """
+    required = ["time_bucket", spatial_col, "demand"]
+    missing = [c for c in required if c not in panel.columns]
+    if missing:
+        raise ValueError(f"수요 패널에 필수 컬럼이 없습니다: {missing}")
+
+    t = to_naive_kst(panel["time_bucket"], "time_bucket")
+    misaligned = int((t != t.dt.floor(freq)).sum())
+    if misaligned:
+        raise ValueError(f"time_bucket이 {freq} 경계에 정렬되지 않은 행이 {misaligned}건 있습니다 "
+                         f"(예: {t[t != t.dt.floor(freq)].iloc[0]}). aggregate_demands()로 집계한 패널을 넣어 주세요.")
+
+    dup = int(panel.duplicated(subset=["time_bucket", spatial_col]).sum())
+    if dup:
+        raise ValueError(f"(time_bucket, {spatial_col}) 조합이 중복된 행이 {dup}건 있습니다. 원본 로그 기준으로 재집계하세요.")
+
+    demand = pd.to_numeric(panel["demand"], errors="coerce")
+    if demand.isna().any():
+        raise ValueError(f"demand에 결측/비수치 값이 {int(demand.isna().sum())}건 있습니다 (호출 없음은 0이어야 합니다).")
+    if (demand < 0).any():
+        raise ValueError(f"demand < 0 인 행이 {int((demand < 0).sum())}건 있습니다.")
+
+    if "precipitation" in panel.columns:
+        rain = pd.to_numeric(panel["precipitation"], errors="coerce")
+        if (rain < 0).any():
+            raise ValueError(f"precipitation < 0 인 행이 {int((rain < 0).sum())}건 있습니다.")
 
 
 class TimeSeriesPreprocessor:
@@ -42,20 +106,36 @@ class TimeSeriesPreprocessor:
         self.rolling_long = rolling_long if rolling_long is not None else CFG["rolling_long"]
         self.horizons = horizons if horizons is not None else CFG.get("forecast_horizons", 6)
         self.buckets_1h = _buckets_per(self.freq, 60)
+        self.buckets_1d = _buckets_per(self.freq, 24 * 60)
         self.buckets_1w = _buckets_per(self.freq, 7 * 24 * 60)
+
+    @property
+    def required_history_buckets(self) -> int:
+        """모든 시계열 피처가 실제 값을 갖는 데 필요한 과거 칸 수 (온라인 추론 시 이력 창 크기).
+        지난주 동일칸(1w)이 가장 길다. 서빙이 이보다 짧은 창을 쓰면 same_time_*가 항상 0이 되어 학습 분포와 어긋난다."""
+        return max(self.max_lag, self.buckets_1h, self.buckets_1d, self.buckets_1w) + 3
 
     # ---------- 1) 집계 ----------
     def aggregate_demands(self, df: pd.DataFrame, timestamp_col: str = 'pickup_datetime',
-                          spatial_col: str = 'h3_index', start=None, end=None, all_cells=None) -> pd.DataFrame:
-        """(셀 × 시간칸) 수요 집계. 호출이 없던 칸도 demand=0 행으로 포함."""
+                          spatial_col: str = 'h3_index', start=None, end=None, all_cells=None,
+                          coverage=None) -> pd.DataFrame:
+        """(셀 × 시간칸) 수요 집계. 호출이 없던 칸도 demand=0 행으로 포함.
+        coverage: [(시작, 끝), ...] 로그가 실제로 덮는 구간(pipeline.log_coverage). 주면 그 구간 안의 칸만
+        0으로 채우고, 구간 밖(관측 없음) 칸은 행을 만들지 않는다 → '실행 안 한 날 = 수요 0'으로 학습되지 않음.
+        생략하면 start~end 전체를 0으로 채운다 (서빙·연속 로그의 예전 동작)."""
         df = df.copy()
-        df[timestamp_col] = pd.to_datetime(df[timestamp_col])
+        df[timestamp_col] = to_naive_kst(df[timestamp_col], timestamp_col)   # tz 혼재·NaT → ValueError
         df['time_bucket'] = df[timestamp_col].dt.floor(self.freq)
         demand = df.groupby(['time_bucket', spatial_col]).size().rename('demand')
 
-        start = pd.Timestamp(start).floor(self.freq) if start is not None else df['time_bucket'].min()
-        end = pd.Timestamp(end).floor(self.freq) if end is not None else df['time_bucket'].max()
-        buckets = pd.date_range(start, end, freq=self.freq)
+        if coverage:
+            ranges = [pd.date_range(pd.Timestamp(s).floor(self.freq), pd.Timestamp(e).floor(self.freq), freq=self.freq)
+                      for s, e in coverage]
+            buckets = ranges[0] if len(ranges) == 1 else ranges[0].append(ranges[1:]).unique().sort_values()
+        else:
+            start = pd.Timestamp(start).floor(self.freq) if start is not None else df['time_bucket'].min()
+            end = pd.Timestamp(end).floor(self.freq) if end is not None else df['time_bucket'].max()
+            buckets = pd.date_range(start, end, freq=self.freq)
         cells = sorted(all_cells) if all_cells is not None else sorted(df[spatial_col].dropna().unique())
         full_idx = pd.MultiIndex.from_product([buckets, cells], names=['time_bucket', spatial_col])
         out = demand.reindex(full_idx, fill_value=0).reset_index()
@@ -65,8 +145,19 @@ class TimeSeriesPreprocessor:
     # ---------- 2) 피처 ----------
     def create_features(self, demand_df: pd.DataFrame, spatial_col: str = 'h3_index',
                         dropna: bool = True, add_targets: bool = True, verbose: bool = True) -> pd.DataFrame:
+        validate_panel(demand_df, self.freq, spatial_col)   # 유효범위·유일성 위반 → ValueError (학습 진행 금지)
         d = demand_df.sort_values(by=[spatial_col, 'time_bucket']).reset_index(drop=True)
-        g = d.groupby(spatial_col, sort=False)['demand']
+        d['time_bucket'] = pd.to_datetime(d['time_bucket'])
+        # [2026-11 공백 인식] 패널의 시간칸이 끊긴 곳(관측 없는 구간 — 실행 안 한 날·밤 시간대)마다 구간 번호를 나눈다.
+        # lag/rolling/diff/타깃은 (셀, 구간) 안에서만 계산 → 공백을 넘어 이어지지 않고 구간 앞뒤는 NaN(dropna로 제거).
+        # 연속된 패널(실데이터·서빙)은 구간이 1개라 예전 계산과 똑같다.
+        step = pd.Timedelta(self.freq)
+        ub = np.sort(d['time_bucket'].unique())
+        seg_of_bucket = np.concatenate([[0], np.cumsum(np.diff(ub) > step)]) if len(ub) else np.array([], dtype=int)
+        seg = pd.Series(seg_of_bucket[np.searchsorted(ub, d['time_bucket'].values)], index=d.index, name='_segment')
+        n_segments = int(seg_of_bucket[-1]) + 1 if len(ub) else 1
+        keys = [d[spatial_col], seg] if n_segments > 1 else d[spatial_col]   # 구간 1개면 셀만으로 묶음 (예전과 동일·빠름)
+        g = d['demand'].groupby(keys, sort=False)
         prev = g.shift(1)                      # 직전 칸 값 (누수 방지의 기준점)
         feat_cols = []
 
@@ -79,16 +170,29 @@ class TimeSeriesPreprocessor:
                    f'rolling_mean_{self.rolling_long}': self.rolling_long,
                    'rolling_mean_1h': self.buckets_1h}
         for name, w in windows.items():
-            d[name] = prev.groupby(d[spatial_col]).transform(lambda s, w=w: s.rolling(w).mean())
+            d[name] = prev.groupby(keys, sort=False).transform(lambda s, w=w: s.rolling(w).mean())
             feat_cols.append(name)
-        d['rolling_std_1h'] = prev.groupby(d[spatial_col]).transform(lambda s: s.rolling(self.buckets_1h).std())
+        d['rolling_std_1h'] = prev.groupby(keys, sort=False).transform(lambda s: s.rolling(self.buckets_1h).std())
         feat_cols.append('rolling_std_1h')
 
-        # (c) 지난주 동일 시간대 (7일 전 같은 칸). 데이터가 1주 미만이면 NaN → 0 + 플래그 0
-        d['same_time_last_week'] = g.shift(self.buckets_1w)
+        # 같은 셀의 'k칸 전 시각' 값 (시각 기준 조회). 그 시각이 관측 구간 밖이면 NaN → has_* 플래그 0.
+        # 연속 패널에서는 groupby.shift(k)와 같은 값이다.
+        by_time = pd.Series(d['demand'].values, index=pd.MultiIndex.from_arrays([d[spatial_col], d['time_bucket']]))
+
+        def _value_at(k):
+            idx = pd.MultiIndex.from_arrays([d[spatial_col], d['time_bucket'] - step * k])
+            return pd.Series(by_time.reindex(idx).to_numpy(dtype=float), index=d.index)
+
+        # (c) 지난주 동일 시간대 (7일 전 같은 칸). 데이터가 1주 미만이거나 그 시각이 관측 밖이면 NaN → 0 + 플래그 0
+        d['same_time_last_week'] = _value_at(self.buckets_1w)
         d['has_last_week'] = d['same_time_last_week'].notna().astype(int)
         d['same_time_last_week'] = d['same_time_last_week'].fillna(0)
         feat_cols += ['same_time_last_week', 'has_last_week']
+        # (c2) 어제 동일 시간대 (1일 전 같은 칸) — 일 주기. 1주 전보다 가까워 최근 수준 변화를 더 잘 반영
+        d['same_time_yesterday'] = _value_at(self.buckets_1d)
+        d['has_yesterday'] = d['same_time_yesterday'].notna().astype(int)
+        d['same_time_yesterday'] = d['same_time_yesterday'].fillna(0)
+        feat_cols += ['same_time_yesterday', 'has_yesterday']
 
         # (d) 추세: 직전 칸 - 그 전 칸
         d['diff_1'] = g.shift(1) - g.shift(2); feat_cols.append('diff_1')
@@ -100,13 +204,13 @@ class TimeSeriesPreprocessor:
         # (f) 타겟: t+1 ~ t+H
         target_cols = []
         if add_targets:
-            g2 = d.groupby(spatial_col, sort=False)['demand']
+            g2 = d['demand'].groupby(keys, sort=False)
             for h in range(1, self.horizons + 1):
                 d[f'{TARGET_PREFIX}{h}'] = g2.shift(-h); target_cols.append(f'{TARGET_PREFIX}{h}')
 
         if verbose:
             print(f"시계열 파생변수 생성: lag {self.max_lag}개, rolling {self.rolling_short}/{self.rolling_long}/1h({self.buckets_1h}칸), "
-                  f"지난주 동일칸({self.buckets_1w}칸 전), 시간 피처 {len(TIME_FEATURE_COLS)}개, 타겟 t+1~t+{self.horizons}")
+                  f"어제/지난주 동일칸({self.buckets_1d}/{self.buckets_1w}칸 전), 시간 피처 {len(TIME_FEATURE_COLS)}개, 타겟 t+1~t+{self.horizons}")
         if dropna:
             before = len(d)
             need = [f'lag_{self.max_lag}', 'rolling_mean_1h', 'diff_1'] + target_cols
@@ -130,11 +234,18 @@ def target_columns(df: pd.DataFrame) -> list:
     return [c for c in df.columns if c.startswith(TARGET_PREFIX)]
 
 
-def time_based_split(feature_df: pd.DataFrame, test_size: float, val_size: float = 0.0, time_col: str = 'time_bucket'):
+def time_based_split(feature_df: pd.DataFrame, test_size: float, val_size: float = 0.0, time_col: str = 'time_bucket',
+                     purge: int = 0):
     """
     시간 순서 분할: 마지막 test_size 비율의 '시간칸'을 test, 그 앞 val_size 비율을 val.
     반환: (train, val, test, cutoffs) — val_size=0이면 val은 빈 DataFrame.
     (기존 train_test_split(shuffle=False)은 [셀, 시간] 정렬 상태에서 행을 잘라 '마지막 셀들'이 test가 되는 문제가 있었음)
+
+    purge: 각 경계(val_cut, test_cut) 직전 purge칸을 앞 구간에서 뺀다 (기본 0 = 예전과 같음).
+      행 t의 타깃 y_hk = demand(t+k)라서 경계 바로 앞 행의 타깃(y_h2..y_hH)은 다음 구간의 수요를 담는다
+      → 학습 구간이 검증·시험 구간 값을 보는 경계 누수. 타깃 수(H)만큼 purge하면 앞 구간 타깃이 경계를 넘지 않는다.
+      (경계는 '시간칸 개수' 기준으로 먼저 정하고, 그 다음 앞 구간 끝만 잘라 낸다 → 경계·시험 구간은 purge와 무관하게 같다.
+       행 t의 가장 먼 타깃이 다음 구간의 타깃 값(demand ≥ cut+1칸)이 되는 건 t ≥ cut-(H-1)칸이므로 purge=H는 1칸 여유)
     """
     buckets = np.sort(feature_df[time_col].unique())
     n = len(buckets)
@@ -143,7 +254,15 @@ def time_based_split(feature_df: pd.DataFrame, test_size: float, val_size: float
     test_cut = buckets[n - n_test]
     val_cut = buckets[max(0, n - n_test - n_val)] if n_val > 0 else test_cut
     t = feature_df[time_col]
-    train = feature_df[t < val_cut].copy()
-    val = feature_df[(t >= val_cut) & (t < test_cut)].copy()
+    if purge > 0 and n > 1:
+        # 경계 앞 purge칸(시각 기준: cut - purge×칸 ≤ t < cut)을 앞 구간에서 제외.
+        # 칸 간격은 시간칸 차이의 최솟값(= freq). 경계 앞이 이미 관측 공백이면 지울 행이 없다 (공백 너머로는 타깃이 없음).
+        step = pd.Timedelta(np.diff(buckets).min())
+        train_end = pd.Timestamp(val_cut) - step * purge
+        val_end = pd.Timestamp(test_cut) - step * purge if n_val > 0 else test_cut
+    else:
+        train_end, val_end = val_cut, test_cut
+    train = feature_df[t < train_end].copy()
+    val = feature_df[(t >= val_cut) & (t < val_end)].copy()
     test = feature_df[t >= test_cut].copy()
     return train, val, test, {'val_cut': pd.Timestamp(val_cut), 'test_cut': pd.Timestamp(test_cut)}

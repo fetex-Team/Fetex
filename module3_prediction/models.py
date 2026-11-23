@@ -2,11 +2,11 @@ import sys
 import os
 import torch
 import torch.nn as nn
-import xgboost as xgb
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config_loader import CFG
+from module3_prediction.xgb_factory import build_xgboost_model  # noqa: F401  (예전 import 경로 유지)
 
 
 # 1. PyTorch CNN-LSTM 딥러닝 모델
@@ -23,9 +23,9 @@ class CNNLSTMModel(nn.Module):
         if kernel_size < 1 or kernel_size % 2 == 0:
             raise ValueError("CNN kernel_size는 양의 홀수여야 합니다.")
 
-        # kernel_size가 1보다 크면 padding을 줘서 시퀀스 길이가 줄지 않게 함
-        # (주의: 지금 구조가 seq_len=1 스냅샷이면 kernel_size>1의 효과가 제한적입니다.
-        #  진짜 시퀀스(N, seq_len>1, features) 구조로 바꾸면 이 값이 실제로 의미를 가짐)
+        # kernel_size가 1보다 크면 padding을 줘서 시퀀스 길이가 줄지 않게 함.
+        # 입력은 (N, cnn_seq_len, features): 같은 셀의 직전 cnn_seq_len 칸 (train.build_sequences).
+        # output_dim = 예측 시점 수(t+1~t+6 → 6).
         padding = kernel_size // 2
 
         # 1D Conv Layer: 지역적 패턴 extraction
@@ -51,16 +51,6 @@ class CNNLSTMModel(nn.Module):
 
 
 # 2. XGBoost 모델 생성 함수
-def build_xgboost_model(n_estimators: int = None, max_depth: int = None, learning_rate: float = None):
-    return xgb.XGBRegressor(
-        n_estimators=n_estimators if n_estimators is not None else CFG["xgb_n_estimators"],
-        max_depth=max_depth if max_depth is not None else CFG["xgb_max_depth"],
-        learning_rate=learning_rate if learning_rate is not None else CFG["xgb_learning_rate"],
-        random_state=CFG.get("xgb_random_state", 42),
-        n_jobs=1,  # macOS에서 torch와 OpenMP 충돌(세그폴트) 방지 (CHANGES_전처리.md 2026-09-10 기록)
-    )
-
-
 if __name__ == "__main__":
     # PyTorch 모델 동작 테스트
     dummy_input = torch.randn(16, 6, 8)  # (batch_size=16, seq_len=6, features=8)

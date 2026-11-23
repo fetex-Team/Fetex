@@ -1,7 +1,7 @@
 """
 [Module 2 / T6] 전처리 파이프라인 단일 진입점.
 
-    호출 로그 CSV(1개 이상) ──▶ 공간 인덱싱(H3/Geohash) ──▶ (셀×5분) 집계·0채움
+    호출 로그 CSV(1개 이상) ──▶ 공간 인덱싱(H3/Geohash) ──▶ (셀×freq 칸) 집계·0채움(로그가 덮는 구간만)
         ──▶ 외부 데이터(날씨) 병합 + 결측 처리 ──▶ 시계열/시간 피처 + t+1~t+6 타겟 ──▶ 피처 테이블
 
 사용 (CLI):
@@ -26,7 +26,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 from config_loader import CFG
 from module2_preprocessing.spatial_indexing import SpatialIndexer
-from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, feature_columns, target_columns
+from module2_preprocessing.time_series_prep import TimeSeriesPreprocessor, feature_columns, target_columns, to_naive_kst
 from module2_preprocessing.external_data_merge import merge_external_data, EXTERNAL_FEATURE_COLS
 
 REQUIRED = ["pickup_datetime", "latitude", "longitude"]
@@ -41,18 +41,31 @@ def load_logs(paths) -> pd.DataFrame:
         files += sorted(glob.glob(p)) if any(ch in p for ch in "*?[") else [p]
     if not files:
         raise FileNotFoundError(f"로그 파일 없음: {paths}")
-    parts = []
+    parts, dropped = [], {}
     for f in files:
         d = pd.read_csv(f, usecols=lambda c: c in REQUIRED + ["request_sec"])
         missing = [c for c in REQUIRED if c not in d.columns]
         if missing:
             raise ValueError(f"{f}: 필수 컬럼 없음 {missing}")
+        # [검증] 타입: 위경도는 수치, 시각은 datetime(KST, tz 없음). 파싱 불가·tz 혼재는 ValueError.
+        for c in ("latitude", "longitude"):
+            d[c] = pd.to_numeric(d[c], errors="coerce")
+        d["pickup_datetime"] = to_naive_kst(d["pickup_datetime"], f"{os.path.basename(f)}:pickup_datetime")
+        # [검증] 결측 좌표 행 제거 + 건수 기록 (Data Spec 5장 완전성: 제거 건수·사유를 실행 로그로 남김)
+        n_before = len(d)
         d = d.dropna(subset=["latitude", "longitude"])
-        d["pickup_datetime"] = pd.to_datetime(d["pickup_datetime"])
+        n_drop = n_before - len(d)
+        if n_drop:
+            dropped[os.path.basename(f)] = n_drop
+            print(f"[검증] {os.path.basename(f)}: 좌표 결측 {n_drop:,}건 제거 (사유: latitude/longitude NaN 또는 비수치)")
         d["_source"] = os.path.basename(f)
         parts.append(d)
     df = pd.concat(parts, ignore_index=True)
-    print(f"[로그] {len(files)}개 파일, {len(df):,}건, {df['pickup_datetime'].min()} ~ {df['pickup_datetime'].max()}")
+    if df.empty:
+        raise ValueError("유효한 호출 로그 행이 없습니다 (좌표 결측 제거 후 0건).")
+    print(f"[로그] {len(files)}개 파일, {len(df):,}건, {df['pickup_datetime'].min()} ~ {df['pickup_datetime'].max()}"
+          + (f" (좌표 결측 제거 합계 {sum(dropped.values()):,}건)" if dropped else " (좌표 결측 0건)"))
+    df.attrs["dropped_missing_coords"] = dropped
     return df
 
 
@@ -65,31 +78,98 @@ def _time_range(df: pd.DataFrame):
     return start, df["pickup_datetime"].max()
 
 
+def _file_windows(df: pd.DataFrame) -> pd.DataFrame:
+    """로그 파일별 실제 관측(시뮬) 구간 [start, end]. start 규칙은 _time_range와 같다
+    (request_sec가 있으면 시뮬 시작 시각 = pickup - request_sec의 최솟값), end는 그 파일의 마지막 호출."""
+    d = df[["_source", "pickup_datetime"]].copy()
+    if "request_sec" in df.columns and df["request_sec"].notna().any():
+        d["_start"] = df["pickup_datetime"] - pd.to_timedelta(df["request_sec"].fillna(0), unit="s")
+    else:
+        d["_start"] = df["pickup_datetime"]
+    w = d.groupby("_source").agg(start=("_start", "min"), end=("pickup_datetime", "max"))
+    return w.sort_values(["start", "end"])
+
+
+def log_coverage(df: pd.DataFrame, freq: str, verbose: bool = True) -> list:
+    """[2026-11 공백 인식] 로그들이 실제로 덮는 시간 구간 목록 [(시작 칸, 끝 칸), ...] (freq 칸 경계, 양끝 포함).
+
+    - 파일마다 관측 구간 = 시뮬 시작 ~ 마지막 호출. 실데이터(하루 24시간 파일)는 그날 전체가 된다.
+    - 칸 단위로 겹치거나 바로 이어지는 구간은 하나로 합친다 → 연속된 실데이터는 '전체 기간 1구간'
+      (예전 동작: 전역 시작~끝을 0으로 채움)과 완전히 같다.
+    - 어느 로그도 덮지 않는 시각(실행하지 않은 날, 밤 시간대 등)은 구간에 들어가지 않는다 →
+      aggregate_demands가 그 칸을 '수요 0'으로 만들지 않고, create_features가 그 공백을 넘어 lag/타깃을 잇지 않는다.
+    - 같은 시간대를 여러 파일이 덮으면(같은 날짜 반복 실행) 수요는 지금처럼 합산되고 경고만 출력한다.
+    """
+    step = pd.Timedelta(freq)
+    w = _file_windows(df)
+    # 같은 시간대를 2개 이상 파일이 덮는지 (한 칸 이상 겹칠 때만 — 자정 경계의 초 단위 걸침은 무시)
+    groups, cur, cur_end = [], [], None
+    for name, r in w.iterrows():
+        if cur and min(r["end"], cur_end) - r["start"] > step:
+            cur.append(name); cur_end = max(cur_end, r["end"])
+        else:
+            if len(cur) > 1:
+                groups.append(cur)
+            cur, cur_end = [name], r["end"]
+    if len(cur) > 1:
+        groups.append(cur)
+    if groups:
+        print(f"[경고] 같은 시간대를 여러 로그가 덮는 묶음 {len(groups)}개 — 그 칸의 수요는 합산됩니다 "
+              f"(같은 날짜를 여러 번 실행한 로그. log_selection.same_date_groups 참고):")
+        for names in groups[:10]:
+            print(f"    {w.loc[names[0], 'start']:%Y-%m-%d}: {', '.join(names)}")
+        if len(groups) > 10:
+            print(f"    ... 외 {len(groups) - 10}개 묶음")
+
+    spans = []
+    for s, e in zip(w["start"].dt.floor(freq), w["end"].dt.floor(freq)):
+        if spans and s <= spans[-1][1] + step:        # 겹치거나 바로 다음 칸 → 이어 붙임
+            spans[-1][1] = max(spans[-1][1], e)
+        else:
+            spans.append([s, e])
+    spans = [(s, e) for s, e in spans]
+    if verbose and len(spans) > 1:
+        covered = sum(int((e - s) / step) + 1 for s, e in spans)
+        total = int((spans[-1][1] - spans[0][0]) / step) + 1
+        print(f"[관측 구간] 로그가 덮는 연속 구간 {len(spans)}개, {covered:,}칸 / 전체 기간 {total:,}칸 "
+              f"— 나머지 {total - covered:,}칸은 관측 없음(0 수요로 채우지 않음, lag·타깃이 공백을 넘지 않음)")
+    return spans
+
+
 def build_feature_table(log_paths, freq: str = None, max_lag: int = None, horizons: int = None,
                         weather_path: str = None, h3_resolution: int = None, dropna: bool = True,
-                        verbose: bool = True) -> pd.DataFrame:
+                        verbose: bool = True, max_missing_ratio: float = None, all_cells=None,
+                        spatial_col: str = "h3_index") -> pd.DataFrame:
+    """all_cells: 지도 전체 공간 단위 목록. 주면 호출이 없는 단위도 0 수요로 포함 (서빙 시 목록 일치용).
+    spatial_col: "h3_index"(기본, H3 셀) 또는 "category"(POI 구역 — RL 선배치용 카테고리 수요 모델,
+    module2_preprocessing.category_indexing으로 도로→구역 매핑). 이후 집계·날씨·피처 단계는 같다."""
     df = load_logs(log_paths)
-    start, end = _time_range(df)
+    prep = TimeSeriesPreprocessor(freq=freq, max_lag=max_lag, horizons=horizons)
+    # 로그가 실제로 덮는 구간만 관측으로 본다 (실행 안 한 날·시간은 0 수요가 아님)
+    coverage = log_coverage(df, prep.freq, verbose=verbose)
 
     # 1) 공간 인덱싱
-    df = SpatialIndexer(h3_resolution=h3_resolution).process_dataframe(df)
+    if spatial_col == "category":
+        from module2_preprocessing.category_indexing import CategoryIndexer
+        df = CategoryIndexer().process_dataframe(df)
+    else:
+        df = SpatialIndexer(h3_resolution=h3_resolution).process_dataframe(df, verbose=verbose)
 
-    # 2) (셀 × 칸) 집계 + 0 채움
-    prep = TimeSeriesPreprocessor(freq=freq, max_lag=max_lag, horizons=horizons)
-    agg = prep.aggregate_demands(df, start=start, end=end)
+    # 2) (공간 단위 × 칸) 집계 + 0 채움 (관측 구간 안에서만)
+    agg = prep.aggregate_demands(df, spatial_col=spatial_col, all_cells=all_cells, coverage=coverage)
 
-    # 3) 외부 데이터 (5분 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
-    agg = merge_external_data(agg, weather_path=weather_path, time_col="time_bucket", verbose=verbose)
+    # 3) 외부 데이터 (freq 칸 기준으로 병합 → 셀마다 같은 시각이면 같은 날씨)
+    # 학습 경로: 날씨 결측률 상한 검사 (Data Spec 5장 5% 미만). config weather_missing_max_ratio 로 조절, None이면 끔
+    agg = merge_external_data(agg, weather_path=weather_path, time_col="time_bucket", verbose=verbose,
+                              max_missing_ratio=max_missing_ratio if max_missing_ratio is not None else CFG.get("weather_missing_max_ratio", 0.05))
 
     # 4) 피처 + 타겟
-    feat = prep.create_features(agg, dropna=dropna, verbose=verbose)
-    base_feature_cols = list(feat.attrs.get("feature_cols", []))
-    ext_cols = [c for c in EXTERNAL_FEATURE_COLS if c in feat.columns and c not in base_feature_cols]
-    feat.attrs["feature_cols"] = base_feature_cols + ext_cols
+    feat = prep.create_features(agg, spatial_col=spatial_col, dropna=dropna, verbose=verbose)
+    feat.attrs["feature_cols"] = list(feat.attrs.get("feature_cols", [])) + [c for c in EXTERNAL_FEATURE_COLS if c in feat.columns]
     feat.attrs["target_cols"] = target_columns(feat)
     feat.attrs["freq"] = prep.freq
     if verbose:
-        print(f"[피처 테이블] {len(feat):,}행 × 피처 {len(feat.attrs['feature_cols'])}개, 셀 {feat['h3_index'].nunique()}개, "
+        print(f"[피처 테이블] {len(feat):,}행 × 피처 {len(feat.attrs['feature_cols'])}개, {spatial_col} {feat[spatial_col].nunique()}개, "
               f"시간칸 {feat['time_bucket'].nunique()}개 ({prep.freq}), 타겟 {feat.attrs['target_cols']}")
     return feat
 
@@ -113,7 +193,7 @@ if __name__ == "__main__":
     ap.add_argument("--freq", default=None)
     a = ap.parse_args()
     if a.logs is None:
-        from log_selection import selected_log_paths
+        from module2_preprocessing.log_selection import selected_log_paths
         a.logs = selected_log_paths()
     feat = build_feature_table(a.logs, freq=a.freq, weather_path=a.weather)
     save_feature_table(feat, a.out)

@@ -1,0 +1,12 @@
+{
+  "map_bus_lanes": "bus_only",
+  "map_speed_limits": "seoul_5030",
+  "signal_plans": "real",
+  "speed_profile": "topis",
+  "real_internal_source": "taxi_od",
+  "real_hourly_profile": "seoul_2025",
+  "real_dow_factors": "seoul_2022_01",
+  "real_spatial_weights": "living_pop_250m",
+  "num_taxis": 61,
+  "passenger_wait_timeout": 600
+}

@@ -1,0 +1,201 @@
+{
+  "dates": [
+    "2026-09-07",
+    "2026-09-10",
+    "2026-09-18",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-18",
+    "2026-10-24"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "patrol": {
+      "service_rate": {
+        "mean": 0.9511714285714286,
+        "n": 7
+      },
+      "n_timeout_removed": {
+        "mean": 306.0,
+        "n": 7
+      },
+      "avg_wait_sec": {
+        "mean": 122.51428571428572,
+        "n": 7
+      },
+      "p90_wait_sec": {
+        "mean": 230.28571428571428,
+        "n": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 137.78571428571428,
+        "n": 7
+      },
+      "est_revenue_won": {
+        "mean": 94248058.57142857,
+        "n": 7
+      }
+    },
+    "prepositioned": {
+      "service_rate": {
+        "mean": 0.9508,
+        "n": 7,
+        "diff_mean": -0.0003714285714285464,
+        "diff_ci95": [
+          -0.003180135840620804,
+          0.002437278697763711
+        ],
+        "sign_test_p": 0.6875,
+        "days_better": 2,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 305.85714285714283,
+        "n": 7,
+        "diff_mean": -0.14285714285714285,
+        "diff_ci95": [
+          -16.973187673036936,
+          16.68747338732265
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 126.04285714285713,
+        "n": 7,
+        "diff_mean": 3.528571428571425,
+        "diff_ci95": [
+          1.4346414893891013,
+          5.622501367753749
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 234.57142857142858,
+        "n": 7,
+        "diff_mean": 4.285714285714286,
+        "diff_ci95": [
+          1.374950456746499,
+          7.196478114682073
+        ],
+        "sign_test_p": 0.03125,
+        "days_better": 0,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 141.27142857142857,
+        "n": 7,
+        "diff_mean": 3.4857142857142844,
+        "diff_ci95": [
+          0.8321931187994087,
+          6.13923545262916
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 94215469.42857143,
+        "n": 7,
+        "diff_mean": -32589.14285714286,
+        "diff_ci95": [
+          -344128.0216543604,
+          278949.7359400747
+        ],
+        "sign_test_p": 0.6875,
+        "days_better": 2,
+        "days": 7
+      }
+    },
+    "rl_prepositioned": {
+      "service_rate": {
+        "mean": 0.9496285714285715,
+        "n": 7,
+        "diff_mean": -0.0015428571428571475,
+        "diff_ci95": [
+          -0.004173948248292677,
+          0.0010882339625783812
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 315.7142857142857,
+        "n": 7,
+        "diff_mean": 9.714285714285714,
+        "diff_ci95": [
+          -9.447416155439159,
+          28.875987584010588
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 131.94285714285715,
+        "n": 7,
+        "diff_mean": 9.42857142857143,
+        "diff_ci95": [
+          5.9920869239935195,
+          12.865055933149343
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 243.0,
+        "n": 7,
+        "diff_mean": 12.714285714285714,
+        "diff_ci95": [
+          7.9169564650919435,
+          17.511614963479484
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 147.47142857142856,
+        "n": 7,
+        "diff_mean": 9.685714285714283,
+        "diff_ci95": [
+          6.409923470916588,
+          12.961505100511978
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 94082784.57142857,
+        "n": 7,
+        "diff_mean": -165274.0,
+        "diff_ci95": [
+          -474180.85744444,
+          143632.85744444001
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-07": true,
+    "2026-09-10": true,
+    "2026-09-18": true,
+    "2026-10-13": true,
+    "2026-10-14": true,
+    "2026-10-18": true,
+    "2026-10-24": true
+  },
+  "scenario": "full_demand",
+  "overrides": {
+    "real_demand_scale": 1.0
+  }
+}

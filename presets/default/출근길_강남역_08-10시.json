@@ -1,0 +1,11 @@
+{
+  "region": "강남역",
+  "use_real_map": true,
+  "sim_start_hour": 8,
+  "sim_end_hour": 10,
+  "num_taxis": 25,
+  "num_normal_cars": 25,
+  "taxi_strategy": "prepositioned",
+  "taxi_dispatch_algorithm": "hungarian",
+  "max_multiplier": 3.0
+}

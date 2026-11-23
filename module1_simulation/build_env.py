@@ -15,8 +15,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 if _args.config_path:
     os.environ["MOBILITY_CONFIG"] = os.path.abspath(_args.config_path)
 from config_loader import CFG, ROOT, _apply_region_coords
-from poi_extractor import get_zones, get_boundary_edges, get_department_store_edges, CATEGORIES
-from largest_component_filter import filter_to_largest_scc
+from module2_preprocessing.poi_extractor import get_zones, get_boundary_edges, get_department_store_edges, CATEGORIES
+from module1_simulation.largest_component_filter import filter_to_largest_scc
 DEPART_JITTER_SEC = float(CFG.get("depart_jitter_sec", 300.0))
 
 
@@ -130,13 +130,12 @@ def create_network_and_routes():
         if CFG.get("region_unresolved"):
             raise SystemExit(f"[중단] '{CFG['region_unresolved']}' 지역 좌표를 찾지 못했습니다. "
                              "다른 지역 지도로 대신 돌리지 않도록 중단합니다. 지역명/네트워크를 확인하세요.")
-        if CFG.get("region_unresolved"):
-            raise SystemExit(f"[중단] '{CFG['region_unresolved']}' 지역 좌표를 찾지 못했습니다. "
-                             "다른 지역 지도로 대신 돌리지 않도록 중단합니다. 지역명/네트워크를 확인하세요.")
-        from real_map_fetch import build_real_map_network
+        from module1_simulation.real_map_fetch import build_real_map_network
         print(f"[안내] 실제 지도 모드 — '{CFG.get('region', '')}' 지역 OSM 데이터로 도로망 생성")
         net_file, raw_osm_path = build_real_map_network(
-            CFG["lat_min"], CFG["lat_max"], CFG["lng_min"], CFG["lng_max"], config_dir
+            CFG["lat_min"], CFG["lat_max"], CFG["lng_min"], CFG["lng_max"], config_dir,
+            open_bus_lanes=CFG.get("map_bus_lanes", "bus_only") == "open",
+            speed_limits=CFG.get("map_speed_limits", "seoul_5030"),
         )
     else:
         print(f"{CFG['grid_x']}x{CFG['grid_y']} 블럭 도로망 생성 중... (블록 길이 {CFG['grid_length']}m)")
@@ -215,11 +214,11 @@ def create_network_and_routes():
 
     proc_tag = ET.SubElement(cfg, "processing")
     _dispatch_algo = str(CFG.get("taxi_dispatch_algorithm", "greedy"))
-    if _dispatch_algo not in ("greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"):
-        raise ValueError("배차 알고리즘은 greedy/routeExtension/hungarian/custom_greedy/custom_routeExtension 중에서 선택하세요.")
+    if not ("hungarian" in _dispatch_algo or _dispatch_algo in ("greedy", "routeExtension", "custom_greedy", "custom_routeExtension")):
+        raise ValueError(f"배차 알고리즘은 greedy/routeExtension/hungarian(계열)/custom_greedy/custom_routeExtension 중에서 선택하세요. (현재: {_dispatch_algo})")
     # 택시 전략(patrol/prepositioned/rl_prepositioned)과 배차 알고리즘은 서로 독립 -> 어떤 조합이든 가능.
-    # SUMO 쪽 값은 알고리즘만으로 결정한다 (hungarian만 파이썬이 직접 배정하므로 "traci").
-    _sumo_dispatch_value = "traci" if _dispatch_algo in ("hungarian", "custom_greedy", "custom_routeExtension") else _dispatch_algo
+    # SUMO 쪽 값은 알고리즘만으로 결정한다 (hungarian 계열 및 커스텀은 파이썬이 직접 배정하므로 "traci").
+    _sumo_dispatch_value = "traci" if ("hungarian" in _dispatch_algo or _dispatch_algo in ("custom_greedy", "custom_routeExtension")) else _dispatch_algo
     ET.SubElement(proc_tag, "device.taxi.dispatch-algorithm", value=_sumo_dispatch_value)
     ET.SubElement(proc_tag, "device.taxi.idle-algorithm", value=str(CFG.get("taxi_idle_algorithm", "randomCircling")))
     ET.SubElement(proc_tag, "ignore-route-errors", value="true")

@@ -1,0 +1,11 @@
+{
+  "region": "홍대입구",
+  "use_real_map": true,
+  "sim_start_hour": 22,
+  "sim_end_hour": 24,
+  "num_taxis": 20,
+  "num_normal_cars": 15,
+  "taxi_strategy": "prepositioned",
+  "taxi_dispatch_algorithm": "hungarian",
+  "max_multiplier": 3.0
+}

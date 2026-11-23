@@ -1,0 +1,500 @@
+"""설정 GUI(config_gui.py)가 보여 주는 설정 항목 정의 — 코드 없이 데이터만 둔다.
+
+- NUMERIC_GROUPS / BOOLS / CHOICES / TEXTS / WEATHER_NUMERICS: 항목별 화면 이름·범위·선택지
+- BASIC_KEYS: 기본 탭에 보이는 항목, DETAIL_SECTIONS: 세부 설정 탭의 섹션 구성
+- TIPS: 항목에 마우스를 올리면 뜨는 설명
+새 설정을 GUI에 넣으려면 여기에 항목을 추가하고 DETAIL_SECTIONS의 한 섹션에 키를 넣는다
+(빠지면 GUI 시작 때 경고가 출력됨). 기본값은 presets/default/기본.json 한 곳에만 둔다
+(config_loader.DEFAULT_CONFIG가 이 파일을 읽음). JSON에는 주석을 못 쓰므로 항목 설명은 TIPS에 둔다.
+"""
+
+FREQ_OPTIONS = ["1min", "5min", "10min", "15min", "30min"]
+STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
+
+FACTOR_OPTIONS = {
+    "taxi_strategy": ("택시 전략 (체크)", STRATEGIES),
+    "taxi_dispatch_algorithm": ("배차 알고리즘 (체크)", [
+        "greedy", "routeExtension", "hungarian", "adaptive_hungarian",
+        "hungarian_d01", "hungarian_d02", "hungarian_d03", "hungarian_d04", "hungarian_d05",
+        "hungarian_d06", "hungarian_d07", "hungarian_d08", "hungarian_d09", "hungarian_d10",
+        "hungarian_d15", "hungarian_d20",
+        "hungarian_m01", "hungarian_m02", "hungarian_m03", "hungarian_m04", "hungarian_m05",
+        "hungarian_m06", "hungarian_m07", "hungarian_m08", "hungarian_m09", "hungarian_m10",
+        "custom_greedy", "custom_routeExtension"
+    ]),
+    "holiday_mode": ("공휴일 (체크)", ["weekday", "holiday"]),
+}
+FACTOR_VALUE_LABELS = {
+    "weekday": "평일",
+    "holiday": "공휴일",
+    "greedy": "greedy (그리디)",
+    "routeExtension": "routeExtension (루트 익스텐션)",
+    "hungarian": "hungarian (순수 시간)",
+    "adaptive_hungarian": "adaptive_hungarian (수요 연동 적응형)",
+    "hungarian_d01": "hungarian (거리 가중 0.01)",
+    "hungarian_d02": "hungarian (거리 가중 0.02)",
+    "hungarian_d03": "hungarian (거리 가중 0.03)",
+    "hungarian_d04": "hungarian (거리 가중 0.04)",
+    "hungarian_d05": "hungarian (거리 가중 0.05)",
+    "hungarian_d06": "hungarian (거리 가중 0.06)",
+    "hungarian_d07": "hungarian (거리 가중 0.07)",
+    "hungarian_d08": "hungarian (거리 가중 0.08)",
+    "hungarian_d09": "hungarian (거리 가중 0.09)",
+    "hungarian_d10": "hungarian (거리 가중 0.10)",
+    "hungarian_d15": "hungarian (거리 가중 0.15)",
+    "hungarian_d20": "hungarian (거리 가중 0.20)",
+    "hungarian_m01": "hungarian (거리 가중 -0.01)",
+    "hungarian_m02": "hungarian (거리 가중 -0.02)",
+    "hungarian_m03": "hungarian (거리 가중 -0.03)",
+    "hungarian_m04": "hungarian (거리 가중 -0.04)",
+    "hungarian_m05": "hungarian (거리 가중 -0.05)",
+    "hungarian_m06": "hungarian (거리 가중 -0.06)",
+    "hungarian_m07": "hungarian (거리 가중 -0.07)",
+    "hungarian_m08": "hungarian (거리 가중 -0.08)",
+    "hungarian_m09": "hungarian (거리 가중 -0.09)",
+    "hungarian_m10": "hungarian (거리 가중 -0.10)",
+    "custom_greedy": "custom_greedy",
+    "custom_routeExtension": "custom_routeExtension",
+}
+AB_WARN_COMBOS = 5  # 조합이 이 개수 이상이면 실행 전에 경고
+
+NUMERIC_GROUPS = {
+    "Module 1 — 맵/시뮬레이션": [
+        ("grid_x", "그리드 가로 블록 수", 2, 20, 0, 1), ("grid_y", "그리드 세로 블록 수", 2, 20, 0, 1),
+        ("grid_length", "블록 한 변 길이(m)", 10, 1000, 0, 1),
+        ("num_normal_cars", "일반 차량 대수", 0, 500, 0, 1), ("num_taxis", "택시 대수", 0, 500, 0, 1),
+        ("num_auto_cars", "자율주행차 대수", 0, 100, 0, 1), ("num_obstacles", "장애물 개수", 0, 100, 0, 1),
+        ("num_passengers", "기본 승객 수", 0, 10000, 0, 1),
+        ("sim_start_hour", "시뮬레이션 시작 시각", 0, 23, 0, 1), ("sim_end_hour", "시뮬레이션 종료 시각", 1, 24, 0, 1),
+        ("passenger_wait_timeout", "승객 최대 대기시간(초)", 1, 7200, 0, 1),
+        ("real_demand_scale", "실측 수요 배율 (1.0=영역 실측 전체)", 0.01, 5, 2, 0),
+        ("real_internal_trip_km", "영역 안 하차 기준 거리(km)", 0.1, 10, 2, 0),
+        ("depart_jitter_sec", "출발시간 분산 표준편차(초)", 0, 1800, 1, 0),
+        ("sumo_time_to_teleport", "SUMO teleport 기준(초)", 0, 7200, 0, 1),
+        ("taxi_stuck_reroute_sec", "멈춘 빈 택시 재경로 기준(초)", 30, 7200, 0, 1),
+        ("taxi_remaining_edges_threshold", "택시 재타겟팅 잔여 edge 기준", 0, 20, 0, 1),
+        ("taxi_target_pick_attempts", "목적지 탐색 시도 횟수", 1, 100, 0, 1),
+        ("taxi_fail_threshold", "택시 고립 판정 연속 실패 횟수", 1, 100, 0, 1),
+        ("taxi_primary_prob", "프리포지션 1순위 핫스팟 비율", 0, 1, 2, 0),
+        ("school_pop_base", "학교 기본 인구 모수", 0, 10000, 0, 1),
+        ("company_pop_base", "회사 기본 인구 모수", 0, 10000, 0, 1),
+        ("residential_base_pop_per_edge", "주거 edge당 기본 인구", 0, 10000, 0, 1),
+        ("residential_schedule_scale", "주거 스케줄 전체 배율", 0, 1, 3, 0),
+        ("residential_taxi_probability", "기본승객수 독립가챠 택시확률", 0, 1, 3, 0),
+        ("residential_out_hour", "주거 외출 시각", 0, 24, 2, 0),
+        ("residential_out_probability", "주거 외출 확률", 0, 1, 3, 0),
+        ("residential_evening_in_hour", "주거 저녁 귀가 시각", 0, 24, 2, 0),
+        ("residential_evening_in_probability", "주거 저녁 귀가 확률", 0, 1, 3, 0),
+        ("residential_late_in_hour", "주거 늦은 귀가 시각", 0, 24, 2, 0),
+        ("residential_late_in_probability", "주거 늦은 귀가 확률", 0, 1, 3, 0),
+        ("school_start_hour", "학교 등교 시작", 0, 23.99, 2, 0),
+        ("school_end_hour", "학교 등교 종료", 0, 24, 2, 0),
+        ("school_taxi_peak_hour", "학교 택시확률 peak", 0, 24, 2, 0),
+        ("school_afternoon_start_hour", "학교 하교 시작", 0, 24, 2, 0),
+        ("school_afternoon_end_hour", "학교 하교 종료", 0, 24, 2, 0),
+        ("school_afternoon_fraction", "학교 하교 비율", 0, 1, 3, 0),
+        ("company_start_hour", "회사 출근 시작", 0, 24, 2, 0),
+        ("company_end_hour", "회사 출근 종료", 0, 24, 2, 0),
+        ("company_taxi_peak_hour", "회사 택시확률 peak", 0, 24, 2, 0),
+        ("lunch_start_hour", "점심 시작", 0, 24, 2, 0), ("lunch_end_hour", "점심 종료", 0, 24, 2, 0),
+        ("lunch_company_release_fraction", "회사 점심 이탈 비율", 0, 1, 3, 0),
+        ("lunch_taxi_fraction", "점심 택시 비율", 0, 1, 3, 0),
+        ("evening_start_hour", "퇴근 시작", 0, 24, 2, 0), ("evening_end_hour", "퇴근 주요시간 종료", 0, 24, 2, 0),
+        ("evening_taxi_fraction", "퇴근 택시 비율", 0, 1, 3, 0),
+        ("late_evening_start_hour", "늦은 퇴근 시작", 0, 24, 2, 0),
+        ("late_evening_end_hour", "늦은 퇴근 종료", 0, 24, 2, 0),
+        ("evening_residential_fraction", "퇴근 목적지 주거 비율", 0, 1, 3, 0),
+        ("restaurant_stay_sec", "음식점 체류시간(초)", 0, 86400, 0, 1),
+        ("restaurant_pop_base", "음식점 건물당 인구", 0, 1000, 0, 1),
+        ("restaurant_window1_start", "음식점 시간대1 시작", 0, 24, 2, 0),
+        ("restaurant_window1_end", "음식점 시간대1 종료", 0, 24, 2, 0),
+        ("restaurant_window2_start", "음식점 시간대2 시작", 0, 24, 2, 0),
+        ("restaurant_window2_end", "음식점 시간대2 종료", 0, 24, 2, 0),
+        ("restaurant_civilian_taxi_probability", "음식점 시민 택시확률", 0, 1, 3, 0),
+        ("department_pop_base", "백화점 건물당 인구", 0, 1000, 0, 1),
+        ("department_window_start", "백화점 시간대 시작", 0, 24, 2, 0),
+        ("department_window_end", "백화점 시간대 종료", 0, 24, 2, 0),
+        ("department_taxi_probability", "백화점 시민 택시확률", 0, 1, 3, 0),
+        ("department_stay_sec", "백화점 체류시간(초)", 0, 86400, 0, 1),
+    ],
+    "Module 2 — 전처리": [
+        ("h3_resolution", "H3 resolution", 5, 15, 0, 1), ("max_lag", "Max lag", 1, 100, 0, 1),
+        ("rolling_short", "단기 rolling window", 1, 100, 0, 1), ("rolling_long", "장기 rolling window", 1, 200, 0, 1),
+        ("forecast_horizons", "미래 예측 구간 수", 1, 48, 0, 1),
+    ],
+    "Module 3 — 예측모델": [
+        ("xgb_n_estimators", "XGB n_estimators", 10, 1000, 0, 1), ("xgb_max_depth", "XGB max_depth", 1, 30, 0, 1),
+        ("xgb_learning_rate", "XGB learning_rate", 0.001, 1, 4, 0), ("test_size", "Test size", 0.01, 0.5, 3, 0),
+        ("val_size", "Val size", 0.0, 0.5, 3, 0), ("cnn_seq_len", "CNN 시퀀스 길이(칸)", 1, 48, 0, 1),
+        ("cnn_hidden_dim", "CNN hidden_dim", 8, 512, 0, 1), ("cnn_num_layers", "CNN num_layers", 1, 8, 0, 1),
+        ("cnn_kernel_size", "CNN kernel_size", 1, 15, 0, 1), ("cnn_epochs", "CNN epochs", 1, 1000, 0, 1),
+        ("cnn_batch_size", "CNN batch_size", 1, 512, 0, 1), ("cnn_lr", "CNN learning rate", 0.00001, 0.1, 6, 0),
+        ("cnn_patience", "CNN 조기 종료 patience", 1, 100, 0, 1),
+    ],
+    "Module 4 — 배차/인센티브": [
+        ("base_fare", "기본 요금", 0, 100000, 0, 1), ("min_multiplier", "최소 요금 배수", 0.1, 10, 2, 0),
+        ("max_multiplier", "최대 요금 배수", 0.1, 10, 2, 0), ("surge_coefficient", "수급 불균형 요금 계수", 0, 5, 3, 0),
+        ("reposition_fraction", "규칙 기반 선배치 비율", 0, 1, 2, 0), ("incentive_weight", "인센티브 리워드 가중치", 0, 5, 2, 0),
+        ("target_hotspot_ratio", "목표 핫스팟 택시 비율(0~1)", 0, 1, 2, 0),
+        ("rl_max_decisions", "RL 에피소드 결정 횟수(분)", 1, 1440, 0, 1),
+        ("rl_total_timesteps", "RL 총 학습 steps", 1000, 500000, 0, 1),
+        ("rl_rollout_steps", "RL rollout steps (batch의 배수)", 32, 4096, 0, 1),
+        ("rl_n_envs", "RL 병렬 env 개수 (CPU 코어 수 이하 권장, 1=병렬 안 씀)", 1, 32, 0, 1),
+        ("rl_batch_size", "RL batch size", 8, 1024, 0, 1), ("rl_seed", "RL random seed", 0, 2147483647, 0, 1),
+        ("rl_training_seed_base", "RL 학습 에피소드 시드 시작값", 0, 2147483647, 0, 1),
+        ("rl_learning_rate", "RL 학습률", 0.00001, 0.01, 6, 0), ("rl_gamma", "RL 장기 보상 비율(gamma)", 0.8, 1, 3, 0),
+    ],
+    "Module 4 — 예측 재배치 (forecast)": [
+        ("forecast_tick_sec", "예측·재배치 주기(초)", 60, 1800, 0, 1),
+        ("forecast_horizon_buckets", "합산 예측 구간 수(freq 단위)", 1, 12, 0, 1),
+        ("forecast_alloc_power", "목표 배분 지수 α (n∝λ^α, 2/3권장)", 0.1, 1.5, 4, 0),
+        ("forecast_max_move_sec", "재배치 최대 이동시간(초)", 30, 1800, 0, 1),
+        ("forecast_min_idle_ratio", "재배치 중단 빈 택시 비율 하한", 0, 1, 2, 0),
+    ],
+    "공통/실험": [
+        ("xgb_random_state", "XGB random state", 0, 2147483647, 0, 1),
+        ("train_random_state", "학습 random state", 0, 2147483647, 0, 1),
+        ("ab_max_parallel_compares", "A/B 비교 동시 실행 개수", 1, 16, 0, 1),
+        ("ab_max_parallel_workers", "A/B 한 비교 안의 동시 워커 창 수", 1, 16, 0, 1),
+        ("ab_queue_stale_sec", "A/B 대기표 만료(초)", 60, 86400, 0, 1),
+    ],
+}
+
+BOOLS = [
+    ("use_real_map", "실제 OSM 지도 사용"),
+    ("dispatch_use_euclidean", "Module 4 테스트 거리: 유클리드 사용"),
+    ("suppress_sumo_warnings", "SUMO 경고 로그 숨기기 (속도 향상)"),
+    ("department_enabled", "백화점 승객 생성 (건물 위치는 build_env 때 OSM에서 찾음, 없으면 자동 꺼짐)"),
+    ("run_sim_before_training", "학습만 실행 시 시뮬레이션 먼저 돌려서 로그 생성 (끄면 기존 로그로 바로 학습)"),
+    ("rl_randomize_passenger_seed", "RL 학습: 매 에피소드마다 다른 승객 호출 패턴 사용"),
+    ("rl_vecnormalize", "RL 학습: 관측·보상 정규화(VecNormalize)"),
+    ("rl_weighted_targets", "RL 재배치: 과거 호출이 많았던 도로로 더 자주 보내기"),
+    ("taxi_avoid_dead_ends", "택시: 막다른 길 진입 막기"),
+    ("taxi_extend_dispatch_route", "택시: 배차 경로가 끝나 가면 승객 위치까지 연장 (실험)"),
+    ("taxi_reroute_stuck_riders", "택시: 손님 태운 채 멈추면 하차 지점까지 재경로 (실험)"),
+    ("taxi_external_away", "[시나리오] 영역 밖으로 나간 택시의 복귀 지연을 반영 (external_trip_model)"),
+    ("use_historical_weather", "실측 시간별 날씨 반영 (data/external/weather_<지역>_*.csv)"),
+    ("ab_keep_work_dirs", "A/B 비교: 끝난 뒤 조합별 작업 폴더 남기기(디버깅)"),
+]
+CHOICES = [
+    ("taxi_strategy", "택시 전략", STRATEGIES),
+    ("rl_reward_mode", "RL 보상 방식", ["default", "gravityVer"]),
+    ("rl_train_day_type", "RL 학습 날짜 종류", ["weekday", "holiday", "mixed"]),
+    ("taxi_dispatch_algorithm", "배차 알고리즘", [
+        "greedy", "routeExtension", "hungarian", "adaptive_hungarian",
+        "hungarian_d01", "hungarian_d02", "hungarian_d03", "hungarian_d04", "hungarian_d05",
+        "hungarian_d06", "hungarian_d07", "hungarian_d08", "hungarian_d09", "hungarian_d10",
+        "hungarian_d15", "hungarian_d20",
+        "hungarian_m01", "hungarian_m02", "hungarian_m03", "hungarian_m04", "hungarian_m05",
+        "hungarian_m06", "hungarian_m07", "hungarian_m08", "hungarian_m09", "hungarian_m10",
+        "custom_greedy", "custom_routeExtension"
+    ]),
+    ("taxi_idle_algorithm", "빈 택시 동작 (SUMO)", ["randomCircling", "stopOnRoad", "taxiStop"]),
+    ("dispatch_cost", "헝가리안 배차 비용", ["network", "euclidean"]),
+    ("passenger_mode", "승객 생성 모드", ["replay", "legacy"]),
+    ("demand_source", "수요 출처 (real=실측보정)", ["real", "synthetic"]),
+    ("holiday_mode", "공휴일 판정 모드", ["auto", "weekday", "holiday"]),
+    ("run_date_mode", "실행 날짜 방식", ["alternate", "sim_date", "random"]),
+    # 도로·근거 기반 현실화 (팀 기본값은 예전 동작, 근거 기반 값은 '근거기반_현실화' 프리셋)
+    ("map_bus_lanes", "중앙버스차로 (build_env 때 반영)", ["open", "bus_only"]),
+    ("map_speed_limits", "제한속도 없는 도로 (build_env 때 반영)", ["osm_default", "seoul_5030"]),
+    ("signal_plans", "신호 운영", ["guess", "real"]),
+    ("speed_profile", "시간대별 정체 보정", ["free_flow", "topis"]),
+    ("real_internal_source", "구역 안 하차 비율 출처", ["exp_distance", "taxi_od"]),
+    ("real_hourly_profile", "시간대 비율 출처", ["seoul_2025", "gangnam_od"]),
+    ("real_dow_factors", "요일 배율", ["seoul_2022_01", "flat"]),
+    ("real_spatial_weights", "칸 안 승차 위치", ["poi", "living_pop_250m"]),
+]
+
+# 날씨 보정 값 (세부 설정 '날씨 보정' 섹션)
+WEATHER_NUMERICS = [
+    ("weather_rain_taxi_bonus", "비 올 때 택시확률 가산", 0, 1, 3, 0),
+    ("weather_cool_taxi_bonus", "쌀쌀할 때 택시확률 가산", 0, 1, 3, 0),
+    ("weather_sunny_taxi_bonus", "맑을 때 택시확률 가산", 0, 1, 3, 0),
+    ("weather_rain_threshold_mm", "비로 판정하는 강수량(mm)", 0, 50, 2, 0),
+    ("weather_cool_threshold_c", "쌀쌀함 판정 기온(°C)", -20, 40, 1, 0),
+    ("weather_strong_wind_threshold_kmh", "강풍 판정 풍속(km/h)", 0, 200, 1, 0),
+    ("weather_strong_wind_taxi_bonus", "강풍일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
+    ("weather_typhoon_wind_threshold_kmh", "태풍급 판정 풍속(km/h)", 0, 200, 1, 0),
+    ("weather_typhoon_taxi_bonus", "태풍급일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
+    ("weather_precip_coef_per_mm", "강수 1mm당 호출 증가율", 0.0, 0.2, 4, 0),
+    ("weather_precip_cap_mm", "강수 반영 상한(mm)", 0.0, 100.0, 1, 0),
+]
+TEXTS = [
+    ("sim_date", "시뮬레이션 기준 날짜 (YYYY-MM-DD)"),
+    ("taxi_respawn_prefix", "택시 재생성 ID 접두어"),
+    ("edge_speed_output", "도로 속도 기록 폴더 (비우면 안 씀)"),
+    ("unity_streaming_assets_dir", "Unity StreamingAssets 폴더 (재생 파일 자동 복사, 비우면 안 함)"),
+]
+HOLIDAY_MULT_ITEMS = [
+    ("school", "등교 (0=공휴일 등교 없음)"),
+    ("company", "출근 (점심·퇴근 인원도 같이 줄어듦)"),
+    ("restaurant", "음식점 방문"),
+    ("general", "기본 수요 (num_passengers 가챠)"),
+    ("department", "백화점 방문"),
+    ("lunch", "점심 이동 (아침 인원에서 파생, 1.0 권장)"),
+    ("evening", "퇴근 (아침 인원에서 파생, 1.0 권장)"),
+]
+
+# 기본 탭에만 보이는 값 (세부 설정 탭에는 다시 나오지 않는다)
+BASIC_KEYS = ["region", "taxi_strategy", "taxi_dispatch_algorithm", "demand_source", "holiday_mode", "use_real_map",
+              "num_taxis", "sim_start_hour", "sim_end_hour", "sim_date"]
+
+# 세부 설정 탭의 섹션 — 시뮬레이션을 돌릴 때 바꾸는 값만 둔다.
+# 학습·A/B·Unity 설정은 각 실행 창으로 옮겼다 (TRAIN_SECTIONS, AB_KEYS, UNITY_KEYS).
+# 모든 설정은 BASIC_KEYS·DETAIL_SECTIONS·TRAIN_SECTIONS·AB_KEYS·UNITY_KEYS 중 정확히 한 곳에 있다 — _check_sections가 확인.
+DETAIL_SECTIONS = [
+    ("지도·차량", ["num_normal_cars", "grid_x", "grid_y", "grid_length", "num_auto_cars", "num_obstacles"]),
+    ("시뮬레이션 기준", ["passenger_wait_timeout", "run_date_mode", "passenger_seed", "depart_jitter_sec",
+                   "sumo_time_to_teleport", "suppress_sumo_warnings"]),
+    ("승객 수요 — 실측 보정", ["real_demand_scale", "real_internal_trip_km", "passenger_mode"]),
+    ("승객 수요(가정 모델) — 공통·주거", ["num_passengers", "residential_base_pop_per_edge", "residential_schedule_scale",
+                                  "residential_taxi_probability", "residential_out_hour", "residential_out_probability",
+                                  "residential_evening_in_hour", "residential_evening_in_probability",
+                                  "residential_late_in_hour", "residential_late_in_probability"]),
+    ("승객 수요(가정 모델) — 학교", ["school_pop_base", "school_start_hour", "school_end_hour", "school_taxi_peak_hour",
+                              "school_afternoon_start_hour", "school_afternoon_end_hour", "school_afternoon_fraction"]),
+    ("승객 수요(가정 모델) — 회사·점심", ["company_pop_base", "company_start_hour", "company_end_hour",
+                                 "company_taxi_peak_hour", "lunch_start_hour", "lunch_end_hour",
+                                 "lunch_company_release_fraction", "lunch_taxi_fraction"]),
+    ("승객 수요(가정 모델) — 퇴근·음식점", ["evening_start_hour", "evening_end_hour", "evening_taxi_fraction",
+                                  "late_evening_start_hour", "late_evening_end_hour", "evening_residential_fraction",
+                                  "restaurant_stay_sec", "restaurant_pop_base", "restaurant_window1_start",
+                                  "restaurant_window1_end", "restaurant_window2_start", "restaurant_window2_end",
+                                  "restaurant_civilian_taxi_probability"]),
+    ("승객 수요(가정 모델) — 백화점", ["department_enabled", "department_pop_base", "department_window_start",
+                                "department_window_end", "department_taxi_probability", "department_stay_sec"]),
+    ("도로·근거 기반 현실화", ["map_bus_lanes", "map_speed_limits", "signal_plans", "speed_profile",
+                         "real_internal_source", "real_hourly_profile", "real_dow_factors", "real_spatial_weights",
+                         "edge_speed_output"]),
+    ("공휴일·날씨", ["holiday_multipliers", "use_historical_weather", "weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
+    ("택시 운행·배차", ["dispatch_cost", "taxi_idle_algorithm", "reposition_fraction", "taxi_avoid_dead_ends",
+                   "taxi_remaining_edges_threshold", "taxi_target_pick_attempts", "taxi_fail_threshold",
+                   "taxi_primary_prob", "dispatch_use_euclidean", "taxi_stuck_reroute_sec",
+                   "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders", "taxi_external_away", "taxi_respawn_prefix"]),
+    ("예측 기반 재배치 (Forecast)", ["forecast_tick_sec", "forecast_horizon_buckets", "forecast_alloc_power",
+                                 "forecast_max_move_sec", "forecast_min_idle_ratio"]),
+    ("요금·인센티브", ["base_fare", "min_multiplier", "max_multiplier", "surge_coefficient", "incentive_weight",
+                  "target_hotspot_ratio"]),
+]
+
+# 수요 출처가 real(실측 보정)이면 숨기는 섹션 — 가정 모델(synthetic)에서만 쓰는 값
+SYNTHETIC_SECTIONS = {title for title, _ in DETAIL_SECTIONS if title.startswith("승객 수요(가정 모델)")}
+
+# 섹션 안에서 "고급"으로 한 번 더 접어 두는 값 (거의 바꾸지 않음)
+ADVANCED_KEYS = {
+    "grid_x", "grid_y", "grid_length", "num_auto_cars", "num_obstacles",
+    "passenger_seed", "depart_jitter_sec", "sumo_time_to_teleport", "suppress_sumo_warnings",
+    "real_internal_trip_km", "passenger_mode", "edge_speed_output",
+    "taxi_remaining_edges_threshold", "taxi_target_pick_attempts", "taxi_fail_threshold", "taxi_primary_prob",
+    "dispatch_use_euclidean", "taxi_stuck_reroute_sec", "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders",
+    "taxi_respawn_prefix",
+}
+
+# '학습만 실행' 창의 "고급 학습 설정" (전처리·예측 모델·RL 하이퍼파라미터)
+TRAIN_SECTIONS = [
+    ("전처리 (Module 2)", ["freq", "h3_resolution", "max_lag", "rolling_short", "rolling_long", "forecast_horizons"]),
+    ("예측 모델 (Module 3)", ["xgb_n_estimators", "xgb_max_depth", "xgb_learning_rate", "test_size", "val_size", "cnn_hidden_dim",
+                          "cnn_num_layers", "cnn_kernel_size", "cnn_seq_len", "cnn_epochs", "cnn_patience",
+                          "cnn_batch_size", "cnn_lr",
+                          "xgb_random_state", "train_random_state"]),
+    ("강화학습 (RL)", ["rl_total_timesteps", "rl_max_decisions", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
+                   "rl_seed", "rl_training_seed_base", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed",
+                   "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets"]),
+]
+# 학습 창 위쪽에 따로 보이는 값
+TRAIN_TOP_KEYS = ["rl_reward_mode", "run_sim_before_training"]
+
+# 'A/B 비교하기' 창의 "동시 실행 설정"
+AB_KEYS = ["ab_max_parallel_compares", "ab_max_parallel_workers", "ab_queue_stale_sec", "ab_keep_work_dirs"]
+# '유니티 재생 생성기' 창의 경로 칸
+UNITY_KEYS = ["unity_streaming_assets_dir"]
+
+
+def all_gui_keys():
+    """화면 어딘가에서 바꿀 수 있는 모든 설정 (중복 없이 한 곳씩)."""
+    keys = list(BASIC_KEYS)
+    keys += [k for _, ks in DETAIL_SECTIONS for k in ks]
+    keys += [k for _, ks in TRAIN_SECTIONS for k in ks]
+    keys += TRAIN_TOP_KEYS + AB_KEYS + UNITY_KEYS
+    return keys
+
+# 항목 설명 — GUI에서 마우스를 올리면 뜬다. GUI에 없는 항목도 설명은 여기에 둔다 (기본.json에는 주석 불가).
+TIPS = {
+    "region": "시뮬레이션할 지역. 실제 지도 모드면 이 지역 좌표로 OSM 도로망을 받아 SUMO 지도를 만든다.",
+    "use_real_map": "켜면 OSM 실제 도로망, 끄면 grid_x×grid_y 합성 격자 도로망.",
+    "grid_x": "합성 격자의 가로 블록 수. 실제 지도 모드에서는 grid_x×grid_length가 지도 범위(폭)를 정한다.",
+    "grid_y": "합성 격자의 세로 블록 수. 실제 지도 모드에서는 grid_y×grid_length가 지도 범위(높이)를 정한다.",
+    "grid_length": "블록 한 변 길이(m). 실제 지도 모드에서 다운로드 반경 = 큰 쪽 범위의 절반.",
+    "num_taxis": "운행하는 택시 대수. 도착해 사라진 택시는 길 끝에서 다시 생겨 이 대수를 유지한다.",
+    "num_normal_cars": "배경 교통으로 도는 일반 차량 대수.",
+    "num_auto_cars": "자율주행차로 표시하는 차량 대수 (Unity 재생에서 구분 표시).",
+    "num_obstacles": "도로 위 정지 장애물 개수.",
+    "sim_start_hour": "시뮬레이션 시작 시각(시). 승객 생성·날씨·요일 판정이 이 시각부터 시작한다.",
+    "sim_end_hour": "시뮬레이션 종료 시각(시). 이 시각에 승객이 남아 있어도 끝낸다.",
+    "passenger_wait_timeout": "승객이 배차를 기다리는 최대 시간(초). 넘으면 승객이 사라지고 타임아웃으로 집계된다.",
+    "sim_date": "기준 날짜. 실측 수요의 요일·월·공휴일·날씨, 학습 로그 생성의 마지막 날 기준.",
+    "run_date_mode": "sim_date=위 날짜로 고정(평가·A/B용), alternate=과거 90일 중 평일/공휴일 번갈아(학습 로그용), random=랜덤.",
+    "passenger_seed": "승객 생성 난수 시드. 같은 시드·날짜면 같은 손님 목록(공정 비교). 비우면 매번 랜덤.",
+    "depart_jitter_sec": "정적 승객 출발 시각을 흩뜨리는 표준편차(초).",
+    "sumo_time_to_teleport": "차가 이 시간(초) 이상 막히면 SUMO가 순간이동시켜 정체를 푼다. 0이면 끔.",
+    "taxi_avoid_dead_ends": "(KJS) 주 도로망으로 돌아올 수 없는 막다른 길을 택시 이동 후보에서 빼고, 들어가려 하면 다른 곳으로 돌린다. 택시 소멸이 크게 줄어든다.",
+    "taxi_stuck_reroute_sec": "(KJS) 빈 택시가 같은 도로에 이 시간(초) 이상 머물면 SUMO 순간이동 전에 목적지를 다시 준다. 순간이동 기준의 약 70%.",
+    "taxi_extend_dispatch_route": "(KJS, 실험) 배차된 택시의 경로가 승객 위치 전에 끝나면 연장한다. SUMO 예약과 부딪힐 수 있어 기본 꺼짐.",
+    "taxi_reroute_stuck_riders": "(KJS, 실험) 손님을 태운 택시가 멈추면 하차 지점까지 다시 경로를 준다. 기본 꺼짐.",
+    "ab_max_parallel_compares": "(KJS) A/B 비교를 동시에 몇 개까지 돌릴지. 넘으면 앞 요청이 끝날 때까지 기다린다 (results/ab_queue/).",
+    "ab_max_parallel_workers": "(KJS) 한 A/B 비교 안에서 동시에 띄우는 조합(워커 창) 수.",
+    "ab_queue_stale_sec": "A/B 대기표가 이 시간(초) 동안 갱신되지 않으면 죽은 요청으로 보고 지운다.",
+    "ab_keep_work_dirs": "A/B 비교가 끝나도 조합별 작업 폴더(module1_simulation/sumo_config_ab_*)를 지우지 않는다 (디버깅용).",
+    "unity_streaming_assets_dir": "Unity 재생 생성기가 만든 재생 파일을 복사할 Unity 프로젝트의 Assets/StreamingAssets 경로. 사람마다 다르니 config.json(내 설정)에 저장하세요.",
+    "suppress_sumo_warnings": "SUMO 경고 로그를 숨긴다. 출력이 줄어 조금 빨라진다.",
+    "demand_source": "real=TIMS 2025 격자 승차 + 서울시 2025 통계로 보정한 수요, synthetic=학교·회사·음식점 가정 모델.",
+    "real_demand_scale": "실측 호출량 중 이 시뮬레이션이 맡는 비율. 기본 0.77 = 앱 호출 80% × 카카오 점유율 96%. 영역 전체는 1.0.",
+    "real_internal_trip_km": "이 거리보다 짧은 운행은 영역 안에서 내리고, 나머지는 경계 도로로 나간다고 본다. "
+                             "real_internal_source=exp_distance일 때만 쓴다.",
+    "map_bus_lanes": "강남대로 중앙버스전용차로(OSM busway). open=예전 동작(일반 도로로 바꿔 모든 차 통행), "
+                     "bus_only=버스 전용 유지(서울 중앙버스전용차로는 연중 24시간 운영). 지도를 다시 만들어야(build_env) 반영된다.",
+    "map_speed_limits": "OSM에 제한속도가 없는 도로의 속도. osm_default=예전 동작(SUMO 기본: 간선 100, 이면 50km/h), "
+                        "seoul_5030=서울 안전속도 5030(간선 50, 이면 30km/h). 지도를 다시 만들어야(build_env) 반영된다.",
+    "signal_plans": "신호 운영. guess=예전 동작(netconvert가 추정한 신호), "
+                    "real=경찰청 신호 운영계획(강남역·교보타워사거리, data/external/signal_plans_gangnam.json)을 요일·시각별로 적용.",
+    "speed_profile": "시간대별 정체 보정. free_flow=예전 동작(제한속도 그대로), "
+                     "topis=서울시 TOPIS 실측 속도 기준 시간대별 배율을 도로 속도와 배차 이동 시간 표에 함께 적용.",
+    "real_internal_source": "구역 안에서 내리는 손님 비율. exp_distance=예전 동작(운행거리 지수분포 + 기준 거리, 약 9%), "
+                            "taxi_od=한국교통연구원 택시 기종점 통행량 칸별 실측(전체 약 5.4%).",
+    "real_hourly_profile": "시간대별 호출 비율. seoul_2025=서울 전체 택시(2025 보고서), gangnam_od=강남역 기종점 자료 평일 비율(비교용).",
+    "real_dow_factors": "요일 배율. seoul_2022_01=서울 교통이용 통계보고서 2022년 1월, flat=평일 안·주말 안 차이 없음(민감도 분석용).",
+    "real_spatial_weights": "500m 칸 안에서 어느 도로에 손님이 나타나는지. poi=예전 동작(건물 종류별 가정 배율), "
+                            "living_pop_250m=그 시각 250m 격자 실측 생활인구에 비례(서울 열린데이터광장).",
+    "edge_speed_output": "검증용. 폴더를 적으면 1시간 단위 도로별 평균 속도(SUMO edgeData)를 저장한다 "
+                         "(TOPIS 실측 비교용). 비우면 저장하지 않는다.",
+    "passenger_mode": "replay=시간대별 동적 생성(기본), legacy=예전 방식(시작 시 정적 승객 배치).",
+    "num_passengers": "가정 모델의 기본 승객 수 (주거 독립 가챠 모수). 실측 모드에서는 쓰지 않는다.",
+    "residential_base_pop_per_edge": "주거 도로 1개당 인구 (가정 모델).",
+    "residential_schedule_scale": "주거 외출·귀가 스케줄 인원에 곱하는 전체 배율.",
+    "residential_taxi_probability": "기본 승객 가챠에서 택시를 부르는 확률.",
+    "residential_out_hour": "주거지 외출 시각(시).",
+    "residential_out_probability": "외출 시각에 택시로 나가는 확률.",
+    "residential_evening_in_hour": "저녁 귀가 시각(시).",
+    "residential_evening_in_probability": "저녁 귀가 때 택시 이용 확률.",
+    "residential_late_in_hour": "늦은 귀가 시각(시).",
+    "residential_late_in_probability": "늦은 귀가 때 택시 이용 확률.",
+    "school_pop_base": "학교 등교 인구 모수.",
+    "school_start_hour": "등교 시작 시각(시).",
+    "school_end_hour": "등교 끝 시각(시).",
+    "school_taxi_peak_hour": "등교 택시 확률이 가장 높아지는 시각(시). 시작부터 이 시각까지 선형 증가.",
+    "school_afternoon_start_hour": "하교 시작 시각(시).",
+    "school_afternoon_end_hour": "하교 끝 시각(시).",
+    "school_afternoon_fraction": "아침에 온 학생 중 하교 때 택시를 타는 비율.",
+    "company_pop_base": "회사 출근 인구 모수.",
+    "company_start_hour": "출근 시작 시각(시).",
+    "company_end_hour": "출근 끝 시각(시).",
+    "company_taxi_peak_hour": "출근 택시 확률이 가장 높아지는 시각(시).",
+    "lunch_start_hour": "점심 시작 시각(시).",
+    "lunch_end_hour": "점심 끝 시각(시).",
+    "lunch_company_release_fraction": "회사 인원 중 점심에 나가는 비율.",
+    "lunch_taxi_fraction": "점심에 나가는 인원 중 택시 비율.",
+    "evening_start_hour": "퇴근 시작 시각(시).",
+    "evening_end_hour": "퇴근 주요 시간 끝(시).",
+    "evening_taxi_fraction": "퇴근 인원 중 택시 비율 (버스·지하철 제외분).",
+    "late_evening_start_hour": "늦은 퇴근 시작 시각(시).",
+    "late_evening_end_hour": "늦은 퇴근 끝 시각(시).",
+    "evening_residential_fraction": "퇴근 목적지가 주거지인 비율 (나머지는 음식점).",
+    "restaurant_stay_sec": "음식점 체류 시간(초). 이후 다시 이동 수요가 생긴다.",
+    "restaurant_pop_base": "음식점 건물당 방문 인구.",
+    "restaurant_window1_start": "음식점 방문 시간대 1 시작(시).",
+    "restaurant_window1_end": "음식점 방문 시간대 1 끝(시).",
+    "restaurant_window2_start": "음식점 방문 시간대 2 시작(시).",
+    "restaurant_window2_end": "음식점 방문 시간대 2 끝(시).",
+    "restaurant_civilian_taxi_probability": "음식점 방문 시민이 택시를 타는 확률.",
+    "department_enabled": "백화점·쇼핑몰 방문 승객 생성. 지도에서 백화점을 못 찾으면 자동으로 꺼진다.",
+    "department_pop_base": "백화점 한 곳당 방문 인구 (평일 기준, 공휴일엔 배율이 곱해짐).",
+    "department_window_start": "백화점 방문 시간대 시작(시).",
+    "department_window_end": "백화점 방문 시간대 끝(시).",
+    "department_taxi_probability": "백화점 방문객이 택시를 타는 확률.",
+    "department_stay_sec": "백화점 체류 시간(초). 이후 주거지로 귀가한다.",
+    "holiday_mode": "auto=날짜로 자동 판정(토·일·한국 공휴일), weekday=무조건 평일, holiday=무조건 공휴일.",
+    "holiday_multipliers": "공휴일·주말일 때 카테고리별 택시 확률에 곱하는 배율. 평일은 항상 1.0. 날씨 가산 뒤에 곱한다.",
+    "weather_bonus_enabled": "켜면 실행 시점 현재 날씨(기온·강수·풍속)를 조회해 택시 확률에 가산값을 더한다.",
+    "weather_rain_taxi_bonus": "강수가 판정 기준 이상일 때 택시 확률에 더하는 값.",
+    "weather_cool_taxi_bonus": "기온이 판정 기준보다 낮을 때 더하는 값.",
+    "weather_sunny_taxi_bonus": "비·쌀쌀함·강풍이 모두 아닐 때 더하는 값.",
+    "weather_rain_threshold_mm": "이 강수량(mm) 이상이면 비로 판정.",
+    "weather_cool_threshold_c": "이 기온(°C)보다 낮으면 쌀쌀함으로 판정.",
+    "weather_strong_wind_threshold_kmh": "강풍 판정 풍속(km/h). 50.4 = 강풍주의보 14m/s.",
+    "weather_strong_wind_taxi_bonus": "강풍일 때 더하는 값 (음수면 감소).",
+    "weather_typhoon_wind_threshold_kmh": "태풍급 판정 풍속(km/h). 61.2 = 17m/s. 강풍보다 우선.",
+    "weather_typhoon_taxi_bonus": "태풍급일 때 더하는 값 (음수면 감소).",
+    "taxi_strategy": "빈 택시 운영 전략. patrol=순찰, prepositioned=시간대 규칙 선배치, "
+                     "rl_prepositioned=RL 선배치, forecast=수요 예측(demand_v2) 기반 재배치.",
+    "taxi_dispatch_algorithm": "손님-택시 매칭. greedy/routeExtension=SUMO 내장, hungarian=최적 할당(권장), "
+                               "custom_*=파이썬 직접 배정.",
+    "dispatch_cost": "헝가리안 비용. network=도로망 최단 이동시간(권장), euclidean=직선 거리.",
+    "taxi_idle_algorithm": "SUMO 빈 택시 동작. randomCircling=돌아다님, stopOnRoad=정차, taxiStop=정류장 대기.",
+    "reposition_fraction": "선배치·예측 재배치 때 빈 택시 중 옮기는 비율.",
+    "taxi_remaining_edges_threshold": "남은 경로가 이 도로 수 이하면 새 목적지를 붙여 택시가 사라지지 않게 한다.",
+    "taxi_target_pick_attempts": "택시 목적지를 고를 때 연결된 도로를 찾는 최대 시도 횟수.",
+    "taxi_fail_threshold": "목적지 찾기가 이만큼 연속 실패하면 고립된 택시로 보고 다시 생성.",
+    "taxi_primary_prob": "선배치 때 1순위 핫스팟으로 보내는 비율.",
+    "dispatch_use_euclidean": "배차 단위 테스트에서 거리를 유클리드로 계산 (시뮬레이션 배차에는 dispatch_cost 사용).",
+    "base_fare": "택시 기본 요금(원).",
+    "min_multiplier": "할증 배수 하한.",
+    "max_multiplier": "할증 배수 상한.",
+    "surge_coefficient": "수요/공급 불균형이 할증 배수로 바뀌는 계수.",
+    "incentive_weight": "RL 보상에 더하는 '예측 수요 분포 일치도' 가중치. 0이어도 기본 보상(픽업·대기·타임아웃·이동거리)에 '사전 배치 분포 점수'(0.5배)는 항상 들어가며, 0보다 크면 예측 수요 일치도가 이 가중치만큼 추가된다.",
+    "target_hotspot_ratio": "빈 택시 중 핫스팟에 있어야 하는 목표 비율(0~1).",
+    "freq": "수요 집계 시간 칸. 저장된 예측 모델(10분)과 같아야 예측 재배치가 동작한다.",
+    "h3_resolution": "H3 공간 격자 해상도. 8 = 약 0.7km² (TIMS 500m 격자와 맞춤). 바꾸면 모델 재학습 필요.",
+    "max_lag": "lag 피처 개수 (과거 몇 칸까지 보는지). 바꾸면 모델 재학습 필요.",
+    "rolling_short": "단기 이동평균 창(칸 수).",
+    "rolling_long": "장기 이동평균 창(칸 수).",
+    "forecast_horizons": "예측 지평 개수 (y_h1~y_hN). demand_v2는 6.",
+    "xgb_n_estimators": "XGBoost 트리 개수 (train.py는 이 값 주변을 GridSearch).",
+    "xgb_max_depth": "XGBoost 트리 최대 깊이.",
+    "xgb_learning_rate": "XGBoost 학습률.",
+    "test_size": "시험 구간 비율. 마지막 이 비율의 시간 칸을 시험 데이터로 쓴다.",
+    "val_size": "검증 구간 비율. 시험 구간 바로 앞 이 비율의 시간 칸 — CNN-LSTM 조기 종료에 쓴다 (0이면 조기 종료 안 함).",
+    "cnn_seq_len": "CNN-LSTM 입력 길이: 같은 셀의 직전 몇 칸 피처를 시퀀스로 넣을지 (1이면 한 칸 스냅샷).",
+    "cnn_patience": "검증 손실이 이 횟수만큼 연속으로 나아지지 않으면 학습을 멈추고 가장 좋았던 가중치로 되돌린다.",
+    "cnn_hidden_dim": "CNN-LSTM 은닉 차원.",
+    "cnn_num_layers": "CNN-LSTM LSTM 층 수.",
+    "cnn_kernel_size": "CNN 커널 크기 (양의 홀수).",
+    "cnn_epochs": "CNN-LSTM 최대 학습 반복 횟수 (조기 종료로 더 일찍 끝날 수 있음).",
+    "cnn_batch_size": "CNN-LSTM 배치 크기.",
+    "cnn_lr": "CNN-LSTM 학습률.",
+    "xgb_random_state": "XGBoost 난수 시드 (모든 학습 스크립트 공통).",
+    "train_random_state": "학습 분할 난수 시드.",
+    "rl_max_decisions": "RL 에피소드당 결정 횟수(분 단위).",
+    "rl_total_timesteps": "RL 총 학습 스텝 수.",
+    "rl_rollout_steps": "PPO 롤아웃 스텝 (batch size의 배수).",
+    "rl_n_envs": "병렬 SUMO 환경 개수. 1이면 병렬 안 씀. CPU 코어 수 이하 권장.",
+    "rl_batch_size": "PPO 배치 크기.",
+    "rl_seed": "RL 난수 시드.",
+    "rl_learning_rate": "PPO 학습률.",
+    "rl_gamma": "미래 보상 할인율(gamma).",
+    "rl_randomize_passenger_seed": "RL 학습 때 에피소드마다 다른 승객 호출 패턴을 쓴다.",
+    "rl_reward_mode": "RL 보상 방식 (KJS). default = 탑승 +3·대기 -0.1·놓침 -8·이동거리 감점·핫스팟 배치 점수, "
+                      "gravityVer = 항목별 상한을 둔 -3~+3 범위 보상(예측 수요와 빈 택시 분포 일치에 비중).",
+    "rl_train_day_type": "RL 학습 날짜 종류 (KJS). weekday = 평일만(기본), holiday = 공휴일·주말만, mixed = 둘 다. "
+                         "섞으면 보상 차이가 대부분 '무슨 날이냐'로 정해져 정책 개선이 잘 안 보인다.",
+    "rl_vecnormalize": "RL 학습 때 관측값·보상을 정규화(VecNormalize). 통계는 rl_reposition_model_vecnorm.pkl로 저장돼 실행 때도 같이 쓴다.",
+    "rl_weighted_targets": "RL이 장소 종류(예: 음식점)를 정하면, 그 종류의 도로 중 지난 8일 호출이 많았던 도로일수록 높은 확률로 골라 빈 택시를 보낸다. 끄면 균등 무작위. 학습·실행 모두 적용되므로 바꾸면 RL 재학습 필요.",
+    "run_sim_before_training": "'학습만 실행' 때 시뮬레이션을 먼저 돌려 학습 로그를 만든다. 끄면 기존 로그로 바로 학습.",
+    "taxi_respawn_prefix": "다시 생성된 택시 ID 앞에 붙이는 접두어.",
+
+    # ---- GUI 화면에는 없고 기본.json으로만 바꾸는 항목 ----
+    "use_historical_weather": "그날의 실측 시간별 날씨(data/external/weather_<지역>_*.csv)가 있으면 수요에 반영. 없으면 실시간 날씨 가산 사용.",
+    "weather_precip_coef_per_mm": "강수 1mm당 호출 증가율. 0.0199 = +1.99% (docs/weather_coefficient.md).",
+    "weather_precip_cap_mm": "강수 반영 상한(mm). 이보다 많이 와도 이 값으로 계산.",
+    "taxi_external_away": "[시나리오] 영역 밖으로 나간 택시의 복귀 지연을 반영 (external_trip_model.py). 기본 꺼짐.",
+    "external_replacement_ratio": "밖으로 나간 택시 대신 들어오는 택시 비율. 강남구 2025 하차/승차 = 85,218/92,858 ≈ 0.918.",
+    "external_return_factor": "복귀 시간 = 운행시간(TIMS 격자 평균) × 이 값 (갔다 오는 시간이라 2).",
+    "rl_train_start": "RL 학습 에피소드 날짜 범위 시작. 평가 날짜와 겹치지 않게, 수요예측 학습 8주와 같게 둔다.",
+    "rl_train_end": "RL 학습 에피소드 날짜 범위 끝.",
+    "rl_training_seed_base": "RL 학습 에피소드별 승객 시드의 시작값.",
+    "forecast_tick_sec": "forecast 전략: 예측·재배치 주기(초).",
+    "forecast_horizon_buckets": "forecast 전략: 몇 칸(freq 단위) 앞까지의 예측을 합쳐 쓸지.",
+    "forecast_alloc_power": "forecast 전략: 칸별 목표 택시 = 예측^power 비율. 2/3이면 가장 가까운 빈 택시까지 평균 거리가 최소.",
+    "forecast_max_move_sec": "forecast 전략: 재배치 한 번에 이동할 최대 시간(초).",
+    "forecast_min_idle_ratio": "forecast 전략: 빈 택시가 전체의 이 비율보다 적으면(택시 부족) 재배치 중단. 9/8·9/17 검증에서 0/0.2/0.3/0.4 비교 후 0.3.",
+}

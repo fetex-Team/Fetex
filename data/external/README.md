@@ -1,6 +1,6 @@
 # 외부(실측) 데이터
 
-시뮬레이션 수요를 실제 강남역에 맞추는 데 쓰는 공개 데이터다. 코드에서는 `demand_model.py`가 읽는다.
+시뮬레이션 수요를 실제 강남역에 맞추는 데 쓰는 공개 데이터다. 코드에서는 `module1_simulation/demand_model.py`가 읽는다.
 
 | 파일 | 내용 | 출처 | 기간·단위 |
 |---|---|---|---|
@@ -9,8 +9,10 @@
 | `gangnam_taxi_pickups_2025.csv` | **(사용)** 강남구 월별 하루 평균 승차 — 전체/평일/주말과 연평균 대비 배율 | 같은 보고서 강남구 자치구 통계 | 2025-01 ~ 12 |
 | `seoul_taxi_dow_2022_01.csv` | **(사용)** 요일별 이용 건수 — 평일 5일 안, 주말 2일 안의 상대 비율만 씀 | 서울시 「서울 교통이용 통계보고서」(2022년 1월) p.2 | 2022-01 일평균 |
 | `seoul_taxi_hourly_2022_01.csv` | (보관) 예전 시간대 비율. 2025년 자료로 교체됨 | 같은 2022년 1월 보고서 p.5~7 | 2022-01 |
-| `weather_강남역_<시작>_<끝>.csv` | **(사용)** 시간별 실측 강수·기온·풍속. `scripts/fetch_weather_history.py`로 받음 | Open-Meteo Historical Weather API (ERA5 기반) | 1시간 |
-| `weather_from_external.csv` | (보관) 합성 외부 관측을 시간별 날씨 표로 바꾼 것. 실측 날씨 파일 조회에서 제외됨 | 팀 합성 데이터 | 2026-08-30 ~ 09-06 |
+| `seoul_living_pop/living_pop_250m_gangnam_20261026_1101.csv` | **(프리셋)** 강남역 주변 250m 격자의 시각별 생활인구 (date, hour, adm_code, grid250, pop) — 칸(500m) 안에서 어느 도로에 손님이 나타날지 정함 | 서울 열린데이터광장 「[내국인] 서울 생활인구(250m)」 OA-22784, 일별 `250_LOCAL_RESD_YYYYMMDD.zip`에서 `data/loaders/extract_living_pop.py`로 추림 | 2026-10-26(월)~11-01(일), 1시간 |
+| `tims/nodelink/taxi_volume_gangnam_seocho_2025.csv` | **(프리셋)** 표준링크별 하루 평균 택시 통행량 — 택시 대수 추정 | 국토교통부 「전국 노드링크별 평균택시통행량」 2025 (공공데이터포털) | 2025 연평균 |
+| `tims/ops/ops_2025_per_taxi_day.csv` | **(프리셋)** 지자체·월별 택시 1대당 하루 운행·공차 시간 — 빈 차 비율 | 국토교통부 「택시운영현황_영업통계」 2025 (공공데이터포털 15065131) | 2025 월별 |
+| `weather_강남역_<시작>_<끝>.csv` | **(사용)** 시간별 실측 강수·기온·풍속. `data/loaders/fetch_weather_history.py`로 받음 | Open-Meteo Historical Weather API (ERA5 기반) | 1시간 |
 
 ## TIMS 파일 정리 방법
 - 원본: `국토교통부_택시운행정보관리시스템_택시운영현황_격자별 영업통계_20251231.zip` (월별 CSV 12개, cp949). 원본 zip은 `tims/raw/`에 보관(용량이 커서 git에는 올리지 않음).
@@ -31,21 +33,25 @@
 TIMS는 모든 택시 승차(길에서 잡은 손님 포함)다. 이 시뮬레이션은 카카오 T 배차를 다루므로 그 몫만 쓴다.
 - 앱 호출 비중 약 80% — 서울시 「2024 택시 시민 만족도 조사」 (택시 이용 방법 중 앱 호출)
 - 앱 일반 호출 중 카카오 T 점유율 약 96% — 공정거래위원회 카카오모빌리티 제재 발표 (2022년 기준)
-- 0.80 × 0.96 ≈ **0.77**. 전체 실측량으로 보려면 `tools/repeat_experiments.py --scenario full_demand` (1.0).
+- 0.80 × 0.96 ≈ **0.77**. 전체 실측량으로 보려면 `module4_dispatch/experiments/repeat_experiments.py --scenario full_demand` (1.0).
 
 ## 실측 날씨 연결
-- `scripts/fetch_weather_history.py 시작일 종료일` → `weather_강남역_시작_종료.csv` (time, temperature, precipitation, wind_speed)
+- `data/loaders/fetch_weather_history.py 시작일 종료일` → `weather_강남역_시작_종료.csv` (time, temperature, precipitation, wind_speed)
 - `weather_history.load_hourly_weather(날짜)`가 그날 0~23시 값을 읽고, 수요 모델이 시간마다 `1 + 0.0199 × 강수(mm, 최대 30)`배를 곱한다
   (강수 1mm당 +1.99%, 근거 `docs/weather_coefficient.md`). 파일에 그날이 없으면 예전처럼 실행 시점 실시간 날씨 가산값을 쓴다.
-- 학습 로그(`scripts/generate_demand_logs.py`)와 시뮬레이션이 같은 함수·같은 파일을 쓰므로 날짜가 같으면 손님 목록도 같다.
+- 학습 로그(`data/loaders/generate_demand_logs.py`)와 시뮬레이션이 같은 함수·같은 파일을 쓰므로 날짜가 같으면 손님 목록도 같다.
 
 ## 한계 (보고서에 그대로 적을 것)
 - TIMS는 **월 합계**라 시간대 분포가 없다 → 서울시 전체 2025년 시간대 비율을 곱한다. 강남역 특유의 심야 집중은 덜 반영된다.
 - 보고서 시간대 표의 24시간 합(평일 736,181건)이 본문 일평균(735,477건)과 0.1% 다르다. 비율로만 쓰므로 영향 없다.
 - 요일 배율은 2022년 1월 자료다(2025 보고서에는 요일별 표가 없음). 평일 안/주말 안 상대값으로만 쓰고, 평일·주말 수준 자체는 2025년 강남구 값으로 맞춘다.
-- 격자 안에서 어느 도로에서 호출이 나는지는 실측이 없다 → 칸별 총량은 TIMS로 고정하고, 칸 안의 배분만 POI 가중치(지하철 출구 3배 등, `demand_model.DEFAULT_POI_WEIGHTS`)로 나눈다.
+- 격자 안에서 어느 도로에서 호출이 나는지는 실측이 없다 → 칸별 총량은 TIMS로 고정하고, 칸 안의 배분만 나눈다.
+  팀 기본값은 POI 가중치(지하철 출구 3배 등, `demand_model.DEFAULT_POI_WEIGHTS`, `real_spatial_weights = "poi"`),
+  「근거기반_현실화」 프리셋은 **그 시각 250m 격자 생활인구**에 비례(`"living_pop_250m"`). 이때 남는 가정은 "같은 500m 칸 안에서는 사람 1명당 택시 호출 확률이 같다" 하나다.
+- (프리셋) 생활인구는 평가 기간 밖의 한 주(2026-10-26~11-01)를 평일/토/일 × 24시 평균으로 써서 모든 날짜에 같은 모양을 쓴다. 10/31(토)은 핼러윈이라 토요일 값이 다소 높을 수 있다.
 - 목적지는 TIMS 평균 운행거리(약 10.5km)로부터 "1km 안에서 끝나는 손님 ≈ 9%"만 영역 안에서 내리고, 나머지는 경계 도로로 나간다고 본다.
+  「근거기반_현실화」 프리셋은 한국교통연구원 택시 기종점 통행량으로 구한 실측 비율(칸별 3.7~7.8%, 전체 5.4%, `data/loaders/extract_taxi_od.py`)을 쓴다.
 - 밖으로 나간 택시는 기본적으로 "같은 수의 빈 택시가 들어온다"고 본다. 강남구 하차/승차 비율(85,218/92,858 = 0.918)과 평균 운행시간으로
-  복귀 지연을 주는 민감도 시나리오는 `taxi_external_away` (`external_trip_model.py`).
+  복귀 지연을 주는 민감도 시나리오는 `taxi_external_away` (`module1_simulation/external_trip_model.py`).
 - 카카오 비중 0.77은 서로 다른 해(2022 점유율, 2024 앱 비중) 조사를 곱한 근사다.
 - Open-Meteo 과거 날씨는 재분석 격자값(약 9~11km)이라 국지성 소나기는 약하게 나올 수 있다.

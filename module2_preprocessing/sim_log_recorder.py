@@ -127,9 +127,7 @@ class DemandLogRecorder:
 
         dest_category = ""
         if self.spawn_manager is not None:
-            dest_category = getattr(
-                self.spawn_manager, "_dest_category_history", {}
-            ).get(pid, "") or ""
+            dest_category = getattr(self.spawn_manager, "_dest_category", {}).get(pid, "") or ""
 
         return {
             "person_id": pid,

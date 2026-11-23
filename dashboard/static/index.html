@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Gangnam Twin</title>
+<link rel="preload" href="/static/fonts/Pretendard-Regular.subset.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="hdr">
+  <div class="hdr-top">
+    <a class="logo" href="#overview">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8 20.8 6.9v10.2L12 22.2 3.2 17.1V6.9z" fill="#171717"/><path d="M12 7.6 16 9.9v4.6L12 16.8 8 14.5V9.9z" fill="#fff"/></svg>
+      Gangnam Twin
+    </a>
+    <span class="slash">/</span>
+    <span class="scope">강남역 1km² 택시 배차 디지털 트윈 · SUMO 1.28</span>
+    <div class="hdr-r"><span id="jobState"><span class="dot"></span>대기 중</span><span class="muted">127.0.0.1</span></div>
+  </div>
+  <nav class="tabs" id="nav">
+    <a data-tab="overview" class="on">개요</a>
+    <a data-tab="compare">실험 비교</a>
+    <a data-tab="sens">민감도</a>
+    <a data-tab="run">새 시뮬레이션</a>
+    <a data-tab="jobs">작업 <span id="jobBadge" class="count hidden"></span></a>
+    <a data-tab="unity">Unity 재생</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <!-- 개요 -->
+  <section id="tab-overview" class="page on">
+    <div class="page-h">
+      <div><h1>개요</h1><p id="ovScope">불러오는 중…</p></div>
+    </div>
+    <div class="metrics" id="kpis"></div>
+
+    <div class="sec">
+      <div class="sec-h"><div><h2>디지털 트윈</h2><p id="mapSub">OSM 도로망 위 H3 칸별 하루 호출</p></div></div>
+      <div class="split">
+        <div><div class="map" id="map"><div class="empty" style="padding:24px">지도를 불러오는 중…</div></div><div class="map-cap" id="mapCap"></div></div>
+        <div class="side">
+          <dl class="facts" id="mapFacts"></dl>
+          <div class="sub-h"><h3>칸별 호출</h3><span>번호는 지도의 칸 · 행에 마우스를 올리면 지도에 표시</span></div>
+          <table class="hexrank" id="hexRank"></table>
+          <div class="sub-h"><h3>시간대별 호출</h3><span id="ovHourSub"></span></div>
+          <div id="ovHour"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-h"><div><h2>전략 비교</h2><p id="ovCmpSub">같은 날짜는 네 전략이 같은 손님 목록 · 차이는 날짜별로 짝지어 계산한 95% 신뢰구간</p></div></div>
+      <div class="tbl-x" id="ovTable"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-h"><div><h2>날짜별 서비스율</h2><p>점 하나가 전략 하나 · 회색 선은 그날 전략 간 차이의 폭</p></div><div class="legend" id="ovLegend"></div></div>
+      <div id="ovDates"></div>
+    </div>
+
+    <div class="sec">
+      <div class="sec-h"><div><h2>조건과 근거</h2><p>모든 설정값의 출처 — <code>docs/design/08_evidence_register.md</code>. 근거를 누르면 펼쳐집니다.</p></div></div>
+      <div class="tbl-x" id="ovParams"></div>
+      <div class="grade-key" id="gradeKey"></div>
+    </div>
+  </section>
+
+  <!-- 실험 비교 -->
+  <section id="tab-compare" class="page">
+    <div class="page-h"><div><h1>실험 비교</h1><p>저장된 실험의 전략별 결과와 날짜별 분포</p></div></div>
+    <div class="cmp">
+      <aside class="exp-side">
+        <div class="search"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.6"/><path d="m10.5 10.5 3.5 3.5"/></svg><input id="expSearch" placeholder="실험 검색" autocomplete="off"></div>
+        <div id="expList"></div>
+      </aside>
+      <div>
+        <h2 id="cmpTitle">실험을 고르세요</h2>
+        <p class="muted" id="cmpNote" style="margin-top:4px"></p>
+        <div class="meta" id="cmpMeta"></div>
+        <div class="sec" style="margin-top:28px;padding-top:28px">
+          <div class="sec-h"><div><h2>전략별 결과</h2><p>순찰 대비 차이: 초록 = 유의하게 나음, 빨강 = 유의하게 나쁨, 회색 = 차이 없음 (95% 신뢰구간이 0을 지나는지)</p></div></div>
+          <div class="tbl-x" id="cmpTable"></div>
+        </div>
+        <div class="sec" style="margin-top:32px;padding-top:32px">
+          <div class="sec-h"><div><h2>날짜별</h2><p id="cmpDatesSub"></p></div>
+            <div class="seg" id="cmpMetric"><button data-m="service_rate" class="on">서비스율</button><button data-m="avg_wait_sec">평균 대기</button><button data-m="n_timeout_removed">놓친 손님</button><button data-m="p90_wait_sec">90% 대기</button></div>
+          </div>
+          <div class="legend" id="cmpLegend" style="margin-bottom:12px"></div>
+          <div id="cmpDates"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 민감도 -->
+  <section id="tab-sens" class="page">
+    <div class="page-h"><div><h1>민감도</h1><p>가정을 하나씩 바꾼 실험과 기준 실험을 같은 날짜·순찰 전략으로 비교 — 어떤 가정이 결과를 크게 흔드는지</p></div></div>
+    <div id="sensChart"></div>
+    <div class="sec"><div class="sec-h"><div><h2>표</h2></div></div><div class="tbl-x" id="sensTable"></div></div>
+  </section>
+
+  <!-- 새 시뮬레이션 -->
+  <section id="tab-run" class="page">
+    <form id="runForm" autocomplete="off">
+      <div class="page-h"><div><h1>새 시뮬레이션</h1><p>바꾼 조건만 적용해 보고서와 같은 <code>module4_dispatch/experiments/repeat_experiments.py</code>로 돌리고 <code>results/repeat/&lt;이름&gt;/</code>에 저장합니다.</p></div></div>
+      <div id="runSets">
+        <section class="set">
+          <div class="set-l"><h2>실험</h2><p>이름은 폴더 이름, 설명은 실험 비교 목록에 표시</p></div>
+          <div>
+            <label class="fld"><span>이름 <em>영문·숫자·_ (비우면 자동)</em></span><input name="name" placeholder="taxi70_poi"></label>
+            <label class="fld"><span>설명</span><input name="label" placeholder="택시 70대 + 건물 종류별 배수"></label>
+          </div>
+        </section>
+        <section class="set">
+          <div class="set-l"><h2>범위</h2><p>날짜 하나 × 전략 하나가 1회 (약 6분). 같은 날짜는 모든 전략이 같은 손님 목록</p></div>
+          <div>
+            <div class="fld"><span>전략</span><div class="checks" id="runStrategies"></div></div>
+            <div class="fld"><span>평가 날짜</span><div class="checks" id="runDates"></div></div>
+            <label class="fld"><span>추가 날짜 <em>2026-07-01 ~ 10-27, 쉼표로 구분</em></span><input id="runDateExtra" placeholder="2026-09-21, 2026-09-22"></label>
+            <div class="fld"><span>동시 실행</span><div class="seg" id="runJobs"></div></div>
+          </div>
+        </section>
+        <div id="runParams"></div>
+      </div>
+      <div class="actionbar"><div class="actionbar-in">
+        <div class="sum" id="runSummary"></div>
+        <button type="button" class="btn" id="runReset">초기화</button>
+        <button type="submit" class="btn primary">시뮬레이션 실행</button>
+      </div><div id="runMsg"></div></div>
+    </form>
+  </section>
+
+  <!-- 작업 -->
+  <section id="tab-jobs" class="page">
+    <div class="page-h"><div><h1>작업</h1><p>한 번에 한 작업씩 실행됩니다. 끝난 실행은 저장돼, 멈춰도 같은 이름으로 이어서 할 수 있습니다.</p></div></div>
+    <div class="tbl-x" id="jobList"></div>
+    <div class="sec"><div class="sec-h"><div><h2>로그</h2><p id="logTitle">작업을 고르면 3초마다 새로 고칩니다</p></div></div><pre id="logBox" class="console"></pre></div>
+  </section>
+
+  <!-- Unity -->
+  <section id="tab-unity" class="page">
+    <form id="unityForm" autocomplete="off">
+      <div class="page-h"><div><h1>Unity 재생</h1><p>고른 날짜·조건으로 시뮬레이션을 돌려 차량 궤적을 기록합니다 (전략당 약 10분). 결과는 map.json + 전략별 .json.gz.</p></div></div>
+      <section class="set">
+        <div class="set-l"><h2>조건</h2><p>기본 조건 또는 대시보드·민감도 실험에서 바꾼 조건을 그대로 사용</p></div>
+        <div>
+          <label class="fld"><span>조건</span><select id="unityFrom"></select></label>
+          <div class="muted" id="unityOverrides" style="font-size:13px"></div>
+        </div>
+      </section>
+      <section class="set">
+        <div class="set-l"><h2>날짜와 전략</h2></div>
+        <div>
+          <label class="fld"><span>날짜</span><select name="date" id="unityDate"></select></label>
+          <div class="fld"><span>전략</span><div class="checks" id="unityStrategies"></div></div>
+        </div>
+      </section>
+      <section class="set">
+        <div class="set-l"><h2>출력</h2><p>StreamingAssets 폴더를 적으면 끝난 뒤 자동 복사</p></div>
+        <div>
+          <label class="fld"><span>이름 <em>비우면 replay_날짜</em></span><input name="name" placeholder="replay_20261014"></label>
+          <label class="fld"><span>Unity StreamingAssets 폴더 <em>선택</em></span><input name="unity_dir" placeholder="C:\…\Assets\StreamingAssets"></label>
+          <button type="submit" class="btn primary">재생 파일 만들기</button>
+          <div id="unityMsg"></div>
+        </div>
+      </section>
+    </form>
+    <div class="sec"><div class="sec-h"><div><h2>재생 파일</h2><p>Unity의 FetexReplayPlayer가 읽는 파일 (<code>docs/replay_motion.md</code>)</p></div></div><div class="tbl-x" id="unityList"></div></div>
+  </section>
+</main>
+<div id="tip" class="tip" role="tooltip"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

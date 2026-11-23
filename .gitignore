@@ -7,6 +7,7 @@ saved_models_backups/
 demand_v2_backups/
 rl_model_backups/
 module4_dispatch/checkpoints/
+module4_dispatch/training_logs/
 data/sim_logs/backup/
 _backup_custom_dispatch/
 logs/
@@ -15,10 +16,8 @@ logs/
 module1_simulation/sumo_config*/
 
 # 압축본/임시 결과
-
+*.zip
 _result_combo*.json
-_result_ab_*.json
-.ab_compare_queue/
 
 # 최종 RL 모델 하나만 예외로 포함
 !module4_dispatch/rl_reposition_model.zip
@@ -32,3 +31,53 @@ tree.txt
 node_modules/
 .env
 push_*.bat
+# 재생성 가능한 대용량 산출물 (scripts/generate_demand_logs.py, tools/record_motion_truth.py, tools/fleet_sizing.py)
+data/real_demand_logs/
+results/motion_eval/truth_stride1.json
+results/motion_eval/map.json
+results/fleet_sizing/*.log
+
+# Unity 재생 내보내기 때마다 생기는 시각별 백업 (최신본은 results/unity_replay/에 있음)
+results/unity_replay/backup/20*
+
+# 개인 인증키 (절대 커밋하지 않음)
+secrets/
+
+# 로그·테스트 캐시·OS/에디터 파일
+*.log
+.pytest_cache/
+.ipynb_checkpoints/
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# GUI 실행마다 쓰는 임시 설정 (config.json은 [적용하기]로만 바뀜)
+results/run_configs/
+results/run_status/
+
+# A/B 비교: 대기표와 요청별 조합 결과 JSON (순위표 results/ab_results/ab_ranking_*.txt는 올림)
+# 요청별 SUMO 작업 폴더 module1_simulation/sumo_config_ab_<요청ID>_combo*/ 는 위 sumo_config*/ 규칙으로 제외
+results/ab_queue/
+results/ab_results/*/
+
+# 전처리 저장본 (로그·설정이 같으면 학습이 다시 씀, 언제든 지워도 됨)
+data/features/
+
+# Module 3 결과: 지표·그래프는 올리고, 큰 예측값 파일과 비교 실험 모델은 제외
+results/module3/**/predictions.csv.gz
+results/module3/**/models/
+
+# 개인 설정 (팀 기본값은 presets/default/기본.json). 개인 프리셋 presets/user/는 지금은 git에 올림
+config.json
+
+# 외부 원자료 (용량 큼, 출처에서 다시 받기)
+data/external/topis/
+# 검증용 시간별 도로 속도 원본 (용량 큼, module4_dispatch/experiments/repeat_experiments.py --set edge_speed_output=... 로 다시 생성)
+results/repeat/*/edgespeed/
+# 경찰청 신호 API 원본 (용량 큼, data/loaders/fetch_signal_plans.py로 다시 받기). 시뮬레이션은 data/external/signal_plans_gangnam.json만 읽음
+data/external/signal_plans/
+# 대시보드 작업 기록·지도 캐시 (dashboard/jobs.py, dashboard/twin_map.py가 다시 만듦)
+results/dashboard_jobs/
+results/dashboard_cache/

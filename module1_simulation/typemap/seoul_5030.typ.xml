@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 서울 안전속도 5030: OSM에 maxspeed가 없는 도로의 기본 제한속도 (SUMO 기본 종류표 osmNetconvert.typ.xml 뒤에 덮어씀)
+     간선(primary/secondary/tertiary와 연결로) 50km/h = 13.89m/s, 이면도로(residential/unclassified) 30km/h = 8.33m/s
+     근거: 서울시 2020.12.21 발표, 2021.4.17 전국 시행 https://mediahub.seoul.go.kr/archives/1305625
+     trunk/motorway(도시고속도로)는 SUMO 기본값 유지 (해당 도로는 OSM maxspeed 80~90이 적혀 있음) -->
+<types>
+    <type id="highway.primary"        speed="13.89"/>
+    <type id="highway.primary_link"   speed="13.89"/>
+    <type id="highway.secondary"      speed="13.89"/>
+    <type id="highway.secondary_link" speed="13.89"/>
+    <type id="highway.tertiary"       speed="13.89"/>
+    <type id="highway.tertiary_link"  speed="13.89"/>
+    <type id="highway.residential"    speed="8.33"/>
+    <type id="highway.unclassified"   speed="8.33"/>
+</types>

@@ -15,7 +15,6 @@ RL 재배치 정책 학습 스크립트. headless(sumo, GUI 없음)로 빠르게
 import os
 import sys
 import json
-import shutil
 from datetime import datetime
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -30,12 +29,12 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecNorm
 
 from config_loader import CFG
 from module4_dispatch.rl_env import TaxiRepositionEnv
-from module4_dispatch.category_demand_predictor import CategoryDemandPredictor
+from module3_prediction.category_predictor import CategoryDemandPredictor
 
 SUMO_CFG = os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config", "simulation.sumocfg")
 META_PATH = os.path.join(PROJECT_ROOT, "module1_simulation", "sumo_config", "runtime_meta.json")
 MODEL_OUT = os.path.join(PROJECT_ROOT, "module4_dispatch", "rl_reposition_model.zip")
-# VecNormalize 통계(obs 평균/분산). 추론 때 rl_reposition_maintainer가 같은 이름 규칙으로 찾아 쓴다.
+# [KJS] VecNormalize 통계(obs 평균/분산). 추론 때 rl_reposition_maintainer가 같은 이름 규칙으로 찾아 쓴다.
 VECNORM_OUT = os.path.splitext(MODEL_OUT)[0] + "_vecnorm.pkl"
 CATEGORY_MODEL_PATH = os.environ.get(
     "AI_CATEGORY_MODEL_PATH",
@@ -69,7 +68,7 @@ class ProgressCallback(BaseCallback):
         return True
 
 
-def main():
+def main(resume_path: str = None):
     with open(META_PATH, "r", encoding="utf-8") as f:
         meta = json.load(f)
 
@@ -101,11 +100,8 @@ def main():
         print(f"[경고] {CATEGORY_MODEL_PATH}가 없어 예측수요=0으로 대체합니다. "
               f"module3_prediction/train_category_demand.py를 먼저 돌리는 것을 권장합니다.")
 
-    # episode reward/length를 남겨야 학습이 실제로 개선됐는지 사후에 검증할 수 있다.
-    monitor_dir = os.path.join(
-        PROJECT_ROOT, "module4_dispatch", "training_logs",
-        datetime.now().strftime("%Y%m%d_%H%M%S"),
-    )
+    # [KJS] episode reward/length를 남겨야 학습이 실제로 개선됐는지 사후에 검증할 수 있다.
+    monitor_dir = os.path.join(PROJECT_ROOT, "module4_dispatch", "training_logs", datetime.now().strftime("%Y%m%d_%H%M%S"))
     os.makedirs(monitor_dir, exist_ok=True)
 
     def make_env(worker_index):
@@ -120,7 +116,8 @@ def main():
                 max_decisions=max_decisions,
                 sumo_binary="sumo",     # GUI 없이 headless로 (학습은 GUI 필요 없음)
                 # [Surge Pricing 대체] GUI 탭4의 "인센티브 리워드 가중치" 슬라이더 값.
-                # config.json에 없으면 0.0 (기존 대기감소 보상만 쓰는 것과 완전히 동일하게 동작)
+                # config.json에 없으면 0.0 → 예측 수요 일치도 항은 빠지지만, rl_env 기본 보상에는
+                # 사전 배치 분포 점수(0.5배)가 항상 들어간다 (대기 감소만 보상하는 것은 아님)
                 incentive_weight=CFG.get("incentive_weight", 0.0),
                 target_hotspot_ratio=CFG.get("target_hotspot_ratio", 0.7),
                 randomize_passenger_seed=CFG.get("rl_randomize_passenger_seed", True),
@@ -151,8 +148,6 @@ def main():
         f"행동=구역별 유휴 택시 배분"
     )
 
-    use_vecnorm = bool(CFG.get("rl_vecnormalize", True))
-
     if n_envs > 1:
         # 병렬: env마다 별도 OS 프로세스(SUMO도 각자 따로 뜸) -> CPU 코어 수만큼 실속도 향상
         vec_env = SubprocVecEnv([make_env(i) for i in range(n_envs)])
@@ -160,25 +155,48 @@ def main():
         # 기존과 완전히 동일한 단일 env 동작 (worker_index=0 -> seed도 그대로)
         vec_env = DummyVecEnv([make_env(0)])
 
+    use_vecnorm = bool(CFG.get("rl_vecnormalize", True))
     if use_vecnorm:
-        # obs(인원수)와 보상(-230~+17) 스케일이 커서 PPO가 불안정했음 -> 정규화.
+        # [KJS] obs(인원수)와 보상(-230~+17) 스케일이 커서 PPO가 불안정했음 -> 정규화.
         # Monitor는 VecNormalize 안쪽이라 training_logs의 보상은 계속 '원래 값'으로 기록된다.
-        vec_env = VecNormalize(
-            vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0,
-            gamma=float(CFG.get("rl_gamma", 0.99)),
-        )
+        if resume_path:
+            # 재개 시 통계 파일 함께 복원
+            from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer
+            vn_resume = RLRepositionMaintainer._find_vecnorm_path(resume_path)
+            if vn_resume and os.path.exists(vn_resume):
+                vec_env = VecNormalize.load(vn_resume, vec_env)
+                vec_env.training = True
+                vec_env.norm_reward = True
+                print(f"[재개] 관측 정규화 통계를 이어받았습니다: {vn_resume}")
+            else:
+                vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0,
+                                       gamma=float(CFG.get("rl_gamma", 0.99)))
+        else:
+            vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0,
+                                   gamma=float(CFG.get("rl_gamma", 0.99)))
 
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        verbose=1,
-        n_steps=rollout_steps,
-        batch_size=batch_size,
-        learning_rate=float(CFG.get("rl_learning_rate", 3e-4)),
-        gamma=float(CFG.get("rl_gamma", 0.99)),
-        seed=seed,
-        policy_kwargs={"net_arch": [128, 128]},
-    )
+    if resume_path and os.path.exists(resume_path):
+        model = PPO.load(
+            resume_path,
+            env=vec_env,
+            verbose=1,
+            learning_rate=float(CFG.get("rl_learning_rate", 3e-4)),
+            gamma=float(CFG.get("rl_gamma", 0.99)),
+            seed=seed,
+        )
+        print(f"[재개] 기존 체크포인트 모델을 불러와 학습을 이어갑니다: {resume_path}")
+    else:
+        model = PPO(
+            "MlpPolicy",
+            vec_env,
+            verbose=1,
+            n_steps=rollout_steps,
+            batch_size=batch_size,
+            learning_rate=float(CFG.get("rl_learning_rate", 3e-4)),
+            gamma=float(CFG.get("rl_gamma", 0.99)),
+            seed=seed,
+            policy_kwargs={"net_arch": [128, 128]},
+        )
 
     # print_every는 num_timesteps(모든 env 합산) 기준이라 n_envs와 무관하게 그대로 둬도 됨
     progress_cb = ProgressCallback(total_timesteps=total_timesteps, print_every=rollout_steps * n_envs)
@@ -194,10 +212,14 @@ def main():
     )
     model.learn(total_timesteps=total_timesteps, callback=[progress_cb, checkpoint_cb])
     if os.path.exists(MODEL_OUT):
+        # 덮어쓰기 전에 이전 정책(과 정규화 통계)을 보관 (비교 실험·되돌리기용)
+        import shutil
         backup_dir = os.path.join(PROJECT_ROOT, "rl_model_backups")
         os.makedirs(backup_dir, exist_ok=True)
         backup = os.path.join(backup_dir, f"rl_reposition_model_before_{datetime.now():%Y%m%d_%H%M%S}.zip")
         shutil.copy2(MODEL_OUT, backup)
+        if os.path.exists(VECNORM_OUT):
+            shutil.copy2(VECNORM_OUT, os.path.splitext(backup)[0] + "_vecnorm.pkl")
         print(f"[백업] 이전 정책 -> {backup}")
     model.save(MODEL_OUT)
     print(f"[완료] 학습된 정책을 저장했습니다: {MODEL_OUT}")
@@ -207,23 +229,14 @@ def main():
     elif os.path.exists(VECNORM_OUT):
         os.remove(VECNORM_OUT)  # 예전 통계가 남아 있으면 추론 때 잘못 적용되므로 제거
 
-    # ── rl_model_backups 안전 백업 보관 ──
-    try:
-        backup_dir = os.path.join(PROJECT_ROOT, "rl_model_backups")
-        os.makedirs(backup_dir, exist_ok=True)
-        rmode = CFG.get("rl_reward_mode", "default")
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_file = os.path.join(backup_dir, f"rl_model_{rmode}_{ts}_{total_timesteps}steps.zip")
-        shutil.copy2(MODEL_OUT, backup_file)
-        if use_vecnorm:
-            shutil.copy2(VECNORM_OUT, os.path.splitext(backup_file)[0] + "_vecnorm.pkl")
-        print(f"[백업 보존] {backup_file} 에 안전 보관 완료!")
-    except Exception as _be:
-        print(f"[백업 경고] 백업 저장 실패: {_be}")
-
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--resume", default=None, help="이어서 학습할 모델 체크포인트 경로 (.zip)")
+    args = ap.parse_args()
+
     sys.path.insert(0, PROJECT_ROOT)
-    from reproducibility import ensure_fixed_hash_seed
+    from module1_simulation.reproducibility import ensure_fixed_hash_seed
     ensure_fixed_hash_seed()
-    main()
+    main(resume_path=args.resume)

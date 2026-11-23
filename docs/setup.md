@@ -1,0 +1,21 @@
+1
+레포 클론
+새 컴퓨터에서 git clone <레포주소> 로 프로젝트를 받고, cd로 폴더 안으로 들어갑니다.
+2
+Python 환경 + 패키지 설치
+python -m venv venv 로 가상환경 생성 후 venv\Scripts\activate 로 활성화. 그 다음 pip install -r requirements.txt 로 패키지 설치. GPU 컴퓨터면 pytorch.org에서 CUDA 버전 torch 설치 명령어를 따로 확인해서 설치.
+3
+SUMO 설치
+https://sumo.dlr.de/docs/Downloads.php 에서 Windows용 설치파일 받아서 설치. 기본 경로는 보통 C:\Program Files (x86)\Eclipse\Sumo 이고, netgenerate.exe 등이 그 안의 bin 폴더에 있는지 확인하세요.
+4
+SUMO_HOME + Path 환경변수 등록 (GUI 필수)
+시작메뉴 → '환경 변수' 검색 → '계정의 환경 변수 편집'. 사용자 변수에 두 개 추가: (1) SUMO_HOME = C:\Program Files (x86)\Eclipse\Sumo (bin 제외한 루트), (2) 기존 Path 변수에 C:\Program Files (x86)\Eclipse\Sumo\bin 을 새 항목으로 추가. 반드시 GUI로 하세요 — PowerShell SetEnvironmentVariable("Machine")로 반복 실행하면 기존 Path가 중복으로 계속 느어나서 위험해요.
+5
+VS Code 완전 재시작 (중요)
+설정 저장 후 VS Code와 열려있는 터미널/PowerShell을 모두 완전히 종료하고 새로 실행하세요. 환경변수는 새 프로세스부터 적용되기 때문에, 창만 새로 열면 안 되고 앱 자체를 끈고 켜야 해요.
+6
+설치 확인 (Get-Command 사용, where 아님)
+새 PowerShell에서 Get-Command netgenerate 를 칩니다. 경로가 띄야 성공입니다. 주의: PowerShell에서 where는 cmd.exe의 where.exe가 아니라 Where-Object의 별칭이라 항상 빈 결과가 나오며 실패로 보임. 반드시 Get-Command를 쓰거나, cmd.exe를 따로 열어 where를 쓰세요.
+7
+실행
+python config_gui.py 로 GUI를 켜서(처음엔 config.json이 없어 팀 기본 프리셋 presets/default/기본.json으로 시작) '플레이' 버튼을 누르거나, 터미널에서 python main.py play 로 직접 실행하면 됩니다. 학습 전체는 GUI의 '학습만 실행' 또는 python main.py train 입니다.

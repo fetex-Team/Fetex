@@ -1,0 +1,275 @@
+{
+  "dates": [
+    "2026-09-07",
+    "2026-09-10",
+    "2026-09-18",
+    "2026-10-13",
+    "2026-10-14",
+    "2026-10-18",
+    "2026-10-24"
+  ],
+  "baseline": "patrol",
+  "strategies": {
+    "patrol": {
+      "service_rate": {
+        "mean": 0.7971285714285715,
+        "n": 7
+      },
+      "n_timeout_removed": {
+        "mean": 1014.5714285714286,
+        "n": 7
+      },
+      "avg_wait_sec": {
+        "mean": 204.1142857142857,
+        "n": 7
+      },
+      "p90_wait_sec": {
+        "mean": 369.0,
+        "n": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 255.74285714285716,
+        "n": 7
+      },
+      "est_revenue_won": {
+        "mean": 59780290.428571425,
+        "n": 7
+      }
+    },
+    "prepositioned": {
+      "service_rate": {
+        "mean": 0.7942285714285714,
+        "n": 7,
+        "diff_mean": -0.0028999999999999976,
+        "diff_ci95": [
+          -0.009136136126335782,
+          0.003336136126335787
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 1027.4285714285713,
+        "n": 7,
+        "diff_mean": 12.857142857142858,
+        "diff_ci95": [
+          -20.79383586127606,
+          46.50812157556177
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 207.6,
+        "n": 7,
+        "diff_mean": 3.4857142857142804,
+        "diff_ci95": [
+          -2.647014731377114,
+          9.618443302805675
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 3,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 373.2857142857143,
+        "n": 7,
+        "diff_mean": 4.285714285714286,
+        "diff_ci95": [
+          -5.7711748300647505,
+          14.34260340149332
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 3,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 259.8,
+        "n": 7,
+        "diff_mean": 4.0571428571428685,
+        "diff_ci95": [
+          -2.0114211701763933,
+          10.12570688446213
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 59540526.71428572,
+        "n": 7,
+        "diff_mean": -239763.7142857143,
+        "diff_ci95": [
+          -765414.9659395028,
+          285887.5373680742
+        ],
+        "sign_test_p": 0.453125,
+        "days_better": 2,
+        "days": 7
+      }
+    },
+    "rl_prepositioned": {
+      "service_rate": {
+        "mean": 0.7900571428571429,
+        "n": 7,
+        "diff_mean": -0.00707142857142857,
+        "diff_ci95": [
+          -0.01324130651868278,
+          -0.000901550624174359
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 1046.2857142857142,
+        "n": 7,
+        "diff_mean": 31.714285714285715,
+        "diff_ci95": [
+          -0.11335619111631345,
+          63.54192761968774
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 216.52857142857144,
+        "n": 7,
+        "diff_mean": 12.414285714285711,
+        "diff_ci95": [
+          -5.513299057390764,
+          30.341870485962186
+        ],
+        "sign_test_p": 0.125,
+        "days_better": 1,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 386.14285714285717,
+        "n": 7,
+        "diff_mean": 17.142857142857142,
+        "diff_ci95": [
+          -15.00884712127846,
+          49.29456140699274
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 4,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 269.65714285714284,
+        "n": 7,
+        "diff_mean": 13.914285714285722,
+        "diff_ci95": [
+          -3.5112334764607844,
+          31.339804905032228
+        ],
+        "sign_test_p": 0.03125,
+        "days_better": 0,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 59226273.571428575,
+        "n": 7,
+        "diff_mean": -554016.8571428572,
+        "diff_ci95": [
+          -1064342.7357135983,
+          -43690.97857211594
+        ],
+        "sign_test_p": 0.015625,
+        "days_better": 0,
+        "days": 7
+      }
+    },
+    "forecast": {
+      "service_rate": {
+        "mean": 0.7974571428571429,
+        "n": 7,
+        "diff_mean": 0.00032857142857143994,
+        "diff_ci95": [
+          -0.0014590344572605863,
+          0.0021161773144034663
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 1,
+        "days": 7
+      },
+      "n_timeout_removed": {
+        "mean": 1012.8571428571429,
+        "n": 7,
+        "diff_mean": -1.7142857142857142,
+        "diff_ci95": [
+          -9.16543440306605,
+          5.736862974494621
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 1,
+        "days": 7
+      },
+      "avg_wait_sec": {
+        "mean": 203.27142857142857,
+        "n": 7,
+        "diff_mean": -0.8428571428571497,
+        "diff_ci95": [
+          -2.824241650589814,
+          1.138527364875514
+        ],
+        "sign_test_p": 0.25,
+        "days_better": 3,
+        "days": 7
+      },
+      "p90_wait_sec": {
+        "mean": 367.0,
+        "n": 7,
+        "diff_mean": -2.0,
+        "diff_ci95": [
+          -5.737854241852314,
+          1.7378542418523137
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 2,
+        "days": 7
+      },
+      "true_avg_wait_sec_with_penalty": {
+        "mean": 254.72857142857143,
+        "n": 7,
+        "diff_mean": -1.0142857142857113,
+        "diff_ci95": [
+          -3.580403514430057,
+          1.5518320858586347
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 2,
+        "days": 7
+      },
+      "est_revenue_won": {
+        "mean": 59798912.71428572,
+        "n": 7,
+        "diff_mean": 18622.285714285714,
+        "diff_ci95": [
+          -101762.59369499596,
+          139007.1651235674
+        ],
+        "sign_test_p": 1.0,
+        "days_better": 1,
+        "days": 7
+      }
+    }
+  },
+  "same_demand_per_date": {
+    "2026-09-07": true,
+    "2026-09-10": true,
+    "2026-09-18": true,
+    "2026-10-13": true,
+    "2026-10-14": true,
+    "2026-10-18": true,
+    "2026-10-24": true
+  },
+  "scenario": "base",
+  "overrides": {
+    "edge_speed_output": "results/repeat/realistic_eval/edgespeed"
+  }
+}

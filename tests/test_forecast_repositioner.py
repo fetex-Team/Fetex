@@ -34,14 +34,16 @@ def test_observe_never_reads_future_calls():
     r = ForecastRepositioner.__new__(ForecastRepositioner)
     r.start_dt = dt.datetime(2026, 9, 7, 9)
     r._sched = [(10.0, "a"), (600.0, "b"), (601.0, "a"), (5000.0, "b")]
-    r._sched_i, r._live_t, r._live_c = 0, [], []
+    r._sched_i = 0
+    seen = []                                  # 예측기(Module 3)에 넘어간 호출
+    r.predictor = types.SimpleNamespace(add_call=lambda when, cell: seen.append((when, cell)))
     r._observe(600.0)
-    assert r._live_c == ["a", "b"]            # 600초까지만
-    assert max(r._live_t) <= r.start_dt + dt.timedelta(seconds=600)
+    assert [c for _, c in seen] == ["a", "b"]  # 600초까지만
+    assert max(t for t, _ in seen) <= r.start_dt + dt.timedelta(seconds=600)
     r._observe(600.0)
-    assert len(r._live_c) == 2                # 다시 불러도 중복 없음
+    assert len(seen) == 2                      # 다시 불러도 중복 없음
     r._observe(10_000.0)
-    assert r._live_c == ["a", "b", "a", "b"]
+    assert [c for _, c in seen] == ["a", "b", "a", "b"]
 
 
 def test_pick_edges_spreads_over_roads():
