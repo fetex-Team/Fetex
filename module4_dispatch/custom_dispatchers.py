@@ -157,6 +157,8 @@ class CustomRouteExtensionDispatcher:
 CUSTOM_ALGOS = (
     "hungarian",
     "adaptive_hungarian",
+    "adaptive_hungarian2",
+    "adaptive_hungarian3",
     "hungarian_d01",
     "hungarian_d02",
     "hungarian_d03",
@@ -198,6 +200,12 @@ def make_dispatcher(algo: str, sumo_cfg_path: str = None):
     if algo == "adaptive_hungarian":
         from module4_dispatch.hungarian_dispatcher import build_adaptive_hungarian_dispatcher
         return build_adaptive_hungarian_dispatcher(sumo_cfg_path, min_w=0.02, max_w=0.06)
+    if algo in ("adaptive_hungarian2", "adaptive_hungarian_v2"):
+        from module4_dispatch.hungarian_dispatcher import build_adaptive_hungarian2_dispatcher
+        return build_adaptive_hungarian2_dispatcher(sumo_cfg_path, base_w=0.04, min_w=0.02)
+    if algo in ("adaptive_hungarian3", "adaptive_hungarian_v3"):
+        from module4_dispatch.adaptive_hungarian3 import build_adaptive_hungarian3_dispatcher
+        return build_adaptive_hungarian3_dispatcher(sumo_cfg_path)
     if algo and algo.startswith("hungarian"):
         # 거리 가중치(dist_weight) 매핑 (양수 d: +0.01~0.20, 음수 m: -0.01~-0.10):
         weights = {

@@ -3,7 +3,7 @@
 실행 버튼은 화면 값을 실행용 설정 파일(results/run_configs/)로 저장하고 main.py <명령>을 새 콘솔 창에서 띄운 뒤,
 main.py가 기록하는 진행 상황(results/run_status/)을 읽어 상태 줄과 완료·오류 팝업에 보여 준다.
 [적용하기]를 눌렀을 때만 config.json이 바뀐다."""
-import json, os, subprocess, sys, tkinter as tk
+import json, os, re, subprocess, sys, tkinter as tk
 
 # 이 스크립트(GUI) 자신이 print()로 콘솔에 직접 찍는 한글이, 컴퓨터/콘솔의 기본
 # 코드페이지(cp949 등)에 걸려 깨지는 걸 방지. _launch()가 자식 프로세스에 넣어주는
@@ -600,11 +600,11 @@ class ConfigGUI:
         algo_box = ttk.LabelFrame(body, text="2. 배차 알고리즘 선택", padding=8)
         algo_box.pack(fill="x", pady=4)
 
-        algos = ["hungarian", "greedy", "routeExtension", "custom_greedy", "custom_routeExtension"]
-        algo_var = tk.StringVar(value="hungarian")
+        algos = ["hungarian_d04", "hungarian", "adaptive_hungarian", "greedy", "routeExtension", "custom_greedy", "custom_routeExtension"]
+        algo_var = tk.StringVar(value="hungarian_d04")
         algo_combo = ttk.Combobox(algo_box, textvariable=algo_var, values=algos, state="readonly", width=25)
         algo_combo.pack(anchor="w")
-        ttk.Label(algo_box, text="💡 hungarian(헝가리안) 알고리즘이 전체 대기시간을 최소화하는 추천 방식입니다.",
+        ttk.Label(algo_box, text="💡 hungarian_d04(거리 가중 0.04)가 실증 실험 1위를 기록한 추천 최적 배차 방식입니다.",
                   foreground="#6b7280").pack(anchor="w", pady=(3, 0))
 
         # 3. 기록 간격 (Stride) 선택 프레임
@@ -875,20 +875,26 @@ class ConfigGUI:
 
         def add_fixed_date():
             raw = date_input_box.get("1.0", "end-1c").strip()
-            tokens = re.findall(r"(?<!\d)(\d{4}\s*-?\s*\d{2}\s*-?\s*\d{2})(?!\d)", raw)
-            remainder = re.sub(r"(?<!\d)\d{4}\s*-?\s*\d{2}\s*-?\s*\d{2}(?!\d)", "", raw)
-            if not tokens or remainder.strip(" \t\r\n,;"):
+            if not raw:
+                return
+            # YYYY-MM-DD, YYYYMMDD, YYYY.MM.DD, YYYY/MM/DD 및 텍스트 섞임 모두 허용
+            matches = re.findall(r"(?<!\d)(\d{4})[-./\s]?(\d{2})[-./\s]?(\d{2})(?!\d)", raw)
+            if not matches:
                 messagebox.showwarning(
                     "날짜 형식",
-                    "YYYYMMDD 날짜를 공백·줄바꿈·쉼표로 구분해 입력하세요.\n예: 20260907 20260912\n하이픈(-)과 날짜 내부 공백은 자동으로 무시합니다.",
+                    "올바른 날짜(예: 2026-11-23 또는 20261123)를 입력하세요.",
                     parent=win,
                 )
                 return
-            try:
-                dates = [datetime.strptime(re.sub(r"[\s-]", "", token), "%Y%m%d").date().isoformat()
-                         for token in tokens]
-            except ValueError:
-                messagebox.showwarning("날짜 형식", "존재하지 않는 날짜가 포함되어 있습니다.", parent=win)
+            dates = []
+            for y, m, d in matches:
+                try:
+                    dt = datetime(int(y), int(m), int(d)).date()
+                    dates.append(dt.isoformat())
+                except ValueError:
+                    continue
+            if not dates:
+                messagebox.showwarning("날짜 형식", "존재하지 않는 유효하지 않은 날짜입니다.", parent=win)
                 return
             for date_text in dates:
                 if date_text not in fixed_dates:
@@ -904,11 +910,15 @@ class ConfigGUI:
         date_input_box.pack(side="left", padx=(4, 4), fill="x", expand=True)
         ttk.Button(date_input_row, text="추가하기", command=add_fixed_date).pack(side="left")
 
-        ttk.Label(date_box, text="※ 여러 날짜를 넣으면 날짜마다 순서대로 대기열에 들어갑니다 (앞선 날짜 실행 중일 때 다음 날짜는 '대기').",
+        ttk.Label(date_box, text="※ 여러 날짜를 넣으면 날짜마다 순서대로 대기열에 들어갑니다 (앞선 날짜 실행 중일 때 다음 날짜는 '대기').\n※ [추가하기]를 안 누르고 날짜만 써놓고 실행해도 자동으로 반영됩니다.",
                   foreground="#6b7280", wraplength=460, justify="left").pack(anchor="w", pady=(2, 0))
         date_list_frame.pack(fill="x", pady=(3, 0))
 
         def run_compare():
+            # [핵심 개선] 사용자가 '추가하기' 버튼을 안 누르고 입력창에 써놓기만 해도 자동으로 등록!
+            if date_input_box.get("1.0", "end-1c").strip():
+                add_fixed_date()
+
             selected = {}
             for key, (label, values) in FACTOR_OPTIONS.items():
                 chosen = [v for v, var in value_vars[key].items() if var.get()]

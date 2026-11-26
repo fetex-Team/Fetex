@@ -234,3 +234,54 @@ def build_adaptive_hungarian_dispatcher(sumo_cfg_path=None, min_w: float = 0.02,
             travel_time = NetworkTravelTime.cached(net_file)
     return AdaptiveHungarianDispatcher(mode, travel_time, min_w=min_w, max_w=max_w)
 
+
+class AdaptiveHungarianDispatcherV2(HungarianDispatcher):
+    """
+    [V2] 사용자 제안 수식 기반 수요 연동 헝가리안 배차기.
+    - 기본(한산/주말/4,500명 이하): dist_weight = 0.04 고정 (주말 1위 d04 성능 100% 보장)
+    - 수요 증가(6,000명 부근): dist_weight = 0.03~0.035로 점진적 감소
+    - 초과밀(10,000명 이상): dist_weight = 0.02 도달 (초과밀 1위 d02 성능 확보)
+    """
+    def __init__(self, cost_mode: str = "euclidean", travel_time=None, base_w: float = 0.04, min_w: float = 0.02):
+        super().__init__(cost_mode, travel_time, dist_weight=base_w)
+        self.base_w = float(base_w)  # 0.04
+        self.min_w = float(min_w)    # 0.02
+
+    def maintain(self, now_seconds: float = 0, idle_taxis=None, reservations=None):
+        pending = self._get_pending_reservations(reservations)
+        idles = list(idle_taxis) if idle_taxis is not None else self._get_idle_taxis()
+
+        n_pax = len(pending)
+        n_taxi = len(idles)
+
+        if n_pax > 0 and n_taxi > 0:
+            # 수요/공급비 R (현재 대기 승객 수 / 가용 빈 택시 수)
+            # R <= 1.0 (평시/주말 3500~4500명): 0.04 유지
+            # R >= 4.0 (과밀 10,000명 이상): 0.02 도달
+            r = n_pax / max(n_taxi, 1)
+            if r <= 1.0:
+                self.dist_weight = self.base_w  # 0.04 고정
+            elif r >= 4.0:
+                self.dist_weight = self.min_w   # 0.02 고정
+            else:
+                # 1.0 < r < 4.0 구간: 0.04 -> 0.02 선형 보간 (r=2.5 부근 6000명대에서 약 0.03)
+                ratio = (r - 1.0) / (4.0 - 1.0)
+                self.dist_weight = round(self.base_w - ratio * (self.base_w - self.min_w), 4)
+        else:
+            self.dist_weight = self.base_w
+
+        return super().maintain(now_seconds, idle_taxis=idles, reservations=pending)
+
+
+def build_adaptive_hungarian2_dispatcher(sumo_cfg_path=None, base_w: float = 0.04, min_w: float = 0.02):
+    from config_loader import CFG
+    from module4_dispatch.network_cost import NetworkTravelTime, net_file_from_sumocfg
+    mode = str(CFG.get("dispatch_cost", "euclidean")).lower()
+    travel_time = None
+    if mode == "network":
+        net_file = net_file_from_sumocfg(sumo_cfg_path) if sumo_cfg_path else None
+        if net_file and __import__("os").path.exists(net_file):
+            travel_time = NetworkTravelTime.cached(net_file)
+    return AdaptiveHungarianDispatcherV2(mode, travel_time, base_w=base_w, min_w=min_w)
+
+

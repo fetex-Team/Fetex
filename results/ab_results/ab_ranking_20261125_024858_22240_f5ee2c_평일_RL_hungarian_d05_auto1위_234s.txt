@@ -1,0 +1,66 @@
+================================================================
+ A/B 비교 최종 순위
+================================================================
+ 실행 시각 : 2026-11-25 05:50:15
+ 요청 ID   : 20261125_024858_22240_f5ee2c (조합별 결과 JSON: results/ab_results/20261125_024858_22240_f5ee2c/)
+ 비교 조합 : 8개 (순위 산정 8개)
+ 시뮬 날짜 : 2026-09-07 (평일)
+ 기준 지표 : 평균 대기시간(타임아웃 페널티 포함, 낮을수록 좋음)
+----------------------------------------------------------------
+1위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_d05_holiday_mode=auto
+    평균 대기(페널티 포함) : 233.9초 (약 3.9분) ← 최적
+    평균 대기(탑승자만)    : 166.1초
+    타임아웃 소멸          : 2109명 / 전체 10458명 (20.2%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+2위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_d03_holiday_mode=auto
+    평균 대기(페널티 포함) : 234.3초 (약 3.9분) (1위 대비 +0.2%)
+    평균 대기(탑승자만)    : 166.3초
+    타임아웃 소멸          : 2115명 / 전체 10458명 (20.2%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+3위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_d04_holiday_mode=auto
+    평균 대기(페널티 포함) : 234.5초 (약 3.9분) (1위 대비 +0.3%)
+    평균 대기(탑승자만)    : 165.8초
+    타임아웃 소멸          : 2136명 / 전체 10458명 (20.4%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+4위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_d02_holiday_mode=auto
+    평균 대기(페널티 포함) : 238.1초 (약 4.0분) (1위 대비 +1.8%)
+    평균 대기(탑승자만)    : 165.4초
+    타임아웃 소멸          : 2258명 / 전체 10458명 (21.6%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+5위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_d06_holiday_mode=auto
+    평균 대기(페널티 포함) : 238.1초 (약 4.0분) (1위 대비 +1.8%)
+    평균 대기(탑승자만)    : 167.7초
+    타임아웃 소멸          : 2199명 / 전체 10458명 (21.0%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+6위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_d08_holiday_mode=auto
+    평균 대기(페널티 포함) : 243.2초 (약 4.1분) (1위 대비 +4.0%)
+    평균 대기(탑승자만)    : 169.9초
+    타임아웃 소멸          : 2307명 / 전체 10458명 (22.1%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+7위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_d10_holiday_mode=auto
+    평균 대기(페널티 포함) : 243.6초 (약 4.1분) (1위 대비 +4.1%)
+    평균 대기(탑승자만)    : 170.5초
+    타임아웃 소멸          : 2304명 / 전체 10458명 (22.0%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+8위  taxi_strategy=rl_prepositioned_taxi_dispatch_algorithm=hungarian_holiday_mode=auto
+    평균 대기(페널티 포함) : 265.2초 (약 4.4분) (1위 대비 +13.4%)
+    평균 대기(탑승자만)    : 164.0초
+    타임아웃 소멸          : 3129명 / 전체 10458명 (29.9%)
+    실행 날짜              : 2026-09-07
+    수요 지문              : 8c4237bbe1afe424
+
+================================================================

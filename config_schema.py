@@ -14,7 +14,7 @@ STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
 FACTOR_OPTIONS = {
     "taxi_strategy": ("택시 전략 (체크)", STRATEGIES),
     "taxi_dispatch_algorithm": ("배차 알고리즘 (체크)", [
-        "greedy", "routeExtension", "hungarian", "adaptive_hungarian",
+        "greedy", "routeExtension", "hungarian", "adaptive_hungarian", "adaptive_hungarian2", "adaptive_hungarian3",
         "hungarian_d01", "hungarian_d02", "hungarian_d03", "hungarian_d04", "hungarian_d05",
         "hungarian_d06", "hungarian_d07", "hungarian_d08", "hungarian_d09", "hungarian_d10",
         "hungarian_d15", "hungarian_d20",
@@ -30,7 +30,9 @@ FACTOR_VALUE_LABELS = {
     "greedy": "greedy (그리디)",
     "routeExtension": "routeExtension (루트 익스텐션)",
     "hungarian": "hungarian (순수 시간)",
-    "adaptive_hungarian": "adaptive_hungarian (수요 연동 적응형)",
+    "adaptive_hungarian": "adaptive_hungarian (1세대: 0.02~0.06)",
+    "adaptive_hungarian2": "adaptive_hungarian2 (2세대: 기본0.04→과밀0.02)",
+    "adaptive_hungarian3": "adaptive_hungarian3 (완성형: EMA+Aging)",
     "hungarian_d01": "hungarian (거리 가중 0.01)",
     "hungarian_d02": "hungarian (거리 가중 0.02)",
     "hungarian_d03": "hungarian (거리 가중 0.03)",
@@ -181,7 +183,7 @@ CHOICES = [
     ("rl_reward_mode", "RL 보상 방식", ["default", "gravityVer"]),
     ("rl_train_day_type", "RL 학습 날짜 종류", ["weekday", "holiday", "mixed"]),
     ("taxi_dispatch_algorithm", "배차 알고리즘", [
-        "greedy", "routeExtension", "hungarian", "adaptive_hungarian",
+        "greedy", "routeExtension", "hungarian", "adaptive_hungarian", "adaptive_hungarian2", "adaptive_hungarian3",
         "hungarian_d01", "hungarian_d02", "hungarian_d03", "hungarian_d04", "hungarian_d05",
         "hungarian_d06", "hungarian_d07", "hungarian_d08", "hungarian_d09", "hungarian_d10",
         "hungarian_d15", "hungarian_d20",
