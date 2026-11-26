@@ -5,7 +5,8 @@
 
     python main.py play                         지도 생성 → SUMO GUI 시뮬레이션 (results/simulation/metrics.json)
     python main.py train                        지도 생성 → (로그 생성) → 수요 예측(demand_v2·CNN-LSTM) → 카테고리 모델 → RL
-        [--real-start 2026-07-13 --real-end 2026-09-06]   그 기간을 실측 통계로 만든 로그로 학습 (시뮬레이션 없음)
+        [--real-start 2026-07-13 --real-end 2026-09-06]   Module 3: 그 기간을 실측 통계로 만든 로그로 학습 (8주 권장)
+        [--rl-start 2026-05-18 --rl-end 2026-09-06]       RL: 에피소드 날짜 범위 (16주 권장, 기본은 설정값)
         [--rl-only]                             수요 예측은 지금 모델 그대로, 카테고리 모델·RL만 학습
     python main.py compare '<조합 JSON>' [--model-set saved_models_backups/<이름>]   A/B 병렬 비교 (module4_dispatch/experiments/multi_factor_compare.py)
     python main.py unity [--strategies ... --algorithm ... --stride N --unity-dir 경로]   Unity 재생 파일
@@ -161,10 +162,30 @@ def _parse_train_options(extra):
     tp.add_argument("--rl-only", action="store_true", help="수요 예측(train.py)을 건너뛰고 카테고리 모델·RL만 학습")
     tp.add_argument("--real-start", help="실측 통계로 학습 로그를 만들 기간 시작 (YYYY-MM-DD)")
     tp.add_argument("--real-end", help="실측 통계로 학습 로그를 만들 기간 끝 (YYYY-MM-DD)")
+    tp.add_argument("--rl-start", help="RL 학습 에피소드 날짜 범위 시작 (기본: 설정 rl_train_start)")
+    tp.add_argument("--rl-end", help="RL 학습 에피소드 날짜 범위 끝 (기본: 설정 rl_train_end)")
     opts, _ = tp.parse_known_args(extra)
     if bool(opts.real_start) != bool(opts.real_end):
         raise StepFailed("--real-start와 --real-end는 함께 지정해야 합니다")
+    if bool(opts.rl_start) != bool(opts.rl_end):
+        raise StepFailed("--rl-start와 --rl-end는 함께 지정해야 합니다")
     return opts
+
+
+def ensure_weather(start, end):
+    """start~end에 실측 시간별 날씨가 없는 날이 있으면 Open-Meteo에서 받아 data/external/에 저장 (실패해도 계속).
+    호출 수요(demand_model)는 그날 강수로 보정되므로, 학습 기간 날씨가 없으면 보정 없이 만들어진다."""
+    from datetime import date, timedelta
+    from module1_simulation.weather_history import load_hourly_weather
+    from config_loader import CFG as _cfg
+    s, e = date.fromisoformat(str(start)), date.fromisoformat(str(end))
+    missing = [s + timedelta(days=i) for i in range((e - s).days + 1)
+               if load_hourly_weather(s + timedelta(days=i), _cfg.get("region")) is None]
+    if not missing:
+        return
+    print(f"[날씨] {start} ~ {end} 중 실측 날씨가 없는 {len(missing)}일({missing[0]} ~ {missing[-1]})을 받아옵니다.")
+    run_script(os.path.join("data", "loaders", "fetch_weather_history.py"),
+               (missing[0].isoformat(), missing[-1].isoformat()), check=False)
 
 
 def prepare_real_logs(c, start, end):
@@ -202,6 +223,17 @@ def cmd_train(status, args, extra):
     --rl-only: 수요 예측은 지금 모델 그대로 두고 카테고리 모델·RL만 학습."""
     opts = _parse_train_options(extra)
     c = load_run_config()
+    if opts.rl_start and (opts.rl_start, opts.rl_end) != (c.get("rl_train_start"), c.get("rl_train_end")):
+        # 터미널에서 RL 기간만 바꿔 실행: 실행용 설정 파일을 새로 만들어 자식 프로세스(rl_train.py)도 같은 기간을 쓰게 한다
+        from config_loader import write_run_config
+        c = {**c, "rl_train_start": opts.rl_start, "rl_train_end": opts.rl_end}
+        os.environ["MOBILITY_CONFIG"] = write_run_config(c, "train")
+    print(f"[안내] 학습 기간 — Module 3: "
+          + (f"{opts.real_start} ~ {opts.real_end} (실측 통계 로그)" if opts.real_start else "선택한 시뮬레이션 로그")
+          + f" / RL: {c.get('rl_train_start')} ~ {c.get('rl_train_end')}")
+    for a, b in ((opts.real_start, opts.real_end), (c.get("rl_train_start"), c.get("rl_train_end"))):
+        if a and b:
+            ensure_weather(a, b)
     status.step("0/3", "지도·SUMO 설정 생성 중 (build_env.py)")
     run_script(os.path.join("module1_simulation", "build_env.py"))
 
@@ -209,7 +241,6 @@ def cmd_train(status, args, extra):
     if opts.real_start:
         status.step("0/3", f"실측 통계로 학습 로그 만드는 중 ({opts.real_start} ~ {opts.real_end})")
         logs_args = ("--logs", prepare_real_logs(c, opts.real_start, opts.real_end))
-        print(f"[안내] RL 학습 기간: {c.get('rl_train_start')} ~ {c.get('rl_train_end')}")
     elif c.get("run_sim_before_training", True):
         from module2_preprocessing import log_selection
         t0 = time.time()

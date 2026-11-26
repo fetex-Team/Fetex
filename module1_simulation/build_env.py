@@ -107,6 +107,20 @@ def place_initial_taxis(routes, net, edges: list, boundary_edges: list, num_taxi
         ET.SubElement(taxi_trip, "param", key="has.taxi.device", value="true")
 
 
+def _write_retry(write, path, tries=10, wait=1.0):
+    """Windows에서 방금 만든 파일을 백신·색인 등이 잠깐 잡고 있으면 쓰기가 OSError(Errno 22/13)로 실패한다.
+    잠시 기다렸다가 다시 시도한다 (실패하면 마지막 오류를 그대로 낸다)."""
+    import time
+    for i in range(tries):
+        try:
+            return write()
+        except OSError as e:
+            if i == tries - 1:
+                raise
+            print(f"[안내] {os.path.basename(path)} 쓰기 재시도 ({i + 1}/{tries - 1}): {e}")
+            time.sleep(wait)
+
+
 def create_network_and_routes():
     config_dir = os.path.join(ROOT, "module1_simulation", _args.config_dir or "sumo_config")
     seed = CFG.get("passenger_seed")
@@ -205,7 +219,7 @@ def create_network_and_routes():
         ET.SubElement(person, "ride", **{"from": start_edge, "to": end_edge, "lines": "taxi"})
 
     rou_file = os.path.join(config_dir, "entities.rou.xml")
-    ET.ElementTree(routes).write(rou_file)
+    _write_retry(lambda: ET.ElementTree(routes).write(rou_file), rou_file)
 
     cfg = ET.Element("configuration")
     input_tag = ET.SubElement(cfg, "input")
@@ -230,7 +244,7 @@ def create_network_and_routes():
     ET.SubElement(time_tag, "end", value=str(sim_end_sec))
 
     cfg_file = os.path.join(config_dir, "simulation.sumocfg")
-    ET.ElementTree(cfg).write(cfg_file)
+    _write_retry(lambda: ET.ElementTree(cfg).write(cfg_file), cfg_file)
 
     import h3
     min_x, min_y, max_x, max_y = net.getBoundary()
@@ -272,8 +286,12 @@ def create_network_and_routes():
         "taxi_respawn_prefix": CFG.get("taxi_respawn_prefix", "taxi_respawn"),
         "taxi_dispatch_algorithm": CFG.get("taxi_dispatch_algorithm", "greedy"),
     }
-    with open(os.path.join(config_dir, "runtime_meta.json"), "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+    _meta_path = os.path.join(config_dir, "runtime_meta.json")
+
+    def _dump_meta():
+        with open(_meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False, indent=2)
+    _write_retry(_dump_meta, _meta_path)
 
     print(f"[안내] Digital Twin 시뮬레이션 환경 구성 완료 "
           f"(수요: {CFG.get('demand_source', 'real')}, 호출 모드: {CFG['passenger_mode']}, 정적 승객: {len(trips)}명)")

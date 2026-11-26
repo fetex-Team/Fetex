@@ -110,7 +110,7 @@ class TaxiRepositionEnv(gym.Env):
 
     def _pick_episode_date(self):
         """학습 에피소드 날짜. rl_train_start~rl_train_end가 있으면 그 기간 안에서만 뽑는다
-        (평가 날짜(sim_date 이후)와 겹치지 않게 시간 순서로 분리 — 수요예측 학습 기간과 같은 8주).
+        (평가 날짜(sim_date 이후)와 겹치지 않게 시간 순서로 분리 — 기본 16주, 수요예측 학습 8주보다 길게).
         [KJS] rl_train_day_type: "weekday"(기본)=평일만, "holiday"=공휴일·주말만, "mixed"=둘 다.
         평일/공휴일이 섞이면 에피소드 보상 분산의 대부분이 '그날이 무슨 날이냐'로 결정돼 정책 개선이 안 보인다."""
         import datetime as _dt

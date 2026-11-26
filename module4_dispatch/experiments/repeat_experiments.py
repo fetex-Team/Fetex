@@ -27,6 +27,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT))  # config_loader 등 프로젝트 모듈 (스크립트로 직접 실행할 때)
 from worker_protocol import emit_result, run_worker  # noqa: E402  (같은 폴더)
 # 평가 기간(예측·RL 학습 기간 2026-07-13~09-06 이후, 공휴일 제외): 월~일 하루씩 7일, 9~10월에 고르게.
 # 실측 날씨 기준 비 온 날 3일 포함 (9~23시 강수: 10-13 화 2.6mm, 10-18 일 27.5mm, 10-24 토 4.9mm)

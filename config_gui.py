@@ -990,13 +990,13 @@ class ConfigGUI:
                         text="시뮬레이션 로그 — 저장된 로그 중에서 골라 학습").pack(anchor="w")
 
         real_box = ttk.Frame(data, padding=(0, 6, 0, 0))
-        picker = TimelineRangePicker(real_box, start=c.get("rl_train_start"), end=c.get("rl_train_end"),
-                                     eval_date=c.get("sim_date"))
+        ttk.Label(real_box, text="Module 3 학습 기간 (수요 예측 · 장소 종류별 모델)", font=("맑은 고딕", 9, "bold")).pack(anchor="w")
+        picker = TimelineRangePicker(real_box, eval_date=c.get("sim_date"), weeks=(4, 8, 12), default_weeks=8)
         picker.pack(fill="x")
         ttk.Label(real_box, foreground="#64748b", wraplength=700, justify="left",
-                  text="수요 예측 · 장소 종류별 모델 · RL이 모두 이 기간으로 학습해요. "
-                       "로그는 data/real_demand_logs/train_<지역>_<시작>_<끝>/에 만들고, 같은 기간을 다시 고르면 재사용해요.").pack(
-            anchor="w", pady=(6, 0))
+                  text="짧게(8주) 두는 게 좋아요. 통계로 만든 수요라 매주 패턴이 거의 같아서 길게 해도 정확도가 거의 안 늘고, "
+                       "계절이 섞이면 평가 시기와 어긋나요. 로그는 data/real_demand_logs/train_<지역>_<시작>_<끝>/에 만들고, "
+                       "같은 기간을 다시 고르면 재사용해요.").pack(anchor="w", pady=(6, 0))
 
         sim_box = ttk.Frame(data, padding=(0, 6, 0, 0))
         sim_var = self.bool_vars["run_sim_before_training"]
@@ -1019,7 +1019,18 @@ class ConfigGUI:
         src_var.trace_add("write", show_source)
         show_source()
 
-        # 4. 고급 학습 설정 (설정값과 같은 변수 — 예전 세부 탭의 전처리·예측 모델·RL 섹션)
+        # 4. RL 학습 기간 (설정 rl_train_start~rl_train_end) — Module 3와 따로, 길게
+        rl_box = ttk.LabelFrame(body, text="4. RL 학습 기간 (에피소드 날짜를 이 안에서 뽑음)", padding=8)
+        rl_box.pack(fill="x", pady=4)
+        rl_picker = TimelineRangePicker(rl_box, start=c.get("rl_train_start"), end=c.get("rl_train_end"),
+                                        eval_date=c.get("sim_date"), weeks=(8, 12, 16), default_weeks=16)
+        rl_picker.pack(fill="x")
+        ttk.Label(rl_box, foreground="#64748b", wraplength=700, justify="left",
+                  text="길게(16주) 두는 게 좋아요. 여러 종류의 날을 겪을수록 정책이 특정 날에 덜 치우쳐요(KJS 112~126일). "
+                       "실측 날씨가 없는 날은 학습 시작 때 자동으로 받아요(인터넷 필요, 실패하면 날씨 보정 없이 진행).").pack(
+            anchor="w", pady=(6, 0))
+
+        # 5. 고급 학습 설정 (설정값과 같은 변수 — 예전 세부 탭의 전처리·예측 모델·RL 섹션)
         adv_holder = ttk.Frame(body)
         adv_holder.pack(fill="x", pady=4)
         for title, keys in TRAIN_SECTIONS:
@@ -1031,15 +1042,20 @@ class ConfigGUI:
             args, overrides = [], {}
             if scope_var.get() == "rl_only":
                 args.append("--rl-only")
-            if src_var.get() == "real":
-                s, e, n = picker.selection()
-                if picker.overlaps_eval() and not messagebox.askyesno(
-                        "학습 기간 확인", f"학습 기간({s} ~ {e})이 평가 날짜({c.get('sim_date')}) 이후까지 들어가요.\n"
+            checks = [("RL", rl_picker)] + ([("Module 3", picker)] if src_var.get() == "real" else [])
+            for name, p in checks:
+                s, e, _ = p.selection()
+                if p.overlaps_eval() and not messagebox.askyesno(
+                        "학습 기간 확인", f"{name} 학습 기간({s} ~ {e})이 평가 날짜({c.get('sim_date')}) 이후까지 들어가요.\n"
                                        "평가 날짜가 학습에 섞이면 결과가 실제보다 좋게 나와요. 그래도 학습할까요?", parent=win):
                     return
+            rs, re_, _ = rl_picker.selection()
+            overrides.update(rl_train_start=rs.isoformat(), rl_train_end=re_.isoformat())
+            args += ["--rl-start", rs.isoformat(), "--rl-end", re_.isoformat()]
+            if src_var.get() == "real":
+                s, e, _ = picker.selection()
                 args += ["--real-start", s.isoformat(), "--real-end", e.isoformat()]
-                overrides.update(rl_train_start=s.isoformat(), rl_train_end=e.isoformat(),
-                                 run_sim_before_training=False)
+                overrides["run_sim_before_training"] = False
             elif save_sel is not None and not save_sel():
                 return
             win.destroy()

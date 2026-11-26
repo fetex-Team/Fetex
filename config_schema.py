@@ -440,7 +440,7 @@ TIPS = {
     "taxi_external_away": "[시나리오] 영역 밖으로 나간 택시의 복귀 지연을 반영 (external_trip_model.py). 기본 꺼짐.",
     "external_replacement_ratio": "밖으로 나간 택시 대신 들어오는 택시 비율. 강남구 2025 하차/승차 = 85,218/92,858 ≈ 0.918.",
     "external_return_factor": "복귀 시간 = 운행시간(TIMS 격자 평균) × 이 값 (갔다 오는 시간이라 2).",
-    "rl_train_start": "RL 학습 에피소드 날짜 범위 시작. 평가 날짜와 겹치지 않게, 수요예측 학습 8주와 같게 둔다.",
+    "rl_train_start": "RL 학습 에피소드 날짜 범위 시작. 평가 날짜와 겹치지 않게, 수요예측 학습(8주)보다 길게 16주(112일)로 둔다. 학습 창 'RL 학습 기간'에서 고른다.",
     "rl_train_end": "RL 학습 에피소드 날짜 범위 끝.",
     "rl_training_seed_base": "RL 학습 에피소드별 승객 시드의 시작값.",
     "forecast_tick_sec": "forecast 전략: 예측·재배치 주기(초).",

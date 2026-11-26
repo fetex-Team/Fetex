@@ -120,7 +120,7 @@
   "rl_rollout_steps": 512,
   "rl_batch_size": 128,
   "rl_seed": 42,
-  "rl_train_start": "2026-07-13",
+  "rl_train_start": "2026-05-18",
   "rl_train_end": "2026-09-06",
   "rl_n_envs": 4,
   "rl_learning_rate": 0.0003,

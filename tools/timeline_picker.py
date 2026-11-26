@@ -22,8 +22,9 @@ def _to_date(v):
 
 
 class TimelineRangePicker(ttk.Frame):
-    def __init__(self, parent, start=None, end=None, eval_date=None):
+    def __init__(self, parent, start=None, end=None, eval_date=None, weeks=WEEK_CHOICES, default_weeks=8):
         super().__init__(parent)
+        self.week_choices = tuple(weeks)
         self.eval_date = _to_date(eval_date)
         s, e = _to_date(start), _to_date(end)
         ref = s or self.eval_date or dt.date.today()
@@ -33,13 +34,14 @@ class TimelineRangePicker(ttk.Frame):
 
         if s and e and s <= e and s.year == e.year == self.year:
             self.s, self.e = (s - self.base).days, (e - self.base).days
-        else:   # 기본: 평가 날짜 바로 전까지 8주
+        else:   # 기본: 평가 날짜 바로 전까지 default_weeks주
+            n = default_weeks * 7
             last = (self.eval_date - dt.timedelta(days=1)) if self.eval_date else ref
-            self.e = max(55, min(self.total - 1, (last - self.base).days))
-            self.s = self.e - 55
+            self.e = max(n - 1, min(self.total - 1, (last - self.base).days))
+            self.s = self.e - n + 1
         length = self.e - self.s + 1
-        self.fixed_var = tk.BooleanVar(value=length in [w * 7 for w in WEEK_CHOICES])
-        self.weeks_var = tk.IntVar(value=length // 7 if self.fixed_var.get() else 8)
+        self.fixed_var = tk.BooleanVar(value=length in [w * 7 for w in self.week_choices])
+        self.weeks_var = tk.IntVar(value=length // 7 if self.fixed_var.get() else default_weeks)
         self.start_text = tk.StringVar()
         self.end_text = tk.StringVar()
         self.width = 640
@@ -59,7 +61,7 @@ class TimelineRangePicker(ttk.Frame):
         top.pack(fill="x", pady=2)
         ttk.Checkbutton(top, text="고정 길이", variable=self.fixed_var, command=self._on_mode).pack(side="left")
         self.week_btns = []
-        for w in WEEK_CHOICES:
+        for w in self.week_choices:
             rb = ttk.Radiobutton(top, text=f"{w}주 ({w * 7}일)", value=w, variable=self.weeks_var,
                                  command=self._on_weeks)
             rb.pack(side="left", padx=6)
