@@ -21,6 +21,7 @@ BACKUPS = os.path.join(ROOT, "saved_models_backups")
 RL_DIR = os.path.join(ROOT, "module4_dispatch")
 RL_FILES = ("rl_reposition_model.zip", "rl_reposition_model_vecnorm.pkl")
 META = "model_meta.json"
+SNAPSHOT_META = "snapshot_meta.json"
 CURRENT = "current"   # list_sets()에서 지금 쓰는 세트(saved_models)를 가리키는 id
 
 # 학습 설정 중 세트 설명에 남길 값
@@ -34,6 +35,33 @@ def _read_json(path):
             return json.load(f)
     except (OSError, ValueError):
         return {}
+
+
+def _load_meta(dir_path):
+    """model_meta.json 또는 KJS snapshot_meta.json을 읽고 표준 형식으로 호환 변환."""
+    meta_path = os.path.join(dir_path, META)
+    snap_path = os.path.join(dir_path, SNAPSHOT_META)
+    meta = {}
+    if os.path.exists(meta_path):
+        meta = _read_json(meta_path)
+    elif os.path.exists(snap_path):
+        meta = _read_json(snap_path)
+
+    base_name = os.path.basename(dir_path)
+    # jwy 형식(model_meta.json)은 label을 그대로 쓴다 — 이름을 지운 백업은 '이름 없는 백업'으로 남아야 한다
+    if os.path.exists(meta_path):
+        return meta
+    # KJS snapshot_meta 호환 매핑 (스냅샷은 폴더 이름이 곧 세트 이름)
+    if meta:
+        if not meta.get("label"):
+            meta["label"] = base_name if base_name != "saved_models" else meta.get("folder_name", "")
+        if not meta.get("trained_at") and meta.get("created_at"):
+            meta["trained_at"] = meta.get("created_at")
+        if not meta.get("label") and meta.get("description"):
+            meta["label"] = meta.get("description")
+    elif base_name != "saved_models":
+        meta = {"label": base_name}
+    return meta
 
 
 def _write_json(path, data):
@@ -99,19 +127,36 @@ def _files(set_dir, is_current):
         "demand_v2": os.path.join(set_dir, "demand_v2.joblib"),
         "category": os.path.join(set_dir, "category_demand_models.pkl"),
         "rl": os.path.join(rl_dir, RL_FILES[0]),
+        "rl_vecnorm": os.path.join(rl_dir, RL_FILES[1]),
     }
 
 
 def list_sets(limit=30):
-    """[{id, dir, label, meta, files, title}] 지금 세트가 맨 앞, 그다음 이름 붙은 세트, 그다음 최근 백업."""
-    out = [{"id": CURRENT, "dir": SAVED, "meta": _read_json(os.path.join(SAVED, META)),
+    """[{id, dir, label, meta, files, title}] 지금 세트가 맨 앞, 그다음 이름 붙은 세트(KJS 스냅샷 포함), 그다음 최근 백업."""
+    out = [{"id": CURRENT, "dir": SAVED, "meta": _load_meta(SAVED),
             "files": _files(SAVED, True)}]
+    seen_ids = {CURRENT}
+
+    # 1. saved_models_backups 탐색
     if os.path.isdir(BACKUPS):
         for name in sorted(os.listdir(BACKUPS), reverse=True):
             d = os.path.join(BACKUPS, name)
             if os.path.isdir(d):
-                out.append({"id": name, "dir": d, "meta": _read_json(os.path.join(d, META)),
+                seen_ids.add(name)
+                out.append({"id": name, "dir": d, "meta": _load_meta(d),
                             "files": _files(d, False)})
+
+    # 2. saved_models/ 내의 스냅샷 서브폴더도 자동 탐색 (KJS 구조 지원)
+    if os.path.isdir(SAVED):
+        for name in sorted(os.listdir(SAVED), reverse=True):
+            d = os.path.join(SAVED, name)
+            if os.path.isdir(d) and name not in seen_ids:
+                meta = _load_meta(d)
+                if meta or os.path.exists(os.path.join(d, "rl_reposition_model.zip")) or os.path.exists(os.path.join(d, "category_demand_models.pkl")):
+                    seen_ids.add(name)
+                    out.append({"id": name, "dir": d, "meta": meta,
+                                "files": _files(d, False)})
+
     cur, rest = out[0], out[1:]
     named = [s for s in rest if s["meta"].get("label")]
     unnamed = [s for s in rest if not s["meta"].get("label")]
@@ -124,19 +169,26 @@ def list_sets(limit=30):
 
 def describe(meta):
     """'택시 61 · gravityVer · RL 07/13~09/06' 같은 한 줄 설명. 메모가 없으면 빈 문자열."""
-    if not meta or not meta.get("trained_at"):
+    if not meta:
         return ""
+    t_str = meta.get("trained_at") or meta.get("created_at") or meta.get("backed_up_at")
     parts = []
     if meta.get("num_taxis") is not None:
         parts.append(f"택시 {meta['num_taxis']}")
     if meta.get("rl_reward_mode"):
-        parts.append(meta["rl_reward_mode"])
+        parts.append(str(meta['rl_reward_mode']))
+    if meta.get("demand_source"):
+        scale = meta.get("real_demand_scale", 1.0)
+        parts.append(f"수요 {meta['demand_source']}({scale})")
     s, e = meta.get("rl_train_start"), meta.get("rl_train_end")
     if s and e:
         parts.append(f"RL {str(s)[5:].replace('-', '/')}~{str(e)[5:].replace('-', '/')}")
     if meta.get("rl_only"):
         parts.append("RL만 재학습")
-    parts.append(f"학습 {str(meta['trained_at'])[5:16]}")
+    if t_str:
+        # '2026-11-08 00:58:04' -> '11/08'
+        dt_part = str(t_str)[5:16].replace('-', '/')
+        parts.append(f"학습 {dt_part}")
     return " · ".join(parts)
 
 
@@ -149,7 +201,8 @@ def title(s):
         head = f"★ {s['label']}"
     else:
         head = f"백업 {s['id']}"
-    missing = [k for k, p in s["files"].items() if not os.path.exists(p)]
+    required_keys = ("category", "rl")
+    missing = [k for k in required_keys if not os.path.exists(s["files"].get(k, ""))]
     tail = f" — {desc}" if desc else " — 학습 조건 메모 없음"
     if missing:
         tail += f" (없음: {', '.join(missing)})"

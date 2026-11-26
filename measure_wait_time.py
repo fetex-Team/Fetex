@@ -336,6 +336,27 @@ def _save_demand_logs(tracker, log_recorder, meta, spawn_manager, run_date):
               f"(train.py가 읽는 실제 로그입니다).")
 
 
+def summarize(rows, max_penalty_sec=500):
+    """승객별 기록 목록(rows)에서 대기시간 및 타임아웃 통계를 요약한다 (단위 테스트 및 외부 분석용)."""
+    n_total = len(rows)
+    if n_total == 0:
+        return {"n_total_passengers": 0, "timeout_rate": 0.0, "avg_wait_sec": None}
+    timeouts = sum(1 for r in rows if r.get("status") == "timeout")
+    waits = [
+        r["pickup_sec"] - r["depart_sec"]
+        for r in rows
+        if r.get("status") == "picked_up"
+        and r.get("pickup_sec") is not None
+        and r.get("depart_sec") is not None
+    ]
+    avg_wait = (sum(waits) / len(waits)) if waits else None
+    return {
+        "n_total_passengers": n_total,
+        "timeout_rate": timeouts / n_total,
+        "avg_wait_sec": avg_wait,
+    }
+
+
 def _summarize(tracker, pax_manager, meta, spawn_manager, run_date, now, sim_end_seconds,
                strategy, algorithm, dispatcher, away_model, forecast_repositioner,
                signal_ctrl=None, speed_ctrl=None, fee_board=None):

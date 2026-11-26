@@ -351,7 +351,10 @@ def main(argv=None):
 
     # 자식 프로세스 공통 환경: 설정 파일·한글 출력·실행 재현성(reproducibility.py)
     if args.config:
-        os.environ["MOBILITY_CONFIG"] = os.path.abspath(args.config)
+        cfg_abs = os.path.abspath(args.config)
+        if not os.path.exists(cfg_abs):
+            raise FileNotFoundError(f"--config로 지정한 설정 파일을 찾을 수 없습니다: {cfg_abs}")
+        os.environ["MOBILITY_CONFIG"] = cfg_abs
     os.environ.setdefault("PYTHONIOENCODING", "utf-8")
     os.environ.setdefault("PYTHONUTF8", "1")
     os.environ.setdefault("PYTHONHASHSEED", "0")

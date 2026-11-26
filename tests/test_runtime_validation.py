@@ -18,7 +18,7 @@ from module1_simulation.passenger_manager import PassengerTimeoutManager
 summarize = getattr(pytest.importorskip("measure_wait_time"), "summarize", None)
 if summarize is None:
     pytest.skip("measure_wait_time.summarize 미병합 (myth-2 런타임 검증 코드 필요)", allow_module_level=True)
-from runtime_validation import schedule_status
+schedule_status = pytest.importorskip("runtime_validation").schedule_status  # myth-2 런타임 검증 모듈 (미병합이면 건너뜀)
 
 ZONES = dict(school=['s'], company=['c'], restaurant=['r'], residential=['h'], bus_stop=['b'])
 

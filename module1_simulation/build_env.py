@@ -228,11 +228,11 @@ def create_network_and_routes():
 
     proc_tag = ET.SubElement(cfg, "processing")
     _dispatch_algo = str(CFG.get("taxi_dispatch_algorithm", "greedy"))
-    if _dispatch_algo not in ("greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"):
-        raise ValueError("배차 알고리즘은 greedy/routeExtension/hungarian/custom_greedy/custom_routeExtension 중에서 선택하세요.")
+    if not ("hungarian" in _dispatch_algo or _dispatch_algo in ("greedy", "routeExtension", "custom_greedy", "custom_routeExtension")):
+        raise ValueError(f"배차 알고리즘은 greedy/routeExtension/hungarian(계열)/custom_greedy/custom_routeExtension 중에서 선택하세요. (현재: {_dispatch_algo})")
     # 택시 전략(patrol/prepositioned/rl_prepositioned)과 배차 알고리즘은 서로 독립 -> 어떤 조합이든 가능.
-    # SUMO 쪽 값은 알고리즘만으로 결정한다 (hungarian만 파이썬이 직접 배정하므로 "traci").
-    _sumo_dispatch_value = "traci" if _dispatch_algo in ("hungarian", "custom_greedy", "custom_routeExtension") else _dispatch_algo
+    # SUMO 쪽 값은 알고리즘만으로 결정한다 (hungarian 계열 및 커스텀은 파이썬이 직접 배정하므로 "traci").
+    _sumo_dispatch_value = "traci" if ("hungarian" in _dispatch_algo or _dispatch_algo in ("custom_greedy", "custom_routeExtension")) else _dispatch_algo
     ET.SubElement(proc_tag, "device.taxi.dispatch-algorithm", value=_sumo_dispatch_value)
     ET.SubElement(proc_tag, "device.taxi.idle-algorithm", value=str(CFG.get("taxi_idle_algorithm", "randomCircling")))
     ET.SubElement(proc_tag, "ignore-route-errors", value="true")

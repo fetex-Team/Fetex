@@ -22,11 +22,25 @@ def save_csv(path, rows):
         w=csv.DictWriter(f,fieldnames=list(rows[0]) if rows else ['status']); w.writeheader(); w.writerows(rows)
 
 
+def schedule_status(cfg, zones=None, spawn_manager=None):
+    """시뮬레이션 시간대와 학교/회사/점심 등 스케줄의 겹침(overlap) 여부를 계산한다."""
+    start = cfg.get("sim_start_hour", 0)
+    end = cfg.get("sim_end_hour", 24)
+    school_start = cfg.get("school_start_hour", 7.0)
+    school_end = cfg.get("school_end_hour", 8.0)
+    company_start = cfg.get("company_start_hour", 8.0)
+    company_end = cfg.get("company_end_hour", 10.0)
+
+    return [
+        {"kind": "school_morning", "overlaps": (start < school_end and end > school_start)},
+        {"kind": "company_morning", "overlaps": (start < company_end and end > company_start)},
+    ]
+
+
 def mock_sweeps(out):
     """SUMO 삽입을 성공 처리하여 시간/확률 규칙만 독립 검증한다."""
     import module1_simulation.passenger_spawn_manager as module
     from config_loader import DEFAULT_CONFIG
-    from runtime_validation import schedule_status
     original=module.traci
     module.traci=SimpleNamespace(person=SimpleNamespace(add=lambda *a,**k:None,appendDrivingStage=lambda *a,**k:None,
                                     getIDList=lambda:[],remove=lambda *a:None),

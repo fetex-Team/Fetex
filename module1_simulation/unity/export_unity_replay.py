@@ -292,7 +292,7 @@ def main():
     parser.add_argument('--strategies', nargs='+', default=['patrol', 'prepositioned', 'rl_prepositioned'],
                         choices=['patrol', 'prepositioned', 'rl_prepositioned', 'forecast', 'surge'],
                         help='실행할 전략 목록 (기본: patrol prepositioned rl_prepositioned)')
-    parser.add_argument('--algorithm', type=str, default='hungarian', help='배차 알고리즘 (기본: hungarian)')
+    parser.add_argument('--algorithm', type=str, default='hungarian_d04', help='배차 알고리즘 (기본: hungarian_d04, KJS 실험 1위)')
     parser.add_argument('--only', choices=['patrol', 'prepositioned', 'rl_prepositioned', 'forecast', 'surge'],
                         help='(하위호환) 단일 전략만 실행')
     parser.add_argument('--no-gzip', action='store_true',

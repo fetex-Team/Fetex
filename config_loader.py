@@ -16,13 +16,24 @@ DEFAULT_PRESET_PATH = os.path.join(DEFAULT_PRESET_DIR, "기본.json")
 
 def read_user_config(path=None) -> dict:
     """설정 파일 원본(dict)을 읽는다. path 생략 시 지금 실행이 쓰는 설정(MOBILITY_CONFIG 또는 config.json).
-    config.json이 아직 없으면(처음 받은 상태) 팀 기본 프리셋(presets/default/기본.json)을 쓴다."""
-    path = path or os.environ.get("MOBILITY_CONFIG") or USER_CONFIG_PATH
-    if not os.path.exists(path) and os.path.abspath(path) == os.path.abspath(USER_CONFIG_PATH):
-        path = DEFAULT_PRESET_PATH
-    if not os.path.exists(path):
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
+    config.json이 아직 없으면(처음 받은 상태) 팀 기본 프리셋(presets/default/기본.json)을 쓴다.
+    명시적 경로 또는 MOBILITY_CONFIG가 지정되었는데 파일이 없으면 FileNotFoundError를 발생시킨다."""
+    _explicit_path = path is not None
+    _env_override = os.environ.get("MOBILITY_CONFIG")
+    target_path = path or _env_override or USER_CONFIG_PATH
+
+    if not os.path.exists(target_path):
+        if _explicit_path or _env_override:
+            raise FileNotFoundError(
+                f"지정한 설정 파일을 찾을 수 없습니다: {os.path.abspath(target_path)}\n"
+                f"{'(read_user_config 인자로 지정됨)' if _explicit_path else '(MOBILITY_CONFIG 환경변수로 지정됨)'}"
+            )
+        if os.path.abspath(target_path) == os.path.abspath(USER_CONFIG_PATH) and os.path.exists(DEFAULT_PRESET_PATH):
+            target_path = DEFAULT_PRESET_PATH
+        else:
+            return {}
+
+    with open(target_path, "r", encoding="utf-8") as f:
         return json.load(f)
 
 def _load_default_config() -> dict:
@@ -47,19 +58,36 @@ REGION_PRESETS = {
 }
 
 def load_config(config_path=None):
+    # config_path가 명시적으로 주어졌는지(인자로 직접 전달) 아니면 환경변수/기본값으로 결정됐는지 구분
+    _explicit_path = config_path is not None
     path = config_path or CONFIG_PATH
+    _env_override = os.environ.get("MOBILITY_CONFIG")
+
     user_cfg = {}
     if os.path.exists(path):
         try:
-            with open(path, "r", encoding="utf-8") as f: user_cfg = json.load(f)
-            print(f"[안내] {os.path.basename(path)}에서 설정값을 불러왔습니다.")
+            with open(path, "r", encoding="utf-8") as f:
+                user_cfg = json.load(f)
+            if _explicit_path:
+                print(f"[안내] 지정 설정 파일 사용: {os.path.abspath(path)}")
+            elif _env_override:
+                print(f"[안내] MOBILITY_CONFIG 환경변수 설정 파일 사용: {os.path.abspath(path)}")
+            else:
+                print(f"[안내] 기본 설정 파일 사용: {os.path.abspath(path)}")
         except (json.JSONDecodeError, OSError) as e:
             print(f"[경고] {os.path.basename(path)}을 읽지 못해 기본값을 사용합니다: {e}")
+    elif _explicit_path or _env_override:
+        # 명시적으로 경로를 지정했거나 환경변수로 지정했는데 파일이 없는 경우 → 명확한 오류
+        raise FileNotFoundError(
+            f"지정한 설정 파일을 찾을 수 없습니다: {os.path.abspath(path)}\n"
+            f"{'(config_path 인자로 지정됨)' if _explicit_path else '(MOBILITY_CONFIG 환경변수로 지정됨)'}\n"
+            f"파일 경로를 확인하거나 환경변수를 제거한 뒤 다시 실행하세요."
+        )
     elif os.path.abspath(path) == os.path.abspath(USER_CONFIG_PATH) and os.path.exists(DEFAULT_PRESET_PATH):
         user_cfg = read_user_config(DEFAULT_PRESET_PATH)
-        print("[안내] config.json이 없어 팀 기본 프리셋(presets/default/기본.json)을 사용합니다.")
+        print(f"[안내] config.json이 없어 팀 기본 프리셋을 사용합니다: {os.path.abspath(DEFAULT_PRESET_PATH)}")
     else:
-        print("[안내] 설정 파일이 없어 기본값을 사용합니다.")
+        print("[안내] 설정 파일이 없어 코드 내 기본값을 사용합니다.")
     merged = {**DEFAULT_CONFIG, **user_cfg}
     _apply_region_coords(merged, merged.get("region", "홍대입구"))
     _apply_live_weather(merged, merged.get("region", "홍대입구"))
