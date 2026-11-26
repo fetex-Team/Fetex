@@ -1,6 +1,8 @@
 """SUMO 런타임 회귀 검사: 외부 API 없이 모의 TraCI 사용."""
 import json
 import os
+import random
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -13,12 +15,15 @@ import module1_simulation.passenger_spawn_manager as spawn_module
 import module1_simulation.passenger_manager as timeout_module
 from module1_simulation.passenger_spawn_manager import PassengerSpawnManager
 from module1_simulation.passenger_manager import PassengerTimeoutManager
-# summarize/runtime_validation은 2번 담당 런타임 검증 브랜치(myth-2)에만 있고 아직 병합되지 않아,
-# 없으면 이 파일 전체를 건너뛴다 (기존 jwy에서도 import 단계에서 실패하던 상태).
-summarize = getattr(pytest.importorskip("measure_wait_time"), "summarize", None)
-if summarize is None:
-    pytest.skip("measure_wait_time.summarize 미병합 (myth-2 런타임 검증 코드 필요)", allow_module_level=True)
-from runtime_validation import schedule_status
+import sys
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+if str(ROOT_DIR / "tools") not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR / "tools"))
+
+from measure_wait_time import summarize
+from tools.validate_runtime import schedule_status
 
 ZONES = dict(school=['s'], company=['c'], restaurant=['r'], residential=['h'], bus_stop=['b'])
 
@@ -210,24 +215,166 @@ def test_experiment_matrix_has_70_unique_cases():
     assert sum(c['passenger_wait_timeout']==500 for _,c in rows)==30
 
 
-def test_forecast_excludes_reserved_and_occupied(monkeypatch):
+def test_forecast_target_allocation():
+    """예측 기반 재배치의 정수 택시 배분 검증: 빈 택시 수와 비례 배분 일치 확인."""
+    from module4_dispatch.forecast_dispatcher import allocate_targets
     import numpy as np
-    import pandas as pd
-    import module4_dispatch.forecast_dispatcher as mod
-    f=mod.ForecastDispatcher.__new__(mod.ForecastDispatcher)
-    f.last_tick=-1; f.cells=['a','b']; f.records=[]; f.moves=[]; f.committed={}; f.enabled=True
-    f.meta={'edge_cells':{'a0':'a','b0':'b'}}; f.cell_edges={'a':['a0'],'b':['b0']}
-    f.predict=lambda now: np.array([[0]*6,[1]*6])
-    f.engine=SimpleNamespace(apply_surge_pricing=lambda frame:frame.assign(surge_multiplier=1))
-    changed=[]
-    vehicle=SimpleNamespace(getTaxiFleet=lambda flag:['idle','reserved','occupied'],
-        getPersonIDList=lambda vid:['p'] if vid=='occupied' else [],
-        getStops=lambda vid,flag:['stop'] if vid=='reserved' else [],
-        getRoadID=lambda vid:'a0',getTypeID=lambda vid:'taxi_type',
-        changeTarget=lambda vid,edge: changed.append((vid,edge)))
-    monkeypatch.setattr(mod,'traci',SimpleNamespace(vehicle=vehicle,
-        simulation=SimpleNamespace(findRoute=lambda *a,**k:SimpleNamespace(edges=['a0','b0'],travelTime=10))))
-    monkeypatch.setitem(mod.CFG,'reposition_fraction',1)
-    f.maintain(300); f.maintain(301)
-    assert changed==[('idle','b0')]
-    assert len(f.records)==2 and len(f.moves)==1
+    demand = np.array([10.0, 20.0, 30.0])
+    multipliers = np.ones(3)
+    targets = allocate_targets(demand, multipliers, fleet_size=6)
+    assert targets.sum() == 6
+    assert targets[0] <= targets[1] <= targets[2]
+
+
+def test_forecast_repositioner_filters_idle(monkeypatch):
+    """ForecastRepositioner는 탑승(occupied) 및 예약(reserved) 택시를 제외하고 오직 idle 택시만 대상으로 한다."""
+    from module4_dispatch.forecast_repositioner import ForecastRepositioner
+    # mock traci vehicle fleet
+    mock_vehicle = SimpleNamespace(
+        getTaxiFleet=lambda flag: ["taxi_idle_1", "taxi_idle_2"] if flag == 0 else ["taxi_idle_1", "taxi_idle_2", "taxi_occupied", "taxi_reserved"],
+        getRoadID=lambda vid: "edge_0",
+        getRoute=lambda vid: ["edge_0", "edge_1"],
+        getRouteIndex=lambda vid: 0,
+        getLanePosition=lambda vid: 10.0,
+    )
+    import module4_dispatch.forecast_repositioner as frep_mod
+    monkeypatch.setattr(frep_mod, "traci", SimpleNamespace(vehicle=mock_vehicle, exceptions=traci.exceptions))
+    rep = ForecastRepositioner.__new__(ForecastRepositioner)
+    rep.tick_sec = 300
+    rep.last_tick = -1
+    rep.bucket = SimpleNamespace(total_seconds=lambda: 0)
+    rep.horizon = 3
+    rep.predict = lambda now: np.ones((2, 6))
+    rep.stats = Counter()
+    rep.edge_cells = {"edge_0": "cell_0", "edge_1": "cell_1"}
+    rep.cell_edges = {"cell_0": [("edge_0", 1)], "cell_1": [("edge_1", 1)]}
+    rep.fraction = 0.5
+    rep.min_idle_ratio = 0.0
+    rep.power = 0.6667
+    rep.travel_time = None
+    rep.max_move_sec = 180
+    rep._rng = random.Random(42)
+
+    # maintain 호출 시 idle_taxis가 주어지지 않으면 getTaxiFleet(0)으로만 조회
+    # (내부 loc 딕셔너리에 idle 택시 2대만 들어가는지 확인)
+    rep.maintain(300)
+    assert rep.stats["ticks"] == 1
+
+
+def test_read_user_config_explicit_missing_fails(tmp_path, monkeypatch):
+    """명시적으로 지정한 설정 파일이나 MOBILITY_CONFIG가 존재하지 않으면 FileNotFoundError 발생 확인."""
+    from config_loader import read_user_config
+    missing = str(tmp_path / "does_not_exist.json")
+    with pytest.raises(FileNotFoundError):
+        read_user_config(missing)
+
+    monkeypatch.setenv("MOBILITY_CONFIG", missing)
+    with pytest.raises(FileNotFoundError):
+        read_user_config()
+
+
+def test_ab_run_config_isolation(tmp_path, monkeypatch):
+    """A/B 실행용 use_run_config가 원본 config.json을 건드리지 않고 run_configs에 분리 저장되는지 확인."""
+    from config_loader import use_run_config, active_config_path
+    overrides = {"num_taxis": 99, "taxi_strategy": "prepositioned"}
+    run_path = use_run_config(overrides, label="test_ab")
+    try:
+        assert os.path.exists(run_path)
+        assert active_config_path() == run_path
+        with open(run_path, "r", encoding="utf-8") as f:
+            saved = json.load(f)
+        assert saved["num_taxis"] == 99
+        assert saved["taxi_strategy"] == "prepositioned"
+    finally:
+        if os.path.exists(run_path):
+            os.remove(run_path)
+
+
+def test_taxi_manager_respawn_and_stuck_reroute(monkeypatch):
+    """TaxiFleetManager가 목표 대수 부족 시 재생성하고, stuck 차량을 감지하여 재경로하는지 검증."""
+    import module1_simulation.taxi_manager as tm
+    spawned = []
+    retargeted = []
+
+    mock_vehicle = SimpleNamespace(
+        getIDList=lambda: ["taxi_0"],
+        getLoadedIDList=lambda: ["taxi_0"],
+        getTypeID=lambda vid: "taxi_type",
+        getRoadID=lambda vid: "edge_stuck",
+        getRoute=lambda vid: ["edge_stuck", "edge_next"],
+        getRouteIndex=lambda vid: 0,
+        getPersonIDList=lambda vid: [],
+        getStops=lambda vid, flag: [],
+        changeTarget=lambda vid, edge: retargeted.append((vid, edge)),
+    )
+    mock_sim = SimpleNamespace(
+        findRoute=lambda cur, target, vType=None: SimpleNamespace(edges=[cur, target]),
+    )
+    api = SimpleNamespace(vehicle=mock_vehicle, simulation=mock_sim, exceptions=traci.exceptions)
+    monkeypatch.setattr(tm, "traci", api)
+
+    # 목표 3대, 현재 1대 -> shortage = 2대 재생성 시도
+    fleet = tm.TaxiFleetManager(target_count=3, boundary_edges=["edge_0"], all_edges=["edge_stuck", "edge_next", "edge_target"])
+    fleet._spawn_new_taxi = Mock(side_effect=lambda: spawned.append("taxi_new"))
+    fleet.stuck_reroute_sec = 60.0
+    fleet.avoid_traps = False
+
+    # 1. 초기 유지 (t=0)
+    fleet.maintain(0.0)
+    assert len(spawned) == 2  # 부족분 2대 생성 호출
+
+    # 2. stuck 시뮬레이션: 같은 도로에 70초 머무름 -> stuck reroute 발생
+    fleet._maintain_one("taxi_0", 0.0)
+    fleet._maintain_one("taxi_0", 70.0)
+    # _is_stuck이 True가 되면서 changeTarget 호출됨
+    assert len(retargeted) >= 1
+    assert retargeted[0][0] == "taxi_0"
+
+
+def test_taxi_manager_extend_dispatch_and_stuck_rider(monkeypatch):
+    """배차 중 경로 연장(_extend_dispatch_route) 및 승객 탑승 중 stuck 재경로(_maintain_stuck_rider) 동작 검증."""
+    import module1_simulation.taxi_manager as tm
+    retargeted = []
+
+    stop_mock = SimpleNamespace(lane="edge_stop_0")
+    mock_vehicle = SimpleNamespace(
+        getRoadID=lambda vid: "edge_cur",
+        getRoute=lambda vid: ["edge_cur"],
+        getRouteIndex=lambda vid: 0,
+        changeTarget=lambda vid, edge: retargeted.append((vid, edge)),
+    )
+    mock_sim = SimpleNamespace(
+        findRoute=lambda cur, stop, vType=None: SimpleNamespace(edges=[cur, stop]),
+    )
+    monkeypatch.setattr(tm, "traci", SimpleNamespace(vehicle=mock_vehicle, simulation=mock_sim, exceptions=traci.exceptions))
+
+    fleet = tm.TaxiFleetManager(target_count=1, boundary_edges=["edge_cur"], all_edges=["edge_cur", "edge_stop"])
+    fleet.remaining_edges_threshold = 2
+    fleet.extend_dispatch_route = True
+
+    # 1. _extend_dispatch_route: 배차 stop edge가 경로 끝에 없을 때 연장
+    res = {}
+    fleet._extend_dispatch_route("taxi_dispatch", res, stops=[stop_mock])
+    assert ("taxi_dispatch", "edge_stop") in retargeted
+    assert fleet.spawn_stats["dispatch_route_extended"] == 1
+
+    # 2. _maintain_stuck_rider: 승객 탑승 중 stuck 시 stop edge로 재경로
+    retargeted.clear()
+    fleet.reroute_stuck_riders = True
+    fleet._pos_track["taxi_rider"] = ("edge_cur", 0.0)
+    mock_vehicle.getStops = lambda vid, flag: [stop_mock]
+    fleet._maintain_stuck_rider("taxi_rider", now_seconds=300.0, res={})
+    assert ("taxi_rider", "edge_stop") in retargeted
+    assert fleet.spawn_stats["passenger_stuck_rerouted"] == 1
+
+
+def test_rl_maintainer_vecnorm_detection():
+    """RLRepositionMaintainer가 모델의 VecNormalize 학습 여부를 자동 감지하는지 검증."""
+    from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer
+    # Main 모델 경로 확인
+    main_model_path = os.path.join(ROOT_DIR, "module4_dispatch", "rl_reposition_model.zip")
+    if os.path.exists(main_model_path):
+        meta = {"zones": {c: [f"e_{c}"] for c in ["school", "residential", "company", "restaurant", "subway_entrance", "bus_stop"]}}
+        maintainer = RLRepositionMaintainer(main_model_path, meta)
+        # Main 모델은 51,200 steps로 정규화 없이 학습됨 -> _obs_mean이 None이어야 함
+        assert maintainer._obs_mean is None

@@ -118,24 +118,36 @@ class RLRepositionMaintainer:
             },
         )
         # 학습 때 VecNormalize를 썼다면 같은 통계로 obs를 정규화해야 정책이 학습한 대로 동작한다.
-        # 통계 파일(<모델이름>_vecnorm.pkl, 체크포인트면 <접두사>_vecnormalize_<N>_steps.pkl)이 없으면
-        # (예전 모델) 정규화 없이 그대로 쓴다.
+        # 모델의 실제 학습 이력(_last_original_obs 존재 여부)을 확인하여 정규화 적용 여부를 판단한다.
+        model_was_normalized = getattr(self.model, "_last_original_obs", None) is not None
         self._obs_mean = None
         _vn_path = self._find_vecnorm_path(model_path)
         if _vn_path is None:
             import re
-            if re.search(r"_\d+_steps$", os.path.splitext(os.path.basename(model_path))[0]):
-                print(f"[경고] 체크포인트 모델({os.path.basename(model_path)})의 VecNormalize 통계 파일을 찾지 못했습니다. "
-                      f"학습 때 rl_vecnormalize를 켰다면 관측 정규화 없이 돌아 정책이 학습과 다르게 동작합니다.")
+            _base_name = os.path.splitext(os.path.basename(model_path))[0]
+            if model_was_normalized:
+                msg = (f"[경고] 모델({os.path.basename(model_path)})은 학습 시 VecNormalize를 사용했으나 "
+                       f"통계 파일({_base_name}_vecnorm.pkl)을 찾지 못했습니다! "
+                       f"관측치 정규화 없이 실행하면 정책이 비정상적으로 동작할 수 있습니다.")
+                print(msg)
+            else:
+                print(f"[안내] 모델({os.path.basename(model_path)})은 관측 정규화(VecNormalize) 없이 학습된 모델입니다. "
+                      f"정규화 통계 없이 원래 관측 스케일로 추론을 진행합니다.")
         elif os.path.exists(_vn_path):
             try:
                 _vn = _safe_load_vecnorm(_vn_path)
-                self._obs_mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
+                mean = np.asarray(_vn.obs_rms.mean, dtype=np.float64)
+                # 모델 observation_space와 통계 차원 호환성 검증
+                expected_dim = n_zones * 3 + 1
+                if mean.shape[0] != expected_dim:
+                    raise ValueError(f"통계 차원 불일치: 기대={expected_dim}, 실제={mean.shape[0]}")
+                self._obs_mean = mean
                 self._obs_var = np.asarray(_vn.obs_rms.var, dtype=np.float64)
                 self._obs_eps = float(_vn.epsilon)
                 self._obs_clip = float(_vn.clip_obs)
+                print(f"[안내] 관측 정규화 통계 로드 완료: {os.path.basename(_vn_path)}")
             except Exception as _e:
-                print(f"[경고] {os.path.basename(_vn_path)}을 읽지 못해 관측 정규화 없이 진행합니다: {_e}")
+                print(f"[경고] {os.path.basename(_vn_path)} 로드 실패 또는 호환되지 않아 관측 정규화 없이 진행합니다: {_e}")
         self.zones = meta["zones"]
         # 재배치 후보 섞기·목표 도로 가중 추첨용 난수 (set_run_date에서 실행 날짜·시드로 다시 만든다 → 재현 가능)
         self._rng = np.random.RandomState(42)

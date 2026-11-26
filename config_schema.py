@@ -13,10 +13,51 @@ STRATEGIES = ["patrol", "prepositioned", "rl_prepositioned", "forecast"]
 
 FACTOR_OPTIONS = {
     "taxi_strategy": ("택시 전략 (체크)", STRATEGIES),
-    "taxi_dispatch_algorithm": ("배차 알고리즘 (체크)", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
+    "taxi_dispatch_algorithm": ("배차 알고리즘 (체크)", [
+        "greedy", "routeExtension", "hungarian", "adaptive_hungarian", "adaptive_hungarian2", "adaptive_hungarian3",
+        "hungarian_d01", "hungarian_d02", "hungarian_d03", "hungarian_d04", "hungarian_d05",
+        "hungarian_d06", "hungarian_d07", "hungarian_d08", "hungarian_d09", "hungarian_d10",
+        "hungarian_d15", "hungarian_d20",
+        "hungarian_m01", "hungarian_m02", "hungarian_m03", "hungarian_m04", "hungarian_m05",
+        "hungarian_m06", "hungarian_m07", "hungarian_m08", "hungarian_m09", "hungarian_m10",
+        "custom_greedy", "custom_routeExtension"
+    ]),
     "holiday_mode": ("공휴일 (체크)", ["weekday", "holiday"]),
 }
-FACTOR_VALUE_LABELS = {"weekday": "평일", "holiday": "공휴일"}
+FACTOR_VALUE_LABELS = {
+    "weekday": "평일",
+    "holiday": "공휴일",
+    "greedy": "greedy (그리디)",
+    "routeExtension": "routeExtension (루트 익스텐션)",
+    "hungarian": "hungarian (순수 시간)",
+    "adaptive_hungarian": "adaptive_hungarian (1세대: 0.02~0.06)",
+    "adaptive_hungarian2": "adaptive_hungarian2 (2세대: 기본0.04→과밀0.02)",
+    "adaptive_hungarian3": "adaptive_hungarian3 (완성형: EMA+Aging)",
+    "hungarian_d01": "hungarian (거리 가중 0.01)",
+    "hungarian_d02": "hungarian (거리 가중 0.02)",
+    "hungarian_d03": "hungarian (거리 가중 0.03)",
+    "hungarian_d04": "hungarian (거리 가중 0.04)",
+    "hungarian_d05": "hungarian (거리 가중 0.05)",
+    "hungarian_d06": "hungarian (거리 가중 0.06)",
+    "hungarian_d07": "hungarian (거리 가중 0.07)",
+    "hungarian_d08": "hungarian (거리 가중 0.08)",
+    "hungarian_d09": "hungarian (거리 가중 0.09)",
+    "hungarian_d10": "hungarian (거리 가중 0.10)",
+    "hungarian_d15": "hungarian (거리 가중 0.15)",
+    "hungarian_d20": "hungarian (거리 가중 0.20)",
+    "hungarian_m01": "hungarian (거리 가중 -0.01)",
+    "hungarian_m02": "hungarian (거리 가중 -0.02)",
+    "hungarian_m03": "hungarian (거리 가중 -0.03)",
+    "hungarian_m04": "hungarian (거리 가중 -0.04)",
+    "hungarian_m05": "hungarian (거리 가중 -0.05)",
+    "hungarian_m06": "hungarian (거리 가중 -0.06)",
+    "hungarian_m07": "hungarian (거리 가중 -0.07)",
+    "hungarian_m08": "hungarian (거리 가중 -0.08)",
+    "hungarian_m09": "hungarian (거리 가중 -0.09)",
+    "hungarian_m10": "hungarian (거리 가중 -0.10)",
+    "custom_greedy": "custom_greedy",
+    "custom_routeExtension": "custom_routeExtension",
+}
 AB_WARN_COMBOS = 5  # 조합이 이 개수 이상이면 실행 전에 경고
 
 NUMERIC_GROUPS = {
@@ -102,7 +143,15 @@ NUMERIC_GROUPS = {
         ("rl_rollout_steps", "RL rollout steps (batch의 배수)", 32, 4096, 0, 1),
         ("rl_n_envs", "RL 병렬 env 개수 (CPU 코어 수 이하 권장, 1=병렬 안 씀)", 1, 32, 0, 1),
         ("rl_batch_size", "RL batch size", 8, 1024, 0, 1), ("rl_seed", "RL random seed", 0, 2147483647, 0, 1),
+        ("rl_training_seed_base", "RL 학습 에피소드 시드 시작값", 0, 2147483647, 0, 1),
         ("rl_learning_rate", "RL 학습률", 0.00001, 0.01, 6, 0), ("rl_gamma", "RL 장기 보상 비율(gamma)", 0.8, 1, 3, 0),
+    ],
+    "Module 4 — 예측 재배치 (forecast)": [
+        ("forecast_tick_sec", "예측·재배치 주기(초)", 60, 1800, 0, 1),
+        ("forecast_horizon_buckets", "합산 예측 구간 수(freq 단위)", 1, 12, 0, 1),
+        ("forecast_alloc_power", "목표 배분 지수 α (n∝λ^α, 2/3권장)", 0.1, 1.5, 4, 0),
+        ("forecast_max_move_sec", "재배치 최대 이동시간(초)", 30, 1800, 0, 1),
+        ("forecast_min_idle_ratio", "재배치 중단 빈 택시 비율 하한", 0, 1, 2, 0),
     ],
     "공통/실험": [
         ("xgb_random_state", "XGB random state", 0, 2147483647, 0, 1),
@@ -125,13 +174,23 @@ BOOLS = [
     ("taxi_avoid_dead_ends", "택시: 막다른 길 진입 막기"),
     ("taxi_extend_dispatch_route", "택시: 배차 경로가 끝나 가면 승객 위치까지 연장 (실험)"),
     ("taxi_reroute_stuck_riders", "택시: 손님 태운 채 멈추면 하차 지점까지 재경로 (실험)"),
+    ("taxi_external_away", "[시나리오] 영역 밖으로 나간 택시의 복귀 지연을 반영 (external_trip_model)"),
+    ("use_historical_weather", "실측 시간별 날씨 반영 (data/external/weather_<지역>_*.csv)"),
     ("ab_keep_work_dirs", "A/B 비교: 끝난 뒤 조합별 작업 폴더 남기기(디버깅)"),
 ]
 CHOICES = [
     ("taxi_strategy", "택시 전략", STRATEGIES),
     ("rl_reward_mode", "RL 보상 방식", ["default", "gravityVer"]),
     ("rl_train_day_type", "RL 학습 날짜 종류", ["weekday", "holiday", "mixed"]),
-    ("taxi_dispatch_algorithm", "배차 알고리즘", ["greedy", "routeExtension", "hungarian", "custom_greedy", "custom_routeExtension"]),
+    ("taxi_dispatch_algorithm", "배차 알고리즘", [
+        "greedy", "routeExtension", "hungarian", "adaptive_hungarian", "adaptive_hungarian2", "adaptive_hungarian3",
+        "hungarian_d01", "hungarian_d02", "hungarian_d03", "hungarian_d04", "hungarian_d05",
+        "hungarian_d06", "hungarian_d07", "hungarian_d08", "hungarian_d09", "hungarian_d10",
+        "hungarian_d15", "hungarian_d20",
+        "hungarian_m01", "hungarian_m02", "hungarian_m03", "hungarian_m04", "hungarian_m05",
+        "hungarian_m06", "hungarian_m07", "hungarian_m08", "hungarian_m09", "hungarian_m10",
+        "custom_greedy", "custom_routeExtension"
+    ]),
     ("taxi_idle_algorithm", "빈 택시 동작 (SUMO)", ["randomCircling", "stopOnRoad", "taxiStop"]),
     ("dispatch_cost", "헝가리안 배차 비용", ["network", "euclidean"]),
     ("passenger_mode", "승객 생성 모드", ["replay", "legacy"]),
@@ -160,6 +219,8 @@ WEATHER_NUMERICS = [
     ("weather_strong_wind_taxi_bonus", "강풍일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
     ("weather_typhoon_wind_threshold_kmh", "태풍급 판정 풍속(km/h)", 0, 200, 1, 0),
     ("weather_typhoon_taxi_bonus", "태풍급일 때 택시확률 가산(음수=감소)", -1, 1, 3, 0),
+    ("weather_precip_coef_per_mm", "강수 1mm당 호출 증가율", 0.0, 0.2, 4, 0),
+    ("weather_precip_cap_mm", "강수 반영 상한(mm)", 0.0, 100.0, 1, 0),
 ]
 TEXTS = [
     ("sim_date", "시뮬레이션 기준 날짜 (YYYY-MM-DD)"),
@@ -208,11 +269,13 @@ DETAIL_SECTIONS = [
     ("도로·근거 기반 현실화", ["map_bus_lanes", "map_speed_limits", "signal_plans", "speed_profile",
                          "real_internal_source", "real_hourly_profile", "real_dow_factors", "real_spatial_weights",
                          "edge_speed_output"]),
-    ("공휴일·날씨", ["holiday_multipliers", "weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
+    ("공휴일·날씨", ["holiday_multipliers", "use_historical_weather", "weather_bonus_enabled"] + [k for k, *_ in WEATHER_NUMERICS]),
     ("택시 운행·배차", ["dispatch_cost", "taxi_idle_algorithm", "reposition_fraction", "taxi_avoid_dead_ends",
                    "taxi_remaining_edges_threshold", "taxi_target_pick_attempts", "taxi_fail_threshold",
                    "taxi_primary_prob", "dispatch_use_euclidean", "taxi_stuck_reroute_sec",
-                   "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders", "taxi_respawn_prefix"]),
+                   "taxi_extend_dispatch_route", "taxi_reroute_stuck_riders", "taxi_external_away", "taxi_respawn_prefix"]),
+    ("예측 기반 재배치 (Forecast)", ["forecast_tick_sec", "forecast_horizon_buckets", "forecast_alloc_power",
+                                 "forecast_max_move_sec", "forecast_min_idle_ratio"]),
     ("요금·인센티브", ["base_fare", "min_multiplier", "max_multiplier", "surge_coefficient", "incentive_weight",
                   "target_hotspot_ratio"]),
 ]
@@ -238,7 +301,7 @@ TRAIN_SECTIONS = [
                           "cnn_batch_size", "cnn_lr",
                           "xgb_random_state", "train_random_state"]),
     ("강화학습 (RL)", ["rl_total_timesteps", "rl_max_decisions", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
-                   "rl_seed", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed",
+                   "rl_seed", "rl_training_seed_base", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed",
                    "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets"]),
 ]
 # 학습 창 위쪽에 따로 보이는 값

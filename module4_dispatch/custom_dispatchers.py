@@ -154,7 +154,36 @@ class CustomRouteExtensionDispatcher:
 # ----------------------------------------------------------------------------
 # 팩토리 + SUMO 설정 헬퍼
 # ----------------------------------------------------------------------------
-CUSTOM_ALGOS = ("hungarian", "custom_greedy", "custom_routeExtension")
+CUSTOM_ALGOS = (
+    "hungarian",
+    "adaptive_hungarian",
+    "adaptive_hungarian2",
+    "adaptive_hungarian3",
+    "hungarian_d01",
+    "hungarian_d02",
+    "hungarian_d03",
+    "hungarian_d04",
+    "hungarian_d05",
+    "hungarian_d06",
+    "hungarian_d07",
+    "hungarian_d08",
+    "hungarian_d09",
+    "hungarian_d10",
+    "hungarian_d15",
+    "hungarian_d20",
+    "hungarian_m01",
+    "hungarian_m02",
+    "hungarian_m03",
+    "hungarian_m04",
+    "hungarian_m05",
+    "hungarian_m06",
+    "hungarian_m07",
+    "hungarian_m08",
+    "hungarian_m09",
+    "hungarian_m10",
+    "custom_greedy",
+    "custom_routeExtension",
+)
 
 def make_dispatcher(algo: str, sumo_cfg_path: str = None):
     """taxi_dispatch_algorithm 값 -> 파이썬 배차기 (SUMO 내장 알고리즘이면 None).
@@ -168,7 +197,42 @@ def make_dispatcher(algo: str, sumo_cfg_path: str = None):
         return CustomGreedyDispatcher()
     if algo == "custom_routeExtension":
         return CustomRouteExtensionDispatcher()
-    if algo == "hungarian":
+    if algo == "adaptive_hungarian":
+        from module4_dispatch.hungarian_dispatcher import build_adaptive_hungarian_dispatcher
+        return build_adaptive_hungarian_dispatcher(sumo_cfg_path, min_w=0.02, max_w=0.06)
+    if algo in ("adaptive_hungarian2", "adaptive_hungarian_v2"):
+        from module4_dispatch.hungarian_dispatcher import build_adaptive_hungarian2_dispatcher
+        return build_adaptive_hungarian2_dispatcher(sumo_cfg_path, base_w=0.04, min_w=0.02)
+    if algo in ("adaptive_hungarian3", "adaptive_hungarian_v3"):
+        from module4_dispatch.adaptive_hungarian3 import build_adaptive_hungarian3_dispatcher
+        return build_adaptive_hungarian3_dispatcher(sumo_cfg_path)
+    if algo and algo.startswith("hungarian"):
+        # 거리 가중치(dist_weight) 매핑 (양수 d: +0.01~0.20, 음수 m: -0.01~-0.10):
+        weights = {
+            "hungarian_d01": 0.01,
+            "hungarian_d02": 0.02,
+            "hungarian_d03": 0.03,
+            "hungarian_d04": 0.04,
+            "hungarian_d05": 0.05,
+            "hungarian_d06": 0.06,
+            "hungarian_d07": 0.07,
+            "hungarian_d08": 0.08,
+            "hungarian_d09": 0.09,
+            "hungarian_d10": 0.10,
+            "hungarian_d15": 0.15,
+            "hungarian_d20": 0.20,
+            "hungarian_m01": -0.01,
+            "hungarian_m02": -0.02,
+            "hungarian_m03": -0.03,
+            "hungarian_m04": -0.04,
+            "hungarian_m05": -0.05,
+            "hungarian_m06": -0.06,
+            "hungarian_m07": -0.07,
+            "hungarian_m08": -0.08,
+            "hungarian_m09": -0.09,
+            "hungarian_m10": -0.10,
+        }
+        w = weights.get(algo, 0.0)
         from module4_dispatch.hungarian_dispatcher import build_hungarian_dispatcher
-        return build_hungarian_dispatcher(sumo_cfg_path)
+        return build_hungarian_dispatcher(sumo_cfg_path, dist_weight=w)
     return None

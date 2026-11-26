@@ -137,7 +137,7 @@
   "edge_speed_output": null,
   "xgb_random_state": 42,
   "train_random_state": 42,
-  "ab_max_parallel_compares": 4,
+  "ab_max_parallel_compares": 1,
   "ab_max_parallel_workers": 4,
   "ab_queue_stale_sec": 1800,
   "ab_keep_work_dirs": false,

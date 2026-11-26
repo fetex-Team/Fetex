@@ -68,7 +68,7 @@ class ProgressCallback(BaseCallback):
         return True
 
 
-def main():
+def main(resume_path: str = None):
     with open(META_PATH, "r", encoding="utf-8") as f:
         meta = json.load(f)
 
@@ -159,20 +159,44 @@ def main():
     if use_vecnorm:
         # [KJS] obs(인원수)와 보상(-230~+17) 스케일이 커서 PPO가 불안정했음 -> 정규화.
         # Monitor는 VecNormalize 안쪽이라 training_logs의 보상은 계속 '원래 값'으로 기록된다.
-        vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0,
-                               gamma=float(CFG.get("rl_gamma", 0.99)))
+        if resume_path:
+            # 재개 시 통계 파일 함께 복원
+            from module4_dispatch.rl_reposition_maintainer import RLRepositionMaintainer
+            vn_resume = RLRepositionMaintainer._find_vecnorm_path(resume_path)
+            if vn_resume and os.path.exists(vn_resume):
+                vec_env = VecNormalize.load(vn_resume, vec_env)
+                vec_env.training = True
+                vec_env.norm_reward = True
+                print(f"[재개] 관측 정규화 통계를 이어받았습니다: {vn_resume}")
+            else:
+                vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0,
+                                       gamma=float(CFG.get("rl_gamma", 0.99)))
+        else:
+            vec_env = VecNormalize(vec_env, norm_obs=True, norm_reward=True, clip_obs=10.0,
+                                   gamma=float(CFG.get("rl_gamma", 0.99)))
 
-    model = PPO(
-        "MlpPolicy",
-        vec_env,
-        verbose=1,
-        n_steps=rollout_steps,
-        batch_size=batch_size,
-        learning_rate=float(CFG.get("rl_learning_rate", 3e-4)),
-        gamma=float(CFG.get("rl_gamma", 0.99)),
-        seed=seed,
-        policy_kwargs={"net_arch": [128, 128]},
-    )
+    if resume_path and os.path.exists(resume_path):
+        model = PPO.load(
+            resume_path,
+            env=vec_env,
+            verbose=1,
+            learning_rate=float(CFG.get("rl_learning_rate", 3e-4)),
+            gamma=float(CFG.get("rl_gamma", 0.99)),
+            seed=seed,
+        )
+        print(f"[재개] 기존 체크포인트 모델을 불러와 학습을 이어갑니다: {resume_path}")
+    else:
+        model = PPO(
+            "MlpPolicy",
+            vec_env,
+            verbose=1,
+            n_steps=rollout_steps,
+            batch_size=batch_size,
+            learning_rate=float(CFG.get("rl_learning_rate", 3e-4)),
+            gamma=float(CFG.get("rl_gamma", 0.99)),
+            seed=seed,
+            policy_kwargs={"net_arch": [128, 128]},
+        )
 
     # print_every는 num_timesteps(모든 env 합산) 기준이라 n_envs와 무관하게 그대로 둬도 됨
     progress_cb = ProgressCallback(total_timesteps=total_timesteps, print_every=rollout_steps * n_envs)
@@ -207,7 +231,12 @@ def main():
 
 
 if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--resume", default=None, help="이어서 학습할 모델 체크포인트 경로 (.zip)")
+    args = ap.parse_args()
+
     sys.path.insert(0, PROJECT_ROOT)
     from module1_simulation.reproducibility import ensure_fixed_hash_seed
     ensure_fixed_hash_seed()
-    main()
+    main(resume_path=args.resume)

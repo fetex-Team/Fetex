@@ -43,12 +43,13 @@ OWNER_FILE = "ab_owner.json"                                   # 작업 폴더 �
 from module4_dispatch.experiments.ab_queue import (AbQueueTicket, new_request_id, owner_alive, owner_info,
                                                    write_json_atomic)
 
-# build_env.py와 동일한 규칙: "hungarian"은 SUMO 내장 알고리즘이 아니라
+# build_env.py와 동일한 규칙: "hungarian" 계열 및 커스텀 배차는 SUMO 내장 알고리즘이 아니라
 # traci 콜백으로 직접 배정하는 모드이므로 SUMO 쪽엔 "traci"로 알려줘야 함
-DISPATCH_SUMO_VALUE = {"hungarian": "traci", "custom_greedy": "traci", "custom_routeExtension": "traci"}
 def _sumo_dispatch_value(algo: str, strategy: str = None) -> str:
     # RL은 선배치만 담당한다. 매칭 방식은 사용자가 고른 알고리즘을 보존한다.
-    return "traci" if algo in DISPATCH_SUMO_VALUE else algo
+    if algo and ("hungarian" in algo or algo in ("custom_greedy", "custom_routeExtension")):
+        return "traci"
+    return algo
 
 
 def _combo_label(combo: dict) -> str:
@@ -184,12 +185,13 @@ def run_queue_and_wait(combos: list, config_dir_names: list, session_dir: str,
     for _k, _v in (("OMP_NUM_THREADS", "1"), ("KMP_DUPLICATE_LIB_OK", "TRUE"),
                    ("OPENBLAS_NUM_THREADS", "1"), ("MKL_NUM_THREADS", "1")):
         env.setdefault(_k, _v)
-    # RL 모델 스냅샷 선택(KJS): AI_RL_MODEL_PATH가 있으면 워커(measure_wait_time.py)에 그대로 넘긴다.
+    # 모델 스냅샷/지정 선택(KJS): 환경변수가 있으면 워커(measure_wait_time.py)에 그대로 넘긴다.
     # 워커는 cwd=ROOT로 뜨므로 상대 경로는 지금 위치 기준 절대 경로로 바꿔 넘긴다.
-    rl_model = os.environ.get("AI_RL_MODEL_PATH")
-    if rl_model:
-        env["AI_RL_MODEL_PATH"] = os.path.abspath(rl_model)
-        print(f"[오케스트레이터] RL 모델 지정: {env['AI_RL_MODEL_PATH']}")
+    for _m_key in ("AI_RL_MODEL_PATH", "AI_CATEGORY_MODEL_PATH", "AI_DEMAND_V2_PATH"):
+        _m_val = os.environ.get(_m_key)
+        if _m_val:
+            env[_m_key] = os.path.abspath(_m_val)
+            print(f"[오케스트레이터] {_m_key} 지정: {env[_m_key]}")
 
     total = len(combos)
     result_paths = [(_combo_label(c), os.path.join(session_dir, f"combo{i}.json").replace("\\", "/"))
@@ -434,7 +436,8 @@ def main():
     cfg_path = use_run_config({k: v for k, v in combos[0].items() if k != "holiday_mode"}, "ab")
     print(f"[오케스트레이터] 이번 비교 설정: {os.path.relpath(cfg_path, ROOT)} (config.json은 변경 안 함)")
 
-    max_compares = _setting("ab_max_parallel_compares", 4, "AB_MAX_PARALLEL_COMPARES")
+    # KJS 대기열 원칙: 비교 판(묶음)은 한 번에 1개씩 순차 실행, 나머지는 대기열에서 '대기' (기본값 1)
+    max_compares = _setting("ab_max_parallel_compares", 1, "AB_MAX_PARALLEL_COMPARES")
     max_workers = _setting("ab_max_parallel_workers", 4, "AB_MAX_PARALLEL_WORKERS")
     stale_sec = _setting("ab_queue_stale_sec", 1800, "AB_QUEUE_STALE_SEC")
     keep_dirs = _setting("ab_keep_work_dirs", False, "AB_KEEP_WORK_DIRS")

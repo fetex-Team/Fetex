@@ -3,7 +3,7 @@
 실행 버튼은 화면 값을 실행용 설정 파일(results/run_configs/)로 저장하고 main.py <명령>을 새 콘솔 창에서 띄운 뒤,
 main.py가 기록하는 진행 상황(results/run_status/)을 읽어 상태 줄과 완료·오류 팝업에 보여 준다.
 [적용하기]를 눌렀을 때만 config.json이 바뀐다."""
-import json, os, subprocess, sys, tkinter as tk
+import json, os, re, subprocess, sys, tkinter as tk
 
 # 이 스크립트(GUI) 자신이 print()로 콘솔에 직접 찍는 한글이, 컴퓨터/콘솔의 기본
 # 코드페이지(cp949 등)에 걸려 깨지는 걸 방지. _launch()가 자식 프로세스에 넣어주는
@@ -600,11 +600,11 @@ class ConfigGUI:
         algo_box = ttk.LabelFrame(body, text="2. 배차 알고리즘 선택", padding=8)
         algo_box.pack(fill="x", pady=4)
 
-        algos = ["hungarian", "greedy", "routeExtension", "custom_greedy", "custom_routeExtension"]
-        algo_var = tk.StringVar(value="hungarian")
+        algos = ["hungarian_d04", "hungarian", "adaptive_hungarian", "greedy", "routeExtension", "custom_greedy", "custom_routeExtension"]
+        algo_var = tk.StringVar(value="hungarian_d04")
         algo_combo = ttk.Combobox(algo_box, textvariable=algo_var, values=algos, state="readonly", width=25)
         algo_combo.pack(anchor="w")
-        ttk.Label(algo_box, text="💡 hungarian(헝가리안) 알고리즘이 전체 대기시간을 최소화하는 추천 방식입니다.",
+        ttk.Label(algo_box, text="💡 hungarian_d04(거리 가중 0.04)가 실증 실험 1위를 기록한 추천 최적 배차 방식입니다.",
                   foreground="#6b7280").pack(anchor="w", pady=(3, 0))
 
         # 3. 기록 간격 (Stride) 선택 프레임
@@ -663,10 +663,71 @@ class ConfigGUI:
         """(하위 호환) 유니티 재생 생성기 다이얼로그 호출"""
         self.open_unity_replay_dialog()
 
+    def _list_category_models(self):
+        """[(표시이름, 경로)] 수요예측 모델(.pkl) 후보 목록."""
+        from datetime import datetime as _dt
+        def stamp(p):
+            try:
+                return _dt.fromtimestamp(os.path.getmtime(p)).strftime("%m-%d %H:%M")
+            except Exception:
+                return ""
+
+        sm = os.path.join(ROOT, "saved_models")
+        active = os.path.join(sm, "category_demand_models.pkl")
+        others = [
+            ("학습 중간본(_new)", os.path.join(sm, "category_demand_models_new.pkl")),
+        ]
+        bdir = os.path.join(ROOT, "saved_models_backups")
+        if os.path.isdir(bdir):
+            for ts in sorted(os.listdir(bdir), reverse=True)[:10]:
+                p = os.path.join(bdir, ts, "category_demand_models.pkl")
+                if os.path.exists(p):
+                    others.append((f"백업 {ts}", p))
+
+        out = []
+        if os.path.exists(active):
+            out.append((f"기본: 최신 성공작 ({stamp(active)})", active))
+        for name, p in others:
+            if os.path.exists(p):
+                out.append((f"{name} ({stamp(p)})", p))
+        return out or [("최신 성공작 (기본 경로)", active)]
+
+    def _list_rl_models(self):
+        """[(표시이름, 경로)] RL 재배치 모델(.zip) 후보 목록."""
+        from datetime import datetime as _dt
+        def stamp(p):
+            try:
+                return _dt.fromtimestamp(os.path.getmtime(p)).strftime("%m-%d %H:%M")
+            except Exception:
+                return ""
+
+        active = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")
+        out = []
+        if os.path.exists(active):
+            vn = os.path.splitext(active)[0] + "_vecnorm.pkl"
+            vn_tag = " · VecNormalize 포함" if os.path.exists(vn) else ""
+            out.append((f"기본: 현재 활성 RL 모델 ({stamp(active)}){vn_tag}", active))
+
+        bdir = os.path.join(ROOT, "rl_model_backups")
+        if os.path.isdir(bdir):
+            for f in sorted(os.listdir(bdir), reverse=True):
+                if f.endswith(".zip"):
+                    p = os.path.join(bdir, f)
+                    out.append((f"백업: {f} ({stamp(p)})", p))
+
+        chk_dir = os.path.join(ROOT, "module4_dispatch", "checkpoints")
+        if os.path.isdir(chk_dir):
+            for f in sorted(os.listdir(chk_dir), reverse=True)[:5]:
+                if f.endswith(".zip"):
+                    p = os.path.join(chk_dir, f)
+                    out.append((f"체크포인트: {f} ({stamp(p)})", p))
+
+        return out or [("현재 활성 RL 모델 (기본 경로)", active)]
+
     def open_ab_compare_dialog(self):
         win = tk.Toplevel(self.root)
         win.title("A/B 비교하기")
-        win.geometry("460x840")
+        win.geometry("520x760")
         win.resizable(True, True)
         # 실행 버튼·동시 실행 설정은 먼저 아래에 붙여 창이 작아도 잘리지 않게 한다
         ab_bar = ttk.Frame(win)
@@ -679,19 +740,21 @@ class ConfigGUI:
             body,
             text="비교할 값을 체크하세요. 체크된 값들의 카테시안 조합(전체 곱)이\n"
                  "2개 이상이면 비교가 진행됩니다. (항목별로는 1개만 체크해도 됨)",
-            padding=10, wraplength=340, justify="left",
-        ).pack()
+            padding=(10, 4), wraplength=460, justify="left",
+        ).pack(anchor="w")
 
         value_vars = {}
 
         for key, (label, values) in FACTOR_OPTIONS.items():
-            box = ttk.LabelFrame(body, text=label, padding=8)
-            box.pack(fill="x", padx=15, pady=6)
+            box = ttk.LabelFrame(body, text=label, padding=5)
+            box.pack(fill="x", padx=10, pady=3)
             value_vars[key] = {}
-            for v in values:
+            for idx, v in enumerate(values):
                 var = tk.BooleanVar(value=False)
                 value_vars[key][v] = var
-                ttk.Checkbutton(box, text=FACTOR_VALUE_LABELS.get(v, v), variable=var).pack(anchor="w")
+                r, c = divmod(idx, 2)
+                ttk.Checkbutton(box, text=FACTOR_VALUE_LABELS.get(v, v), variable=var).grid(
+                    row=r, column=c, sticky="w", padx=8, pady=1)
 
         # 예전에는 공휴일 칸을 안 고르면 '오늘' 날짜로 돌렸는데, 오늘은 대개 날씨·평가 데이터 범위 밖이라
         # 설정의 날짜 규칙(run_date_mode: sim_date 고정 / alternate / random)을 따르게 바꿨다.
@@ -699,15 +762,29 @@ class ConfigGUI:
                  "alternate": "과거 90일 중 평일/공휴일 번갈아", "random": "과거 90일 중 무작위"}
         _mode = self.current().get("run_date_mode", "alternate")
         ttk.Label(body, text=f"※ 공휴일 칸과 실행 날짜를 비우면 설정 규칙({_rule.get(_mode, _mode)})으로 날짜를 정해요.",
-                  foreground="#6b7280", padding=(15, 0), wraplength=380, justify="left").pack(anchor="w")
+                  foreground="#6b7280", padding=(10, 2), wraplength=460, justify="left").pack(anchor="w")
 
-        # 모델 세트: 지금 모델 또는 보관된 세트(자동 백업 + 이름 붙인 세트 = 예전 KJS 스냅샷)
-        model_box = ttk.LabelFrame(body, text="모델 세트 (수요 예측 + RL)", padding=8)
-        model_box.pack(fill="x", padx=15, pady=6)
+        # ── [선호 모델 세트 (수요 예측 + RL 통합 프리셋 = KJS 스냅샷)] ──
+        model_box = ttk.LabelFrame(body, text="⭐ 선호 모델 세트 (수요 예측 + RL 통합 프리셋)", padding=6)
+        model_box.pack(fill="x", padx=10, pady=4)
         set_var = tk.StringVar()
-        set_combo = ttk.Combobox(model_box, textvariable=set_var, state="readonly", width=44)
-        set_combo.pack(fill="x")
+        set_combo = ttk.Combobox(model_box, textvariable=set_var, state="readonly", width=48)
+        set_combo.pack(fill="x", padx=2, pady=2)
+
         sets = {}
+
+        def selected_set():
+            return sets.get(set_var.get())
+
+        def _update_snap_info():
+            st = selected_set()
+            if not st:
+                return
+            if st["id"] == model_sets.CURRENT:
+                snap_info_lbl.config(text="📌 현재 활성 모델 세트 사용 (saved_models/ + module4_dispatch/)")
+            else:
+                desc = model_sets.describe(st.get("meta", {}))
+                snap_info_lbl.config(text=f"📌 {st.get('label') or st['id']}: {desc or '보관 세트'}")
 
         def refresh_sets(select_id=None):
             sets.clear()
@@ -716,10 +793,7 @@ class ConfigGUI:
             set_combo["values"] = list(sets)
             pick = next((t for t, st in sets.items() if st["id"] == select_id), None)
             set_var.set(pick or next(iter(sets)))
-        refresh_sets()
-
-        def selected_set():
-            return sets.get(set_var.get())
+            _update_snap_info()
 
         def label_selected():
             st = selected_set()
@@ -744,24 +818,107 @@ class ConfigGUI:
                 refresh_sets(os.path.basename(path))
             self.status.config(text=msg)
 
+        # 버튼을 콤보박스 바로 아래 가로로 나란히 배치하여 한눈에 보이게 함
         btns = ttk.Frame(model_box)
-        btns.pack(fill="x", pady=(4, 0))
-        ttk.Button(btns, text="지금 모델 보관...", command=keep_current).pack(side="left", padx=(0, 4))
-        ttk.Button(btns, text="이름 붙이기...", command=label_selected).pack(side="left")
-        ttk.Label(model_box, text="★ = 이름 붙인 세트. 학습할 때마다 이전 세트가 자동으로 보관돼요.",
-                  foreground="#6b7280", wraplength=380, justify="left").pack(anchor="w", pady=(4, 0))
-        ttk.Label(body, text="※ 비교로 생긴 로그를 학습에 쓰려면 '학습만 실행' 창에서 고르세요.",
-                  foreground="#6b7280", padding=(15, 0)).pack(anchor="w")
+        btns.pack(fill="x", pady=(3, 2))
+        ttk.Button(btns, text="💾 지금 모델 보관...", command=keep_current).pack(side="left", padx=(0, 6))
+        ttk.Button(btns, text="✏️ 이름 붙이기...", command=label_selected).pack(side="left")
 
-        # [KJS] 실행 날짜 지정: 비우면 위 규칙(공휴일 칸)대로, 넣으면 날짜마다 한 번씩 비교 (대기열로 순서대로 실행)
-        date_box = ttk.LabelFrame(body, text="실행 날짜 (선택)", padding=8)
-        date_box.pack(fill="x", padx=15, pady=6)
-        date_var = tk.StringVar()
-        ttk.Entry(date_box, textvariable=date_var).pack(fill="x")
-        ttk.Label(date_box, text="예: 20260907 20260912 (공백·쉼표로 여러 개). 날짜마다 따로 비교해요.",
-                  foreground="#6b7280").pack(anchor="w", pady=(4, 0))
+        snap_info_lbl = ttk.Label(model_box, text="", foreground="#2563eb", font=("Malgun Gothic", 9, "bold"),
+                                  wraplength=460, justify="left")
+        snap_info_lbl.pack(anchor="w", pady=(3, 0))
+
+        set_combo.bind("<<ComboboxSelected>>", lambda _: _update_snap_info())
+        refresh_sets()
+
+        # ── [KJS 복원: 개별 수요예측 모델 세부 선택] ──
+        cat_models = self._list_category_models()
+        cat_box = ttk.LabelFrame(body, text="📊 수요예측 모델 (기본 모드 시 세부 선택)", padding=6)
+        cat_box.pack(fill="x", padx=10, pady=3)
+        cat_var = tk.StringVar(value=cat_models[0][0])
+        ttk.Combobox(cat_box, textvariable=cat_var, values=[m[0] for m in cat_models],
+                     state="readonly", width=48).pack(fill="x", padx=2, pady=2)
+        ttk.Label(cat_box, text="* 통합 프리셋이 '지금 모델'일 때만 적용되며, 스냅샷 세트 선택 시 해당 세트의 모델이 우선합니다.",
+                  foreground="#6b7280", wraplength=460, justify="left").pack(anchor="w", pady=(1, 0))
+
+        # ── [KJS 확장: 개별 RL 재배치 모델 세부 선택] ──
+        rl_models = self._list_rl_models()
+        rl_box = ttk.LabelFrame(body, text="🤖 RL 재배치 모델 (기본 모드 시 세부 선택)", padding=6)
+        rl_box.pack(fill="x", padx=10, pady=3)
+        rl_var = tk.StringVar(value=rl_models[0][0])
+        ttk.Combobox(rl_box, textvariable=rl_var, values=[m[0] for m in rl_models],
+                     state="readonly", width=48).pack(fill="x", padx=2, pady=2)
+        ttk.Label(rl_box, text="* 통합 프리셋이 '지금 모델'일 때 특정 RL 모델(.zip)을 직접 지정하여 비교합니다.",
+                  foreground="#6b7280", wraplength=460, justify="left").pack(anchor="w", pady=(1, 0))
+
+        ttk.Label(body, text="※ 비교로 생긴 로그를 학습에 쓰려면 '학습만 실행' 창에서 고르세요.",
+                  foreground="#6b7280", padding=(10, 2)).pack(anchor="w")
+
+        # ── [KJS 완벽 복원: 날짜별 A/B 예약 대기열 실행 기능] ──
+        date_box = ttk.LabelFrame(body, text="📅 실행 날짜 예약 (선택 / 대기열 순차 실행)", padding=6)
+        date_box.pack(fill="x", padx=10, pady=4)
+
+        fixed_dates = []
+        date_list_frame = ttk.Frame(date_box)
+
+        def refresh_fixed_dates():
+            for child in date_list_frame.winfo_children():
+                child.destroy()
+            for date_text in fixed_dates:
+                row = ttk.Frame(date_list_frame)
+                row.pack(fill="x", pady=1)
+                ttk.Label(row, text=f"• 예약 날짜: {date_text}", font=("Malgun Gothic", 9, "bold")).pack(side="left")
+                ttk.Button(
+                    row, text="삭제", width=5,
+                    command=lambda d=date_text: (fixed_dates.remove(d), refresh_fixed_dates()),
+                ).pack(side="right")
+
+        def add_fixed_date():
+            raw = date_input_box.get("1.0", "end-1c").strip()
+            if not raw:
+                return
+            # YYYY-MM-DD, YYYYMMDD, YYYY.MM.DD, YYYY/MM/DD 및 텍스트 섞임 모두 허용
+            matches = re.findall(r"(?<!\d)(\d{4})[-./\s]?(\d{2})[-./\s]?(\d{2})(?!\d)", raw)
+            if not matches:
+                messagebox.showwarning(
+                    "날짜 형식",
+                    "올바른 날짜(예: 2026-11-23 또는 20261123)를 입력하세요.",
+                    parent=win,
+                )
+                return
+            dates = []
+            for y, m, d in matches:
+                try:
+                    dt = datetime(int(y), int(m), int(d)).date()
+                    dates.append(dt.isoformat())
+                except ValueError:
+                    continue
+            if not dates:
+                messagebox.showwarning("날짜 형식", "존재하지 않는 유효하지 않은 날짜입니다.", parent=win)
+                return
+            for date_text in dates:
+                if date_text not in fixed_dates:
+                    fixed_dates.append(date_text)
+            fixed_dates.sort()
+            date_input_box.delete("1.0", "end")
+            refresh_fixed_dates()
+
+        date_input_row = ttk.Frame(date_box)
+        date_input_row.pack(fill="x", pady=(2, 2))
+        ttk.Label(date_input_row, text="날짜 입력:").pack(side="left")
+        date_input_box = tk.Text(date_input_row, height=2, width=28, wrap="word")
+        date_input_box.pack(side="left", padx=(4, 4), fill="x", expand=True)
+        ttk.Button(date_input_row, text="추가하기", command=add_fixed_date).pack(side="left")
+
+        ttk.Label(date_box, text="※ 여러 날짜를 넣으면 날짜마다 순서대로 대기열에 들어갑니다 (앞선 날짜 실행 중일 때 다음 날짜는 '대기').\n※ [추가하기]를 안 누르고 날짜만 써놓고 실행해도 자동으로 반영됩니다.",
+                  foreground="#6b7280", wraplength=460, justify="left").pack(anchor="w", pady=(2, 0))
+        date_list_frame.pack(fill="x", pady=(3, 0))
 
         def run_compare():
+            # [핵심 개선] 사용자가 '추가하기' 버튼을 안 누르고 입력창에 써놓기만 해도 자동으로 등록!
+            if date_input_box.get("1.0", "end-1c").strip():
+                add_fixed_date()
+
             selected = {}
             for key, (label, values) in FACTOR_OPTIONS.items():
                 chosen = [v for v, var in value_vars[key].items() if var.get()]
@@ -769,7 +926,7 @@ class ConfigGUI:
                     selected[key] = chosen
 
             if not selected:
-                messagebox.showwarning("경고", "비교할 항목을 하나 이상 체크하세요.")
+                messagebox.showwarning("경고", "비교할 항목을 하나 이상 체크하세요.", parent=win)
                 return
 
             total_combos = 1
@@ -780,6 +937,7 @@ class ConfigGUI:
                     "경고",
                     f"현재 체크된 조합은 {total_combos}개뿐이라 비교가 안 됩니다. "
                     f"전체 조합(항목별 체크 수를 곱한 값)이 2개 이상 되도록 더 체크하세요.",
+                    parent=win,
                 )
                 return
 
@@ -787,43 +945,65 @@ class ConfigGUI:
             keys = list(selected.keys())
             combos = [dict(zip(keys, combo)) for combo in itertools.product(*[selected[k] for k in keys])]
 
-            if len(combos) >= AB_WARN_COMBOS:
+            # 날짜별 A/B 묶음(배치) 생성 (KJS 방식 복원)
+            date_batches = []
+            if fixed_dates:
+                for date_text in fixed_dates:
+                    batch = []
+                    for combo in combos:
+                        item = dict(combo)
+                        item["run_date"] = date_text
+                        item["holiday_mode"] = "auto"
+                        batch.append(item)
+                    date_batches.append((date_text, batch))
+            else:
+                date_batches.append((None, combos))
+
+            total_jobs = sum(len(batch) for _, batch in date_batches)
+            if total_jobs >= AB_WARN_COMBOS:
                 if not messagebox.askyesno(
-                        "⚠ 조합이 많아요",
-                        f"조합이 {len(combos)}개라 SUMO 창이 {len(combos)}개 동시에 뜹니다.\n"
-                        f"PC 메모리/CPU가 부족하면 느려지거나 멈출 수 있어요 ({AB_WARN_COMBOS}개 이상 경고).\n\n"
-                        f"그래도 실행할까요?"):
+                        "⚠ 작업 수 확인",
+                        f"선택하신 작업이 총 {total_jobs}개(날짜 {len(date_batches)}개 × 조합 {len(combos)}개)입니다.\n"
+                        f"날짜별 묶음은 순서대로 대기열에 들어가 차례대로 실행됩니다.\n\n"
+                        f"실행할까요?", parent=win):
                     return
-
-            import re
-            run_dates = []
-            for tok in re.split(r"[\s,]+", date_var.get().strip()):
-                if not tok:
-                    continue
-                try:
-                    run_dates.append(datetime.strptime(tok.replace("-", ""), "%Y%m%d").date().isoformat())
-                except ValueError:
-                    messagebox.showwarning("날짜 형식", f"'{tok}'는 날짜(YYYYMMDD)가 아니에요.")
-                    return
-
-            # 공휴일 칸·실행 날짜를 비우면 holiday_mode를 넣지 않는다 → 오케스트레이터가 설정의 날짜 규칙으로 1개를 정해 전 조합에 공유
 
             win.destroy()
             self._prepare_run_config("ab")
             st = selected_set()
             set_dir = st["dir"] if st and st["id"] != model_sets.CURRENT else None
-            for d in (sorted(set(run_dates)) or [None]):
-                batch = [dict(c, run_date=d) for c in combos] if d else combos
-                title = f"A/B 비교 {d}" if d else "A/B 비교"
-                self._launch("compare", [json.dumps(batch, ensure_ascii=False)], title=title, model_set=set_dir)
 
-        par_holder = ttk.Frame(ab_bar, padding=(15, 0))
+            # 개별 선택 모델 경로 확인
+            chosen_cat = dict(cat_models).get(cat_var.get())
+            chosen_rl = dict(rl_models).get(rl_var.get())
+
+            # 모델 세트가 '지금 모델'일 때 개별 선택값 전달
+            model_arg = None
+            if not set_dir and chosen_cat and os.path.exists(chosen_cat):
+                active_cat = os.path.join(ROOT, "saved_models", "category_demand_models.pkl")
+                if chosen_cat != active_cat:
+                    model_arg = chosen_cat
+
+            if not set_dir and chosen_rl and os.path.exists(chosen_rl):
+                active_rl = os.path.join(ROOT, "module4_dispatch", "rl_reposition_model.zip")
+                if chosen_rl != active_rl:
+                    os.environ["AI_RL_MODEL_PATH"] = chosen_rl
+
+            # 날짜별 묶음을 순서대로 대기열에 추가 (KJS 예약 실행 파이프라인)
+            for date_text, batch in date_batches:
+                title = f"A/B 비교 {date_text}" if date_text else "A/B 비교"
+                if date_text:
+                    print(f"[A/B 날짜 대기열] {date_text}: 조합 {len(batch)}개를 대기열에 추가합니다.")
+                self._launch("compare", [json.dumps(batch, ensure_ascii=False)], title=title,
+                             model=model_arg, model_set=set_dir)
+
+        par_holder = ttk.Frame(ab_bar, padding=(10, 0))
         par_holder.pack(fill="x")
         par_box = self._mini_fold(par_holder, "동시 실행 설정 (대기열·워커 수)")
         for key in AB_KEYS:
             self._row(par_box, key, create=False)
 
-        ttk.Button(ab_bar, text="실행 (조합별로 새 창에서 병렬 측정)", command=run_compare).pack(pady=(8, 12), fill="x", padx=15)
+        ttk.Button(ab_bar, text="🚀 A/B 다중비교 실행 (대기열 순차 실행)", command=run_compare).pack(pady=(6, 10), fill="x", padx=15)
 
     def _build_log_picker(self, parent, persist=True):
         """학습 팝업 안에 들어가는 '학습에 쓸 로그' 선택 목록. 반환값 save()를 호출하면 selected_logs.json에 저장.
