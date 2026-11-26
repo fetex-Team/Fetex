@@ -108,6 +108,37 @@ def test_stopped_vehicle_keeps_heading():
     assert used and math.hypot(x - a["x"], z - a["z"]) < 1e-6 and abs(h - a["a"]) < 1e-6
 
 
+def test_roadside_stop_stays_on_lane():
+    # SUMO 갓길 정차: 기록 위치가 차선 폭(3.2m)만큼 오른쪽(+x, 북쪽 진행 기준)으로 비켜 있음
+    lanes = _lanes()
+    a = _state(0, 20.0, 0.0, lanes)
+    parked = dict(a, x=a["x"] + 3.2)
+    for f in (0.0, 0.5, 1.0):
+        x, z, h, used = interpolate(lanes, parked, dict(parked), f, 5.0, 4.0)
+        assert used
+        assert abs(x - (a["x"] + 0.7)) < 1e-6, x       # 차선 오른쪽 가장자리까지만
+        assert abs(z - a["z"]) < 1e-6 and abs(h - a["a"]) < 1e-6
+    # 다음 프레임이 없는 차량도 같은 규칙
+    x, z, h, used = interpolate(lanes, parked, None, 0.0, 5.0, 4.0)
+    assert used and abs(x - (a["x"] + 0.7)) < 1e-6 and abs(z - a["z"]) < 1e-6
+    # 진행 방향(앞뒤) 오차는 그대로 둔다
+    ahead = dict(a, z=a["z"] + 2.0)
+    x, z, _, _ = interpolate(lanes, ahead, None, 0.0, 5.0, 4.0)
+    assert abs(x - a["x"]) < 1e-6 and abs(z - (a["z"] + 2.0)) < 1e-6
+
+
+def test_slow_lane_change_is_continuous_across_frames():
+    # 저속 차선 변경: A(차선0) -> B(옆 차선3, 3m 전진) -> C(차선3). 앞 구간 끝과 다음 구간 시작이 같아야 한다.
+    lanes = _lanes()
+    a = _state(0, 10.0, 0.6, lanes, length=4.5)
+    b = _state(3, 13.0, 0.6, lanes, length=4.5)
+    c = _state(3, 16.0, 0.6, lanes, length=4.5)
+    end1 = interpolate(lanes, a, b, 1.0, 5.0, 4.5)
+    start2 = interpolate(lanes, b, c, 0.0, 5.0, 4.5)
+    assert math.hypot(end1[0] - start2[0], end1[1] - start2[1]) < 1e-6, (end1, start2)
+    assert math.hypot(end1[0] - b["x"], end1[1] - b["z"]) < 1e-6      # 차선 위 기록 위치는 그대로
+
+
 def test_lerp_angle_shortest_path():
     assert abs(lerp_angle(350, 10, 0.5) - 360) < 1e-9
     assert abs(lerp_angle(10, 350, 0.5) - 0) < 1e-9

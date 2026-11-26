@@ -11,6 +11,11 @@ Unity 재생기(Assets/Fetex/Scripts/ReplayMotion.cs)와 똑같은 차량 위치
 3. 앞범퍼 이동거리 d(f): A·B 속도를 끝점 기울기로 쓰는 3차 에르미트 보간 (기울기를 0~3D로 제한해 단조 증가 보장).
 4. 차 중심 = d - 길이/2 지점의 차선 중심선 위 점. 방향 = 그 점 앞뒤 1.5m의 접선.
    기록된 프레임 위치(갓길 정차 등)와의 차이는 양 끝에서 0이 되게 선형 보정(8m 이내일 때만).
+   보정 목표는 기록 위치가 아니라 프레임마다 정해지는 "표시 위치"(display_point) = 자기 차선 위 차 중심
+   + 기록 위치와의 차이(옆 방향 성분은 ±0.7m로 제한). SUMO 갓길 정차는 차를 차선 폭만큼 오른쪽으로
+   옮겨 기록하는데, 그대로 쓰면 Unity에서 보도 위에 올라가기 때문(차선 가장자리에 붙어 서게 함).
+   표시 위치는 경로와 무관하므로 앞 구간 끝과 다음 구간 시작이 항상 같은 점이다(차선 변경 중에도 연속).
+   다음 프레임이 없는 차량도 표시 위치(place)에 놓는다.
 5. 차선 정보가 없거나(-1, 텔레포트) 경로가 물리적으로 불가능하면(속도 대비 너무 멂/역주행) 예전 방식(직선 보간)으로 대체.
 """
 from __future__ import annotations
@@ -21,6 +26,7 @@ from dataclasses import dataclass
 HEADING_PROBE_M = 1.5
 TELEPORT_SLACK_M = 30.0
 MAX_ENDPOINT_OFFSET_M = 8.0
+MAX_LATERAL_OFFSET_M = 0.7   # 차선 반폭 1.6m - 차 반폭 약 0.9m
 
 
 @dataclass
@@ -143,6 +149,54 @@ def path_point(segs: list[Segment], c: float) -> tuple[float, float]:
     return last.point_at(last.s1)
 
 
+def clamp_lateral(ox: float, oz: float, tx: float, tz: float) -> tuple[float, float]:
+    """오차 벡터 (ox, oz)에서 진행 방향 (tx, tz)에 직각인 성분만 ±MAX_LATERAL_OFFSET_M으로 제한."""
+    n = math.hypot(tx, tz)
+    if n < 1e-6:
+        return ox, oz
+    tx, tz = tx / n, tz / n
+    along = ox * tx + oz * tz
+    lateral = ox * tz - oz * tx          # + = 진행 방향 오른쪽 (x 동, z 북)
+    c = min(max(lateral, -MAX_LATERAL_OFFSET_M), MAX_LATERAL_OFFSET_M)
+    if c == lateral:
+        return ox, oz
+    return along * tx + c * tz, along * tz - c * tx
+
+
+def display_point(lanes: list[Lane], st: dict, length: float) -> tuple[float, float]:
+    """프레임 상태의 표시 위치: 자기 차선 위 차 중심 + 기록 오차(옆 방향 ±MAX_LATERAL_OFFSET_M). 차선 없으면 기록 위치."""
+    la = st.get("l", -1)
+    if la is None or la < 0 or la >= len(lanes):
+        return st["x"], st["z"]
+    lane = lanes[la]
+    s = st["p"] - length / 2.0
+    x, z = lane.point_at(s)
+    bx, bz = lane.point_at(s - HEADING_PROBE_M)
+    fx, fz = lane.point_at(s + HEADING_PROBE_M)
+    ox, oz = st["x"] - x, st["z"] - z
+    if math.hypot(ox, oz) > MAX_ENDPOINT_OFFSET_M:
+        ox = oz = 0.0
+    ox, oz = clamp_lateral(ox, oz, fx - bx, fz - bz)
+    return x + ox, z + oz
+
+
+def place(lanes: list[Lane], a: dict, length: float) -> tuple[float, float, float, bool]:
+    """다음 프레임이 없는 차량의 위치 = 표시 위치, 방향은 차선 접선."""
+    la = a.get("l", -1)
+    if la is None or la < 0 or la >= len(lanes):
+        return a["x"], a["z"], a["a"], False
+    lane = lanes[la]
+    s = a["p"] - length / 2.0
+    x, z = display_point(lanes, a, length)
+    bx, bz = lane.point_at(s - HEADING_PROBE_M)
+    fx, fz = lane.point_at(s + HEADING_PROBE_M)
+    if math.hypot(fx - bx, fz - bz) < 0.05:
+        heading = a["a"]
+    else:
+        heading = math.degrees(math.atan2(fx - bx, fz - bz)) % 360.0
+    return x, z, heading, True
+
+
 def hermite_distance(f: float, D: float, v0: float, v1: float, dt: float) -> float:
     if D <= 1e-6:
         return 0.0
@@ -156,6 +210,8 @@ def interpolate(lanes: list[Lane], a: dict, b: dict | None, f: float, dt: float,
                 length: float, version: int = 2) -> tuple[float, float, float, bool]:
     """(x, z, heading_deg, used_path) — Unity와 같은 규칙으로 한 차량의 위치를 복원한다."""
     if b is None:
+        if version >= 2 and "l" in a:
+            return place(lanes, a, length)
         return a["x"], a["z"], a["a"], False
 
     def linear():
@@ -174,12 +230,14 @@ def interpolate(lanes: list[Lane], a: dict, b: dict | None, f: float, dt: float,
     d = hermite_distance(f, D, a.get("v", 0.0), b.get("v", 0.0), dt)
     c = d - length / 2.0
     x, z = path_point(segs, c)
-    # 끝점 보정: 기록된 차 중심(갓길 정차 시 옆으로 비켜선 위치 등)과 경로상 위치의 차이를
-    # 양 끝에서 0이 되도록 선형으로 나눠 더한다 -> 프레임 시점에는 기록 위치와 정확히 일치.
+    # 끝점 보정: 각 프레임의 표시 위치(display_point)와 경로상 위치의 차이를 양 끝에서 0이 되도록
+    # 선형으로 나눠 더한다 -> 프레임 시점에는 표시 위치와 정확히 일치(앞뒤 구간이 같은 점에서 이어짐).
     ax0, az0 = path_point(segs, -length / 2.0)
     bx1, bz1 = path_point(segs, D - length / 2.0)
-    oax, oaz = a["x"] - ax0, a["z"] - az0
-    obx, obz = b["x"] - bx1, b["z"] - bz1
+    pax, paz = display_point(lanes, a, length)
+    pbx, pbz = display_point(lanes, b, length)
+    oax, oaz = pax - ax0, paz - az0
+    obx, obz = pbx - bx1, pbz - bz1
     if math.hypot(oax, oaz) > MAX_ENDPOINT_OFFSET_M:
         oax = oaz = 0.0
     if math.hypot(obx, obz) > MAX_ENDPOINT_OFFSET_M:
