@@ -176,6 +176,7 @@ BOOLS = [
     ("rl_randomize_passenger_seed", "RL 학습: 매 에피소드마다 다른 승객 호출 패턴 사용"),
     ("rl_vecnormalize", "RL 학습: 관측·보상 정규화(VecNormalize)"),
     ("rl_weighted_targets", "RL 재배치: 과거 호출이 많았던 도로로 더 자주 보내기"),
+    ("rl_idle_roam", "RL 재배치: RL이 옮기지 않은 빈 택시도 순찰처럼 돌아다니기"),
     ("taxi_avoid_dead_ends", "택시: 막다른 길 진입 막기"),
     ("taxi_extend_dispatch_route", "택시: 배차 경로가 끝나 가면 승객 위치까지 연장 (실험)"),
     ("taxi_reroute_stuck_riders", "택시: 손님 태운 채 멈추면 하차 지점까지 재경로 (실험)"),
@@ -307,7 +308,7 @@ TRAIN_SECTIONS = [
                           "xgb_random_state", "train_random_state"]),
     ("강화학습 (RL)", ["rl_total_timesteps", "rl_max_decisions", "rl_rollout_steps", "rl_n_envs", "rl_batch_size",
                    "rl_seed", "rl_training_seed_base", "rl_learning_rate", "rl_gamma", "rl_randomize_passenger_seed",
-                   "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets", "incentive_weight",
+                   "rl_train_day_type", "rl_vecnormalize", "rl_weighted_targets", "rl_idle_roam", "incentive_weight",
                    "target_hotspot_ratio"]),
 ]
 # 학습 창 위쪽에 따로 보이는 값
@@ -492,6 +493,7 @@ TIPS = {
     "rl_train_day_type": "RL 학습 날짜 종류 (KJS). weekday = 평일만(기본), holiday = 공휴일·주말만, mixed = 둘 다. "
                          "섞으면 보상 차이가 대부분 '무슨 날이냐'로 정해져 정책 개선이 잘 안 보인다.",
     "rl_vecnormalize": "RL 학습 때 관측값·보상을 정규화(VecNormalize). 통계는 rl_reposition_model_vecnorm.pkl로 저장돼 실행 때도 같이 쓴다.",
+    "rl_idle_roam": "켜면 RL이 옮기지 않은(또는 목적지에 도착한) 빈 택시가 순찰처럼 지역 전체의 임의 도로로 돌아다닌다. 끄면 예전처럼 그 자리 근처에서 한 칸씩만 움직인다(택시 55대 7일 비교에서 순찰보다 대기 15초 김, taxi55_experiment 참고). 학습·실행 모두 적용되므로 바꾸면 RL 재학습 필요.",
     "rl_weighted_targets": "RL이 장소 종류(예: 음식점)를 정하면, 그 종류의 도로 중 지난 8일 호출이 많았던 도로일수록 높은 확률로 골라 빈 택시를 보낸다. 끄면 균등 무작위. 학습·실행 모두 적용되므로 바꾸면 RL 재학습 필요.",
     "run_sim_before_training": "'학습만 실행' 때 시뮬레이션을 먼저 돌려 학습 로그를 만든다. 끄면 기존 로그로 바로 학습.",
     "taxi_respawn_prefix": "다시 생성된 택시 ID 앞에 붙이는 접두어.",

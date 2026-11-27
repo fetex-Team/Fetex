@@ -174,5 +174,6 @@
   "department_stay_sec": 5400,
   "unity_streaming_assets_dir": "",
   "rl_move_unzoned": false,
-  "rl_max_move_ratio": 0.3
+  "rl_max_move_ratio": 0.3,
+  "rl_idle_roam": false
 }

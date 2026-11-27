@@ -172,5 +172,6 @@
   "department_window_end": 21.0,
   "department_taxi_probability": 0.1,
   "department_stay_sec": 5400,
-  "unity_streaming_assets_dir": ""
+  "unity_streaming_assets_dir": "",
+  "rl_idle_roam": false
 }
