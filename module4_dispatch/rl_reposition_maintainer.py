@@ -62,6 +62,7 @@ from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
 from config_loader import CFG
 from module3_prediction.category_predictor import CategoryDemandPredictor
 from module4_dispatch.forecast_dispatcher import weighted_edge_order
+from module4_dispatch.rl_env import max_rl_moves
 
 DECISION_INTERVAL_SEC = 60.0
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -350,13 +351,17 @@ class RLRepositionMaintainer:
         movable = []
         self._picked_targets = set()
         self._rng.shuffle(eligible_taxis)
+        move_unzoned = CFG.get("rl_move_unzoned", True)
         for taxi_id, edge, source in eligible_taxis:
             if source is not None:
                 source_index = ZONE_CATEGORIES.index(source)
                 if current_idle[source] <= target_counts[source_index]:
                     continue
                 current_idle[source] -= 1
+            elif not move_unzoned:
+                continue   # 장소 종류가 없는 도로의 택시는 그 자리에 둔다 (학습 환경 rl_env와 같은 규칙)
             movable.append((taxi_id, edge))
+        movable = movable[:max_rl_moves(total_idle)]
 
         for target_index, category in enumerate(ZONE_CATEGORIES):
             target_edges = self.zones.get(category) or []

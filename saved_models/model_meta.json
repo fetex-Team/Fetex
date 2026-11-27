@@ -1,0 +1,18 @@
+{
+  "region": "강남역",
+  "num_taxis": 55,
+  "rl_reward_mode": "gravityVer",
+  "rl_train_start": "2026-05-18",
+  "rl_train_end": "2026-09-06",
+  "rl_train_day_type": "weekday",
+  "rl_total_timesteps": 30000,
+  "demand_source": "real",
+  "real_demand_scale": 0.77,
+  "freq": "10min",
+  "h3_resolution": 8,
+  "trained_at": "2026-11-27 06:18:39",
+  "rl_only": true,
+  "rl_ok": true,
+  "rl_steps": 30720,
+  "demand_logs": "시뮬레이션 로그 선택"
+}

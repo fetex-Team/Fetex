@@ -25,6 +25,14 @@ from module4_dispatch.forecast_dispatcher import weighted_edge_order
 from module2_preprocessing.poi_extractor import CATEGORIES as ZONE_CATEGORIES
 
 N_ZONES = len(ZONE_CATEGORIES)
+
+
+def max_rl_moves(total_idle: int) -> int:
+    """한 번 결정에서 옮길 수 있는 최대 택시 수 = 빈 택시 x rl_max_move_ratio (1.0 = 제한 없음, 예전 방식)."""
+    ratio = float(CFG.get("rl_max_move_ratio", 1.0))
+    if ratio >= 1.0:
+        return total_idle
+    return max(1, int(np.ceil(total_idle * ratio))) if total_idle > 0 else 0
 DECISION_INTERVAL_SEC = 60.0
 
 
@@ -460,13 +468,17 @@ class TaxiRepositionEnv(gym.Env):
         # 목표 대수를 넘긴 구역의 택시만 이동 후보로 삼는다.
         movable = []
         np.random.shuffle(eligible_taxis)
+        move_unzoned = CFG.get("rl_move_unzoned", True)
         for taxi_id, edge, source in eligible_taxis:
             if source is not None:
                 source_index = ZONE_CATEGORIES.index(source)
                 if current_idle[source] <= target_counts[source_index]:
                     continue
                 current_idle[source] -= 1
+            elif not move_unzoned:
+                continue   # 장소 종류가 없는 도로의 택시는 그 자리에 둔다 (rl_move_unzoned=false)
             movable.append((taxi_id, edge))
+        movable = movable[:max_rl_moves(total_idle)]
 
         for target_index, target_category in enumerate(ZONE_CATEGORIES):
             deficit = max(0, target_counts[target_index] - current_idle[target_category])

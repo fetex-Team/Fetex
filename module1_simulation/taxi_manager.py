@@ -568,12 +568,16 @@ class TaxiFleetManager:
         self._update_pos_track(vid, now_seconds, current_edge)
 
         # [최적화 2] RL이 제어 중일 땐 매니저가 새 목적지를 주지 않고(이중 제어 방지), 오직 1칸 생존 연장만 허용
+        roam = CFG.get("rl_idle_roam", False)
         if self.strategy == "rl_prepositioned":
-            if not (self.rl_keepalive and remaining <= 0):
+            # rl_idle_roam=true: 경로가 거의 끝난 빈 택시는 순찰처럼 지역 전체의 임의 도로로 보낸다
+            if not roam and not (self.rl_keepalive and remaining <= 0):
                 return
-            new_target = self._next_edge_fallback(current_edge)
-            if new_target:
-                self.spawn_stats["fallback_next_edge"] += 1
+            new_target = self._pick_target_edge(now_seconds, current_edge) if roam else None
+            if not new_target or new_target == current_edge:
+                new_target = self._next_edge_fallback(current_edge)
+                if new_target:
+                    self.spawn_stats["fallback_next_edge"] += 1
         else:
             new_target = self._pick_target_edge(now_seconds, current_edge)
             if not new_target or new_target == current_edge:
